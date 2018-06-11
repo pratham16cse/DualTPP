@@ -6,7 +6,7 @@ from time import time
 
 NUM_POS_SAMPLES = 3
 NUM_NEG_SAMPLES = 10
-ENCODER_LEN = 100
+ENCODER_LEN = 3
 NUM_LABELS = 12
 
 def add_features(ts):
@@ -34,12 +34,20 @@ def generateFeatures(encoderInput, decoderInput):
 def createWindowedData(encoderInput, encoderOutput, decoderInput, decoderOutput):
     wEncoderInput, wEncoderOutput, wDecoderInput, wDecoderOutput = list(), list(), list(), list()
     for i in range(len(encoderInput)):
-        for j in range(0, len(encoderInput[i])-ENCODER_LEN+1, ENCODER_LEN):
+        for j in range(-ENCODER_LEN+1, len(encoderInput[i])-ENCODER_LEN+1, ENCODER_LEN):
 #            print('createWindowedData',i,j)
-            #print(encoderInput[i][j:j+ENCODER_LEN], encoderOutput[i][j:j+ENCODER_LEN])
-            #print(decoderInput[i][j+ENCODER_LEN-1], decoderOutput[i][j+ENCODER_LEN-1])
-            wEncoderInput.append(encoderInput[i][j:j+ENCODER_LEN])
-            wEncoderOutput.append(encoderOutput[i][j:j+ENCODER_LEN])
+            if j < 0:
+                eI = [0]*(-j) + encoderInput[i][0:ENCODER_LEN+j]
+                eO = [0]*(-j) + encoderOutput[i][0:ENCODER_LEN+j]
+                #print(eI)
+                #print(eO)
+            else:
+                eI = encoderInput[i][j:j+ENCODER_LEN]
+                eO = encoderOutput[i][j:j+ENCODER_LEN]
+            #wEncoderInput.append(encoderInput[i][j:j+ENCODER_LEN])
+            #wEncoderOutput.append(encoderOutput[i][j:j+ENCODER_LEN])
+            wEncoderInput.append(eI)
+            wEncoderOutput.append(eO)
             wDecoderInput.append(decoderInput[i][j+ENCODER_LEN-1])
             wDecoderOutput.append(decoderOutput[i][j+ENCODER_LEN-1])
 
