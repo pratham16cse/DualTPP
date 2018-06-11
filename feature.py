@@ -71,4 +71,10 @@ def secondOfFeatures(epoch):
     featVec = [date.second, date.minute, date.hour, date.day, date.month]
 #    featVec = [date.hour, date.day, date.month]
     return featVec
-#print(dayOfWeek(1522635973))
+
+def timestampTotime(ts):
+    #t = time.strftime("%Y %m %d %H %M %S", time.localtime(ts)).split(' ')
+    t = time.strftime("%Y %m %d %H %M %S", time.localtime(ts)).split(' ')
+    t = [int(i) for i in t]
+    return t
+

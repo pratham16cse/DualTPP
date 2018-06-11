@@ -3,14 +3,16 @@ import numpy as np
 from math import ceil
 from feature import *
 from time import time
+import pickle
 
 NUM_POS_SAMPLES = 3
 NUM_NEG_SAMPLES = 10
-ENCODER_LEN = 3
+ENCODER_LEN = 100
 NUM_LABELS = 12
 
 def add_features(ts):
-    features = secondOfFeatures(ts)
+    #features = secondOfFeatures(ts)
+    features = timestampTotime(ts)
     return features
 
 def generateFeatures(encoderInput, decoderInput):
@@ -115,8 +117,8 @@ def sample(data):
 
     return sampled_data, data_labels
 
-def read(fileName):
-    fp=open(fileName,'r')
+def read(filePath):
+    fp=open(filePath,'r')
     data=list()
     latlngList = list()
     for line in fp:
@@ -138,9 +140,9 @@ def read(fileName):
 
     return latlngList, data
 
-def getEncoderDecoderData(fileName):
+def getEncoderDecoderData(filePath):
     print('Reading data from file . . .')
-    latlngList, data = read(fileName)
+    latlngList, data = read(filePath)
     print('Sampling timestamps . . .')
     encoderInput, encoderOutput = sample(data)
     print('Generating Decoder Data . . .')
@@ -166,8 +168,8 @@ def getEncoderDecoderData(fileName):
     return encoderInput, encoderOutput, decoderInput, decoderOutput
 
 def main():
-    fileName = sys.argv[1]
-    latlngList, data = read(fileName)
+    filePath = sys.argv[1]
+    latlngList, data = read(filePath)
     #print(latlngList)
     #print(data)
     encoderInput, encoderOutput = sample(data)
@@ -200,6 +202,9 @@ def main():
     print('generateDecoderData:', generateDecoderDataEnd - generateDecoderDataStart)
     print('createWindowedData:', createWindowedDataEnd - createWindowedDataStart)
     print('generateFeatures:', generateFeaturesEnd - generateFeaturesStart)
+
+    fileName = filePath.split('/')[-1].split('.')[0]
+    pickle.dump([encoderInput, encoderOutput, decoderInput, decoderOutput], open('datasets/'+fileName, 'w'))
 
 
 if __name__ == '__main__':
