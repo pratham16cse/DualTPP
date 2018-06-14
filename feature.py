@@ -74,7 +74,7 @@ def secondOfFeatures(epoch):
 
 def timestampTotime(ts):
     #t = time.strftime("%Y %m %d %H %M %S", time.localtime(ts)).split(' ')
-    t = time.strftime("%Y %m %d %H %M %S", time.localtime(ts)).split(' ')
+    t = time.strftime("%m %d %H %M %S", time.localtime(ts)).split(' ')
     t = [int(i) for i in t]
     return t
 
