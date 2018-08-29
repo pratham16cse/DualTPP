@@ -2,9 +2,9 @@ from feature import *
 import numpy as np
 from math import ceil
 
-NUM_POS_SAMPLES = 2
-NUM_NEG_SAMPLES = 5
-NUM_LABELS = 2
+NUM_POS_SAMPLES = 3
+NUM_NEG_SAMPLES = 10
+NUM_LABELS = 12
 MAX_STEPS = 700
 
 def add_features(ts):
@@ -59,16 +59,17 @@ def sample(data):
         loc_labels = list()
         for i in range(len(loc)):
             durn, ts = loc[i]
-            #pos_samples = sorted(np.random.randint(ts, ts+durn, size=NUM_POS_SAMPLES).tolist())
-            pos_samples = sorted(np.arange(ts, ts+durn, \
-                    step=ceil(durn*1.0/NUM_POS_SAMPLES)).astype(int).tolist())
+            pos_samples = sorted(np.random.randint(ts, ts+durn, size=NUM_POS_SAMPLES).tolist())
+#            pos_samples = sorted(np.arange(ts, ts+durn, \
+#                    step=ceil(durn*1.0/NUM_POS_SAMPLES)).astype(int).tolist())
             sampled_loc += pos_samples
             loc_labels += [1]*NUM_POS_SAMPLES
             if i<len(loc)-1:
                 _, next_ts = loc[i+1]
-                #neg_samples = sorted(np.random.randint(ts+durn, next_ts, size=NUM_NEG_SAMPLES).tolist())
-                neg_samples = sorted(np.arange(ts+durn, next_ts, \
-                        step=ceil((next_ts-ts-durn)*1.0/NUM_NEG_SAMPLES)).astype(int).tolist())
+                #print(ts, durn, next_ts)
+                neg_samples = sorted(np.random.randint(ts+durn, next_ts, size=NUM_NEG_SAMPLES).tolist())
+#                neg_samples = sorted(np.arange(ts+durn, next_ts, \
+#                        step=ceil((next_ts-ts-durn)*1.0/NUM_NEG_SAMPLES)).astype(int).tolist())
                 sampled_loc += neg_samples
                 loc_labels += [0]*NUM_NEG_SAMPLES
         sampled_data.append(sampled_loc[:MAX_STEPS])
