@@ -46,8 +46,8 @@ def getEncoderDecoderData(filePath):
     generateFeaturesStart = time()
     encoderInput, decoderInput = generateFeatures(encoderInput, decoderInput)
     generateFeaturesEnd = time()
-    for (i,j) in zip(encoderInput, decoderInput):
-        print(np.array(i).shape, np.array(j).shape)
+#    for (i,j) in zip(encoderInput, decoderInput):
+#        print(np.array(i).shape, np.array(j).shape)
     print('-------------------------------------')
     print('generateDecoderData():', generateDecoderDataEnd - generateDecoderDataStart, 'seconds')
     print('generateFeatures():', generateFeaturesEnd - generateFeaturesStart, 'seconds')
