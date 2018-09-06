@@ -123,21 +123,6 @@ def sample(data):
             sampled_loc.append(start_ts)
             loc_labels.append(1)
             start_ts = start_ts + INTERVAL
-
-            pos_samples = sorted(np.random.randint(ts, ts+durn, size=NUM_POS_SAMPLES).tolist())
-#            pos_samples = sorted(np.arange(ts, ts+durn, \
-#                    step=ceil(durn*1.0/NUM_POS_SAMPLES)).astype(int).tolist())
-            sampled_loc += pos_samples
-            loc_labels += [1]*NUM_POS_SAMPLES
-            if i<len(loc)-1:
-                _, next_ts = loc[i+1]
-                #print(ts, durn, next_ts)
-                neg_samples = sorted(np.random.randint(ts+durn, next_ts, size=NUM_NEG_SAMPLES).tolist())
-#                neg_samples = sorted(np.arange(ts+durn, next_ts, \
-#                        step=ceil((next_ts-ts-durn)*1.0/NUM_NEG_SAMPLES)).astype(int).tolist())
-                sampled_loc += neg_samples
-                loc_labels += [0]*NUM_NEG_SAMPLES
-
         sampled_data.append(sampled_loc[:MAX_STEPS])
         data_labels.append(loc_labels[:MAX_STEPS])
         print(len(sampled_loc))
