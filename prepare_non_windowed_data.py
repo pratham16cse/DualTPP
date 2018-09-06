@@ -57,19 +57,28 @@ def getEncoderDecoderData(filePath):
 def main():
     filePath = sys.argv[1]
     latlngList, data = read(filePath)
+    print(data)
     #print(latlngList)
     #print(data)
     encoderInput, encoderOutput = sample(data)
+    print(encoderInput[0])
+    print(encoderOutput[0])
     #print(data[-7], sampled_data[-7], sampled_labels[-7])
+    #------------------------------------------------------------------- #
+
     generateDecoderDataStart = time()
     decoderInput, decoderOutput = generateDecoderData(data, encoderInput, encoderOutput)
     generateDecoderDataEnd = time()
     #for ts, d in zip(decoderInput[-7], decoderOutput[-7]):
         #print(zip(ts,d))
-    print(np.array(encoderInput[-7]).shape)
-    print(np.array(encoderOutput[-7]).shape)
-    print(np.array(decoderInput[-7]).shape)
-    print(np.array(decoderOutput[-7]).shape)
+    # print(np.array(encoderInput[-7]).shape)
+    # print(np.array(encoderOutput[-7]).shape)
+    # print(np.array(decoderInput[-7]).shape)
+    # print(np.array(decoderOutput[-7]).shape)
+    print(np.array(encoderInput[-7]))
+    print(np.array(encoderOutput[-7]))
+    print(np.array(decoderInput[-7]))
+    print(np.array(decoderOutput[-7]))
     print('-------------------------------------')
     generateFeaturesStart = time()
     encoderInput, decoderInput = generateFeatures(encoderInput, decoderInput)
@@ -81,8 +90,9 @@ def main():
     print('generateFeatures:', generateFeaturesEnd - generateFeaturesStart)
 
     fileName = filePath.split('/')[-1].split('.')[0]
-    pickle.dump([encoderInput, encoderOutput, decoderInput, decoderOutput], open('datasets/'+fileName, 'w'))
+    pickle.dump([encoderInput, encoderOutput, decoderInput, decoderOutput], open('datasets/'+fileName, 'wb'))
 
+    # ------------------------------------------------------------------------ #
 
 if __name__ == '__main__':
     main()
