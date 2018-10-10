@@ -33,15 +33,42 @@ def generateFeatures(encoderInput, decoderInput):
     return encoderFeatures, decoderFeatures
 
 
+# def getEncoderDecoderData(filePath):
+#     print('Reading data from file . . .')
+#     latlngList, data = read(filePath)
+#     print('Sampling timestamps . . .')
+#     encoderInput, encoderOutput, pos_sam_list, cong_sam_list = sample(data)
+#     rawencoderInput = encoderInput
+#     print('Generating Decoder Data . . .')
+#     generateDecoderDataStart = time()
+#     decoderInput, decoderOutput = generateDecoderData(data, encoderInput, encoderOutput)
+#     generateDecoderDataEnd = time()
+#     print('Generating Features . . .')
+#     generateFeaturesStart = time()
+#     encoderInput, decoderInput = generateFeatures(encoderInput, decoderInput)
+#     generateFeaturesEnd = time()
+# #    for (i,j) in zip(encoderInput, decoderInput):
+# #        print(np.array(i).shape, np.array(j).shape)
+#     print('-------------------------------------')
+#     print('generateDecoderData():', generateDecoderDataEnd - generateDecoderDataStart, 'seconds')
+#     print('generateFeatures():', generateFeaturesEnd - generateFeaturesStart, 'seconds')
+#     print('-------------------------------------')
+#     return rawencoderInput, encoderInput, encoderOutput, decoderInput, decoderOutput, pos_sam_list, cong_sam_list
+
 def getEncoderDecoderData(filePath):
     print('Reading data from file . . .')
     latlngList, data = read(filePath)
-    print('Sampling timestamps . . .')
+    print('Generating Encoder Data . . .')
+    generateEncoderDataStart=time()
     encoderInput, encoderOutput = sample(data)
+    generateEncoderDataEnd=time()
+    print('generateEncoderData():', generateEncoderDataEnd - generateEncoderDataStart, 'seconds')
+    #print(np.array(encoderInput).shape[0], np.array(encoderInput).shape[1])
     print('Generating Decoder Data . . .')
     generateDecoderDataStart = time()
     decoderInput, decoderOutput = generateDecoderData(data, encoderInput, encoderOutput)
     generateDecoderDataEnd = time()
+    print('generateDecoderData():', generateDecoderDataEnd - generateDecoderDataStart, 'seconds')
     print('Generating Features . . .')
     generateFeaturesStart = time()
     encoderInput, decoderInput = generateFeatures(encoderInput, decoderInput)
@@ -49,9 +76,10 @@ def getEncoderDecoderData(filePath):
 #    for (i,j) in zip(encoderInput, decoderInput):
 #        print(np.array(i).shape, np.array(j).shape)
     print('-------------------------------------')
-    print('generateDecoderData():', generateDecoderDataEnd - generateDecoderDataStart, 'seconds')
+    #print('generateDecoderData():', generateDecoderDataEnd - generateDecoderDataStart, 'seconds')
     print('generateFeatures():', generateFeaturesEnd - generateFeaturesStart, 'seconds')
     print('-------------------------------------')
+
     return encoderInput, encoderOutput, decoderInput, decoderOutput
 
 def main():
