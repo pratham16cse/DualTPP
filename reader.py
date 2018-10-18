@@ -4,12 +4,13 @@ from math import ceil
 import pandas as pd
 import matplotlib.pyplot as plt
 import os
+import random
 from matplotlib import pyplot
 
 
 NUM_POS_SAMPLES = 2
 NUM_NEG_SAMPLES = 5
-NUM_LABELS = 48
+NUM_LABELS = 12
 MAX_STEPS = 1000
 INTERVAL = 300
 
@@ -152,7 +153,9 @@ def sample(data):
             start_ts = start_ts + INTERVAL
         sampled_data.append(sampled_loc[:MAX_STEPS])
         data_labels.append(loc_labels[:MAX_STEPS])
-        #print(len(sampled_loc))
+        print(len(sampled_loc))
+        print(sampled_loc[0:20])
+        print(loc_labels[0:20])
     return sampled_data, data_labels
 
 def read(filePath):
@@ -164,8 +167,8 @@ def read(filePath):
         latlng=lineArray[1].replace('[','').replace(']','').split(',')
         timeStampList=lineArray[2].replace('[','').replace(']','').split(',')
         durationList=lineArray[3].replace('[','').replace(']','').split(',')
-        #print(timeStampList)
-        #print(durationList)
+        print(len(timeStampList))
+        print(len(durationList))
         localData=[]
         for j in range(len(timeStampList)):
             eventFeed=[]
@@ -355,3 +358,144 @@ def get_plot(model_predictions, decoder_output):
     #plt.show()
     filepath=os.getcwd()+'/experiments/images/heatmap_4_200.pdf'
     plt.savefig(filepath,bbox_inches='tight')
+
+
+def read_data(filepath, writePath, num_points):
+    file=open(filepath, 'r')
+    write=open(writePath, 'w')
+    for row in file:
+        rowArray=row.rstrip().split('\t')
+        timeStampList = rowArray[2].replace('[', '').replace(']', '').split(',')
+        if(len(timeStampList)>=num_points):
+            print(len(timeStampList))
+            write.write(row)
+    file.close()
+    write.close()
+
+
+def synthetic_data(startEpoch, interval, duration):
+    file=os.getcwd()+'/datasets/'+'synthetic.csv'
+    f=open(file,'w')
+    f.write('placeId' + '\t' + '[0.0,0.0]' + '\t')
+    f.write('[')
+    epoch=startEpoch
+    for i in range(200):
+        if i==199:
+            f.write(str(epoch))
+            break
+        f.write(str(epoch))
+        f.write(', ')
+        epoch += interval
+    f.write(']\t[')
+    for i in range(200):
+        if i==199:
+            f.write(str(epoch))
+            break
+        f.write(str(duration))
+        f.write(', ')
+    f.write(']')
+    f.close()
+
+def random_synthetic_data(startEpoch,seed):
+    random.seed(seed)
+    epoch_list=[]
+    duration_list=[]
+    epoch =startEpoch
+    for i in range(200):
+        epoch_list.append(epoch)
+        cong=random.randint(60, 3600)
+        noncong=random.randint(cong, 3600*6)
+        duration_list.append(cong)
+        epoch += cong + noncong
+
+    file = os.getcwd() + '/datasets/' + 'randomsynthetic.csv'
+    f = open(file, 'w')
+    f.write('placeId' + '\t' + '[0.0,0.0]' + '\t')
+    f.write('[')
+    for i in range(200):
+        f.write(str(epoch_list[i]))
+        if i<199:
+            f.write(', ')
+    f.write(']\t[')
+    for i in range(200):
+        f.write(str(duration_list[i]))
+        if i<199:
+            f.write(', ')
+    f.write(']')
+    f.close()
+
+def get_congestion_info(file):
+    filepath=os.getcwd()+'/datasets/'+file
+    f=open(filepath,'r')
+    total=0.0
+    con=0.0
+    num_cong=0.0
+    num_non_cong=0.0
+    for line in f:
+        lineArray=line.lstrip().rstrip().split('\t')
+        timeStamp=lineArray[2].replace('[','').replace(']','').split(',')
+        cong=lineArray[3].replace('[','').replace(']','').split(',')
+        #cong=[int(x) for x in cong]
+        for c in cong:
+            #print(c)
+            con+=int(c)
+        #con+=sum(cong)
+        num_cong+=len(cong)
+        num_non_cong+=len(cong)-1
+        total+=int(timeStamp[len(timeStamp)-1])-int(timeStamp[0])
+    print(con,total,con/total)
+    print(con/(60*num_cong),(total-con)/(60*num_non_cong))
+
+def get_cong_skew(file):
+    filepath=os.getcwd()+'/datasets/'+file
+    f=open(filepath,'r')
+    min_5=0.0
+    #min_30=0.0
+    min_60=0.0
+    min_30=0.0
+    hr_2=0.0
+    hr_3=0.0
+    hr_4=0.0
+    hr_5=0.0
+    rem=0.0
+    total=0.0
+    for line in f:
+        lineArray = line.lstrip().rstrip().split('\t')
+        timeStamp = lineArray[2].replace('[', '').replace(']', '').split(',')
+        cong = lineArray[3].replace('[', '').replace(']', '').split(',')
+        for c in cong:
+            x=(int(c))/60.0
+            if x <=5:
+                min_5 += 1
+            elif x <= 30:
+                min_30 += 1
+            elif x <= 60:
+                min_60 += 1
+            elif x <= 120:
+                hr_2 += 1
+            elif x <= 180:
+                hr_3 += 1
+            elif x <= 240:
+                hr_4 += 1
+            elif x <= 300:
+                hr_5 += 1
+            else :
+                rem += 1
+            total+=1
+    print(min_5/total, (min_5+min_30)/total,(min_5+min_30+min_60)/total,(min_5+min_30+min_60+hr_2)/total)
+    print((min_5+min_30+min_60+hr_2+hr_3)/total,(min_5+min_30+min_60+hr_2+hr_3 + hr_4)/total)
+    #print((min_5+min_30+min_60+hr_2+hr_3+hr_4+hr_5)/total, (min_5+min_30+min_60+hr_2+hr_3+hr_4+hr_5+rem)/total)
+if __name__=='__main__':
+    pass
+    # get_cong_skew('pune-congestions.csv')
+    #get_congestion_info('pune-congestions.csv')
+    # random_synthetic_data(1507006170, 0)
+    # latlng, data = read('datasets/randomsynthetic.csv')
+    # sample(data)
+
+    # read_file=os.getcwd()+'/datasets/' + 'mum-congestions.csv'
+    # write_file=os.getcwd()+'/datasets/'+ 'mum-congestions-200.csv'
+    # read_data(read_file, write_file, 200)
+
+
+

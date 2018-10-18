@@ -7,15 +7,16 @@ from reader import *
 
 NUM_ENC_FEATURES = 5
 NUM_DEC_FEATURES = 5
-NUM_LABELS = 48
+NUM_LABELS = 12
 MAX_STEPS = 1000
 SPLIT=0.8
 TRAIN_END=(int)(MAX_STEPS*SPLIT)
-BATCH_SIZE = 32
+BATCH_SIZE = 128
 START_EPOCH=0
-END_EPOCH=5000
-NUM_EPOCHS=5000
+END_EPOCH=1000
+NUM_EPOCHS=1000
 USE_CKPT=False
+write_file='mum-cross-2.csv'
 CKPT_FILE=os.getcwd()+'/ckpt/'+'congestion_model-10.meta'
 LR = 0.0005
 THRESHOLD = 0.5
@@ -48,43 +49,71 @@ def encoderDecoderModel(encoderInput, \
 
     num_samples, num_enc_steps = tf.shape(encoderInput)[0], tf.shape(encoderInput)[1]
     num_dec_steps = tf.shape(decoderInput)[1]
+    N=num_labels*num_dec_features
     ## Encoder
     cell = tf.contrib.rnn.LSTMCell(state_size,state_is_tuple=True)
     encoderOutput = tf.concat([tf.zeros([num_samples,1]), encoderOutput[:,:-1]], axis=1)
     rnn_inputs = tf.concat([tf.expand_dims(encoderOutput, axis=-1), encoderInput], axis=2)
     rnn_outputs, final_state = tf.nn.dynamic_rnn(cell, rnn_inputs, sequence_length=seqlen, dtype=tf.float32)
-    encoder_out = tf.layers.dense(rnn_outputs, num_labels, activation=tf.nn.relu)
-    decoder_h1 = tf.layers.dense(decoderInput, decoder_filters, activation=tf.nn.relu)
-    decoder_out = tf.layers.dense(decoder_h1, 1)
-    decoder_out = tf.squeeze(decoder_out, axis=3)
-    logits = encoder_out + decoder_out
+    print(rnn_outputs.get_shape())
+    decoderInput = tf.reshape(decoderInput,[tf.shape(decoderInput)[0],tf.shape(decoderInput)[1],N])
+    print(decoderInput.get_shape())
+    inp = tf.concat([rnn_outputs,decoderInput],axis=2)
+    print(inp.get_shape())
+    #encoder_out = tf.layers.dense(inp, num_labels, activation=tf.nn.relu)
+    #print(encoder_out.get_shape())
+    decoder_h1 = tf.layers.dense(inp, decoder_filters, activation=tf.nn.relu)
+    print(decoder_h1.get_shape())
+    logits = tf.layers.dense(decoder_h1, num_labels)
+    print(logits.get_shape())
+    #decoder_out = tf.squeeze(decoder_out, axis=3)
+    #logits = encoder_out + decoder_out
 
     seqlen_mask = tf.slice(tf.gather(lower_triangular_ones, seqlen-1), [0, 0], [num_samples, num_dec_steps])
     seqlen_mask = tf.expand_dims(seqlen_mask, axis=-1)
     predictions = tf.nn.sigmoid(logits)
 
     predHist = tf.concat([tf.zeros([tf.shape(predictions)[0], \
-                                      tf.shape(predictions)[1], 1]), \
-                            predictions[:, :, :-1]], axis=2)
-    decoderOutputHist=tf.concat([tf.zeros([tf.shape(decoderOutput)[0],tf.shape(decoderOutput)[1],1]),\
-                                 decoderOutput[:,:,:-1]],axis=2)
+                                    1, tf.shape(predictions)[2]]), \
+                            predictions[:, :-1, :]], axis=1)
+
+    predictionsInt = tf.cast((predictions>=0.5), 'float32')
+    predHistInt = tf.cast((predHist>=0.5), 'float32')
+
+    decoderOutputHist = tf.concat([tf.zeros([tf.shape(decoderOutput)[0],1,tf.shape(decoderOutput)[2]]),\
+                                 decoderOutput[:,:-1,:]],axis=1)
 
     # ------ Various Losses ------ #
     # decoderOutputLoss = -(CLASS_WEIGHTS[1]*decoderOutput * tf.log(predictions+1e-9) \
-    #         + CLASS_WEIGHTS[0]*(1.0-decoderOutput) * tf.log(1-predictions+1e-9))
+    #           + CLASS_WEIGHTS[0]*(1.0-decoderOutput) * tf.log(1-predictions+1e-9))
 
     # decoderOutputLoss = -(decoderOutput * tf.log(predictions + 1e-9) \
     #                       + (1.0 - decoderOutput) * tf.log(1 - predictions + 1e-9))  \
     #                       + tf.cast((tf.abs(tf.subtract(predictions,predHist))>=0.4),\
     #                       'float32')*tf.square(predictions-predHist)
 
+    
     # decoderOutputLoss = -(decoderOutput * tf.log(predictions + 1e-9) \
     #                       + (1.0 - decoderOutput) * tf.log(1 - predictions + 1e-9)) \
-    #                     + tf.maximum(tf.abs(tf.subtract(predictions, predHist))-0.3,0)
+    #                     + tf.maximum(tf.abs(tf.subtract(predictions, predHist))-0.5,0)
 
-    decoderOutputLoss = -( decoderOutput * tf.log(predictions + 1e-9) \
-                           + (1.0 - decoderOutput) * tf.log(1 - predictions + 1e-9)) + tf.abs(tf.subtract(predictions, predHist)-tf.subtract(decoderOutput,decoderOutputHist))
+    # decoderOutputLoss= -(decoderOutput * tf.log(predictions + 1e-9) \
+    #                        + (1.0 - decoderOutput) * tf.log(1 - predictions + 1e-9))  \
+    #                      + tf.cast((predictions>=0.5),'float32')*(tf.abs(tf.subtract(tf.log(predictions+ 1e-9),tf.log(predHist +1e-9))))
 
+
+    # Regularization Loss
+    #reg_losses = tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)
+    #reg_constant = 0.001  # Choose an appropriate one.
+
+    # decoderOutputLoss = -( decoderOutput * tf.log(predictions + 1e-9) \
+    #                        + (1.0 - decoderOutput) * tf.log(1 - predictions + 1e-9)) + tf.abs(tf.abs(tf.subtract(predictionsInt, decoderOutput))+tf.abs(tf.subtract(predHistInt,decoderOutputHist)))
+
+    #decoderOutputLoss += sum(reg_losses)*reg_constant
+
+    # decoderOutputLoss = -( decoderOutput * tf.log(predictions + 1e-9) \
+    #                        + (1.0 - decoderOutput) * tf.log(1 - predictions + 1e-9)) + \
+    #                     tf.cast((predictions>=0.5),'float32')*tf.abs((predictionsInt-decoderOutput)-(predHistInt-decoderOutputHist))
 
     decoderOutputLoss = tf.reshape(decoderOutputLoss, [num_samples, num_dec_steps, num_labels])
 
@@ -114,9 +143,8 @@ def train(encoderInput, encoderOutput, decoderInput, decoderOutput):
             state_size=64, decoder_filters=10, \
             num_dec_features=NUM_DEC_FEATURES, num_labels=NUM_LABELS)
 
-
-
-
+    file = os.getcwd()+'/results/'+ write_file
+    write = open(file, 'w')
     #print(encoderOutput.get_shape())
 
     #print(predictions)
@@ -138,7 +166,7 @@ def train(encoderInput, encoderOutput, decoderInput, decoderOutput):
             tf.cast(tf.reduce_sum(total_neg), 'float32'))
 
     train_variables = tf.trainable_variables()
-    print(map(lambda x: x.op.name, train_variables))
+    #print(map(lambda x: x.op.name, train_variables))
 
     train_op = tf.train.AdamOptimizer(learning_rate=LR).minimize(decoderOutputLoss, var_list=train_variables)
 
@@ -214,12 +242,21 @@ def train(encoderInput, encoderOutput, decoderInput, decoderOutput):
                 incorrect_zeros += np.sum(incorrect_neg_ret[:,TRAIN_END:,:])
                 total_ones += np.sum(total_pos_ret[:,TRAIN_END:,:])
                 total_zeros += np.sum(total_neg_ret[:,TRAIN_END:,:])
+                #print(len(total_pos_ret))
+                #print(total_pos_ret[:,TRAIN_END:MAX_STEPS,:])
+                #print(total_neg_ret[:,TRAIN_END:MAX_STEPS,:])
+                #print(TRAIN_END)
+                #print(total_zeros)
             recall_1 = correct_ones*1.0/total_ones
             precision_1 = correct_ones*1.0/(correct_ones+incorrect_zeros)
             f1_score_1 = 2*recall_1*precision_1/(recall_1+precision_1)
             recall_0 = correct_zeros*1.0/total_zeros
             precision_0 = correct_zeros*1.0/(correct_zeros+incorrect_ones)
             f1_score_0 = 2*recall_0*precision_0/(recall_0+precision_0)
+            print('Total Predicted Zeros', correct_zeros+incorrect_ones)
+            print('Total Zeros', total_zeros)
+            print('Total Predicted Ones', correct_ones+incorrect_zeros)
+            print('Total Ones', total_ones)
             print('Recall 1s:', recall_1)
             print('Precision 1s:', precision_1)
             print('Recall 0s:', recall_0)
@@ -227,6 +264,8 @@ def train(encoderInput, encoderOutput, decoderInput, decoderOutput):
             print('F1 Score 1s:', f1_score_1)
             print('F1 Score 0s:', f1_score_0)
             print('--------------------')
+            write.write(str(epoch_no)+','+str(epoch_loss)+','+str(recall_0)+','+str(recall_1)+',')
+            write.write(str(precision_0)+','+str(precision_1)+','+str(f1_score_0)+','+str(f1_score_1)+'\n')
     #print(model_predictions[model_predictions == 1])
     return model_predictions
 
