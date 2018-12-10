@@ -98,4 +98,6 @@ def read(filePath):
         data.append(localData)
         latlngList.append(latlng)
 
+    assert len(data) == len(latlngList)
+
     return latlngList, data
