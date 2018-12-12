@@ -8,7 +8,8 @@ from feature import getDatetime, timestampTotime
 
 def createPerDayChunks(latlngList, data):
     new_data = list()
-    for loc in data:
+    for s_no, loc in enumerate(data):
+        print(s_no)
         instances = OrderedDict()
         #print('Location Started -----')
         keys = [tuple(timestampTotime(ts)[:2]) for _, ts in loc]
@@ -41,13 +42,20 @@ def sample(data):
     return new_data
 
 
-def writeToFile(filePath, data):
+def split_train_test(data):
+    train_length = int(0.8 * len(data))
+    return data[:train_length], data[train_length:]
+
+def writeToFile(filePath, data, typ=''):
     cityName = filePath.split('/')[-1].split('-')[0]
-    with open('../datasets/traffic_tpp/'+cityName+'-congestions.txt', 'w') as f:
+    with open('../datasets/traffic_tpp/'+cityName+'/time-'+typ+'.txt', 'w') as time_f, \
+            open('../datasets/traffic_tpp/'+cityName+'/event-'+typ+'.txt', 'w') as event_f:
         for loc in data:
             for ts in loc[:-1]:
-                f.write(str(ts) + ' ')
-            f.write(str(loc[-1]) + '\n')
+                time_f.write(str(ts) + ' ')
+                event_f.write(str(1) + ' ')
+            time_f.write(str(loc[-1]) + '\n') 
+            event_f.write(str(1) + '\n') 
 
 
 def main():
@@ -55,7 +63,10 @@ def main():
     latlngList, data = reader.read(filePath)
     data = createPerDayChunks(latlngList, data)
     data = sample(data)
+    train_data, test_data = split_train_test(data)
     writeToFile(filePath, data)
+    writeToFile(filePath, train_data, typ='train')
+    writeToFile(filePath, test_data, typ='test')
 
 if __name__ == '__main__':
     main()
