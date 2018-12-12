@@ -635,7 +635,7 @@ class RMTPP:
         """Prints evaluation of the model on the given dataset."""
         # Print test error once every epoch:
         mae, total_valid = MAE(time_preds, time_true, event_true)
-        print('** MAE = {:.3f}; valid = {}, ACC = {:.3f}'.format(
+        print('** MAE = {:.6f}; valid = {}, ACC = {:.6f}'.format(
             mae, total_valid, ACC(event_preds, event_true)))
 
     def predict_test(self, data, single_threaded=False):

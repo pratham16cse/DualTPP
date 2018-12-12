@@ -2,8 +2,8 @@ import sys
 import numpy as np
 from collections import OrderedDict
 
-import reader
-from feature import getDatetime, timestampTotime
+from bitmap_model import reader
+from bitmap_model.feature import getDatetime, timestampTotime
 
 
 def createPerDayChunks(latlngList, data):
@@ -24,7 +24,6 @@ def createPerDayChunks(latlngList, data):
         for congList in instances.values():
             new_data.append(congList)
     #print(new_data)
-                
     return new_data
 
 
@@ -41,6 +40,15 @@ def sample(data):
 
     return new_data
 
+def normalize(data):
+    norm_data = list()
+    for loc in data:
+        min_ts = min(loc)
+        max_ts = max(loc)
+        norm_loc = [(ts - min_ts)*1.0/(max(max_ts - min_ts, 1.0)) for ts in loc]
+        norm_data.append(norm_loc)
+        assert len(loc) == len(norm_loc)
+    return norm_data
 
 def split_train_test(data):
     train_length = int(0.8 * len(data))
@@ -57,12 +65,12 @@ def writeToFile(filePath, data, typ=''):
             time_f.write(str(loc[-1]) + '\n') 
             event_f.write(str(1) + '\n') 
 
-
 def main():
     filePath = sys.argv[1]
     latlngList, data = reader.read(filePath)
     data = createPerDayChunks(latlngList, data)
     data = sample(data)
+    data = normalize(data)
     train_data, test_data = split_train_test(data)
     writeToFile(filePath, data)
     writeToFile(filePath, train_data, typ='train')
