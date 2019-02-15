@@ -487,7 +487,7 @@ class RMTPP:
                 batch_time_in, tsIndices, startingTs, endingTs, mask = time_in_itr.nextBatch(batchSize=self.BATCH_SIZE)
                 batch_time_out, _, _, _, _ = time_out_itr.nextBatch(batchSize=self.BATCH_SIZE)
                 batch_generation_et = time.time()
-                print('Generation of batch took {} seconds'.format(batch_generation_et-batch_generation_st))
+                #print('Generation of batch took {} seconds'.format(batch_generation_et-batch_generation_st))
                 #print('tsIndices:', tsIndices)
                 #print('startingTs:', startingTs)
                 #print('endingTs', endingTs)
@@ -539,18 +539,18 @@ class RMTPP:
                                            self.final_state, self.loss],
                                           feed_dict=feed_dict)
                         sess_et = time.time()
-                        print('Session took {} seconds.'.format(sess_et - sess_st))
+                        #print('Session took {} seconds.'.format(sess_et - sess_st))
 
                 batch_loss = loss_
 
                 total_loss += batch_loss
-                if batch_idx % 1000 == 0:
+                if batch_idx % 10 == 0:
                     print('Loss during batch {} last BPTT = {:.3f}, lr = {:.5f}'
                           .format(batch_idx, batch_loss, self.sess.run(self.learning_rate)))
 
                 batch_et = time.time()
-                print('Batch {} took {} seconds'.format(batch_idx, batch_et - batch_st))
-                print(currItr, time_in_itr.iterFinished, batch_idx)
+                #print('Batch {} took {} seconds'.format(batch_idx, batch_et - batch_st))
+                #print(currItr, time_in_itr.iterFinished, batch_idx)
 
             event_in_itr.reset()
             event_out_itr.reset()
