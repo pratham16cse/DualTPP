@@ -51,11 +51,12 @@ def read_data(event_train_file, event_test_file, time_train_file, time_test_file
     timeTrainIn = [[(y - minTime) / (maxTime - minTime) for y in x[:-1]] for x in timeTrain]
     timeTrainOut = [[(y - minTime) / (maxTime - minTime) for y in x[1:]] for x in timeTrain]
 
+    max_seq_len = max(itertools.chain((len(x) for x in timeTrain), (len(x) for x in timeTest)))
     if pad:
-        train_event_in_seq = pad_sequences(eventTrainIn, padding='post')
-        train_event_out_seq = pad_sequences(eventTrainOut, padding='post')
-        train_time_in_seq = pad_sequences(timeTrainIn, dtype=float, padding='post')
-        train_time_out_seq = pad_sequences(timeTrainOut, dtype=float, padding='post')
+        train_event_in_seq = pad_sequences(eventTrainIn, maxlen=max_seq_len, padding='post')
+        train_event_out_seq = pad_sequences(eventTrainOut, maxlen=max_seq_len, padding='post')
+        train_time_in_seq = pad_sequences(timeTrainIn, maxlen=max_seq_len, dtype=float, padding='post')
+        train_time_out_seq = pad_sequences(timeTrainOut, maxlen=max_seq_len, dtype=float, padding='post')
     else:
         train_event_in_seq = eventTrainIn
         train_event_out_seq = eventTrainOut
@@ -69,10 +70,10 @@ def read_data(event_train_file, event_test_file, time_train_file, time_test_file
     timeTestOut = [[(y - minTime) / (maxTime - minTime) for y in x[1:]] for x in timeTest]
 
     if pad:
-        test_event_in_seq = pad_sequences(eventTestIn, padding='post')
-        test_event_out_seq = pad_sequences(eventTestOut, padding='post')
-        test_time_in_seq = pad_sequences(timeTestIn, dtype=float, padding='post')
-        test_time_out_seq = pad_sequences(timeTestOut, dtype=float, padding='post')
+        test_event_in_seq = pad_sequences(eventTestIn, maxlen=max_seq_len, padding='post')
+        test_event_out_seq = pad_sequences(eventTestOut, maxlen=max_seq_len, padding='post')
+        test_time_in_seq = pad_sequences(timeTestIn, maxlen=max_seq_len, dtype=float, padding='post')
+        test_time_out_seq = pad_sequences(timeTestOut, maxlen=max_seq_len, dtype=float, padding='post')
     else:
         test_event_in_seq = eventTestIn
         test_event_out_seq = eventTestOut

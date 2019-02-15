@@ -582,7 +582,7 @@ class RMTPP:
 
         cur_state = np.zeros((len(event_in_seq), self.HIDDEN_LAYER_SIZE))
 
-        for bptt_idx in range(0, len(event_in_seq[0]) - self.BPTT, self.BPTT):
+        for bptt_idx in range(0, len(event_in_seq[0]) - len(event_in_seq[0]) % self.BPTT, self.BPTT):
             bptt_range = range(bptt_idx, (bptt_idx + self.BPTT))
             bptt_event_in = event_in_seq[:, bptt_range]
             bptt_time_in = time_in_seq[:, bptt_range]
