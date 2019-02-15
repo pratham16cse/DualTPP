@@ -478,7 +478,9 @@ class RMTPP:
                 batch_loss = 0.0
 
                 batch_num_events = np.sum(batch_event_train_in > 0)
-                for bptt_idx in range(0, len(batch_event_train_in[0]) - self.BPTT, self.BPTT):
+                # print('BPTT={}'.format(self.BPTT))
+                # print(batch_event_train_in.shape, batch_event_train_out.shape, batch_time_train_in.shape, batch_time_train_out.shape)
+                for bptt_idx in range(0, len(batch_event_train_in[0]) - len(batch_event_train_in[0]) % self.BPTT, self.BPTT):
                     bptt_range = range(bptt_idx, (bptt_idx + self.BPTT))
                     bptt_event_in = batch_event_train_in[:, bptt_range]
                     bptt_event_out = batch_event_train_out[:, bptt_range]
