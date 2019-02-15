@@ -38,7 +38,8 @@ def cmd(event_train_file, time_train_file, event_test_file, time_test_file,
     data['test_time_in_seq'] /= scale
 
     # Set def_opts.bptt = length of largest sequence
-    tf_rmtpp.rmtpp_core.def_opts = def_opts.set('bptt', data['train_time_in_seq'].shape[1])
+    max_seq_len = max(data['train_time_in_seq'].shape[1], data['test_time_in_seq'].shape[1])
+    tf_rmtpp.rmtpp_core.def_opts = def_opts.set('bptt', max_seq_len)
     print('data_shape:', data['train_time_in_seq'].shape)
     print('BPTT:', tf_rmtpp.rmtpp_core.def_opts.bptt)
 
