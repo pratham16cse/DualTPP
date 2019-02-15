@@ -1,10 +1,13 @@
 import tensorflow as tf
 import numpy as np
+import time
 import os
 import decorated_options as Deco
 from .utils import create_dir, variable_summaries, MAE, ACC
 from scipy.integrate import quad
 import multiprocessing as MP
+
+from .BatchGenerator import BatchGenerator
 
 
 __EMBED_SIZE = 4
@@ -28,6 +31,7 @@ def_opts = Deco.Options(
     summary_dir='./summary.rmtpp/',
 
     device_gpu='/gpu:0',
+    #device_gpu = '/job:localhost/replica:0/task:0/device:XLA_CPU:0',
     device_cpu='/cpu:0',
 
     bptt=20,
@@ -449,6 +453,11 @@ class RMTPP:
         train_event_out_seq = training_data['train_event_out_seq']
         train_time_out_seq = training_data['train_time_out_seq']
 
+        event_in_itr = BatchGenerator(train_event_in_seq, batchSeqLen=self.BPTT)
+        time_in_itr = BatchGenerator(train_time_in_seq, batchSeqLen=self.BPTT)
+        event_out_itr = BatchGenerator(train_event_out_seq, batchSeqLen=self.BPTT)
+        time_out_itr = BatchGenerator(train_time_out_seq, batchSeqLen=self.BPTT)
+
         idxes = list(range(len(train_event_in_seq)))
         n_batches = len(idxes) // self.BATCH_SIZE
 
@@ -458,7 +467,11 @@ class RMTPP:
             print("Starting epoch...", epoch)
             total_loss = 0.0
 
-            for batch_idx in range(n_batches):
+            batch_idx = 0
+            currItr = time_in_itr.iterFinished
+            while currItr == time_in_itr.iterFinished:
+                batch_st = time.time()
+                batch_idx += 1
                 # TODO: This is horribly inefficient. Move this to a separate
                 # thread using FIFOQueues.
                 # However, the previous state from BPTT still needs to be
@@ -468,73 +481,81 @@ class RMTPP:
                 #  - Sounds like a job for tf.placeholder_with_default?
                 #  - Or, of a variable with optinal default?
 
-                batch_idxes = idxes[batch_idx * self.BATCH_SIZE:(batch_idx + 1) * self.BATCH_SIZE]
-                batch_event_train_in = train_event_in_seq[batch_idxes, :]
-                batch_event_train_out = train_event_out_seq[batch_idxes, :]
-                batch_time_train_in = train_time_in_seq[batch_idxes, :]
-                batch_time_train_out = train_time_out_seq[batch_idxes, :]
+                batch_generation_st = time.time()
+                batch_event_in, _, _, _, _ = event_in_itr.nextBatch(batchSize=self.BATCH_SIZE)
+                batch_event_out, _, _, _, _ = event_out_itr.nextBatch(batchSize=self.BATCH_SIZE)
+                batch_time_in, tsIndices, startingTs, endingTs, mask = time_in_itr.nextBatch(batchSize=self.BATCH_SIZE)
+                batch_time_out, _, _, _, _ = time_out_itr.nextBatch(batchSize=self.BATCH_SIZE)
+                batch_generation_et = time.time()
+                print('Generation of batch took {} seconds'.format(batch_generation_et-batch_generation_st))
+                #print('tsIndices:', tsIndices)
+                #print('startingTs:', startingTs)
+                #print('endingTs', endingTs)
 
                 cur_state = np.zeros((self.BATCH_SIZE, self.HIDDEN_LAYER_SIZE))
-                batch_loss = 0.0
 
-                batch_num_events = np.sum(batch_event_train_in > 0)
-                for bptt_idx in range(0, len(batch_event_train_in[0]) - self.BPTT, self.BPTT):
-                    bptt_range = range(bptt_idx, (bptt_idx + self.BPTT))
-                    bptt_event_in = batch_event_train_in[:, bptt_range]
-                    bptt_event_out = batch_event_train_out[:, bptt_range]
-                    bptt_time_in = batch_time_train_in[:, bptt_range]
-                    bptt_time_out = batch_time_train_out[:, bptt_range]
+                batch_num_events = np.sum(batch_event_in > 0)
 
-                    if np.all(bptt_event_in[:, 0] == 0):
-                        # print('Breaking at bptt_idx {} / {}'
-                        #       .format(bptt_idx // self.BPTT,
-                        #               (len(batch_event_train_in[0]) - self.BPTT) // self.BPTT))
-                        break
+                #if np.all(batch_event_in[:, 0] == 0):
+                #    # print('Breaking at bptt_idx {} / {}'
+                #    #       .format(bptt_idx // self.BPTT,
+                #    #               (len(batch_event_train_in[0]) - self.BPTT) // self.BPTT))
+                #    break
 
-                    if bptt_idx > 0:
-                        initial_time = batch_time_train_in[:, bptt_idx - 1]
+                initial_time = np.zeros(batch_time_in.shape[0])
+
+                feed_dict = {
+                    self.initial_state: cur_state,
+                    self.initial_time: initial_time,
+                    self.events_in: batch_event_in,
+                    self.events_out: batch_event_out,
+                    self.times_in: batch_time_in,
+                    self.times_out: batch_time_out,
+                    self.batch_num_events: batch_num_events
+                }
+
+                if check_nans:
+                    raise NotImplemented('tf.add_check_numerics_ops is '
+                                         'incompatible with tf.cond and '
+                                         'tf.while_loop.')
+                    # _, _, cur_state, loss_ = \
+                    #     self.sess.run([self.check_nan, self.update,
+                    #                    self.final_state, self.loss],
+                    #                   feed_dict=feed_dict)
+                else:
+                    if with_summaries:
+                        _, summaries, cur_state, loss_, step = \
+                            self.sess.run([self.update,
+                                           self.tf_merged_summaries,
+                                           self.final_state,
+                                           self.loss,
+                                           self.global_step],
+                                          feed_dict=feed_dict)
+                        train_writer.add_summary(summaries, step)
                     else:
-                        initial_time = np.zeros(batch_time_train_in.shape[0])
+                        sess_st = time.time()
+                        _, cur_state, loss_ = \
+                            self.sess.run([self.update,
+                                           self.final_state, self.loss],
+                                          feed_dict=feed_dict)
+                        sess_et = time.time()
+                        print('Session took {} seconds.'.format(sess_et - sess_st))
 
-                    feed_dict = {
-                        self.initial_state: cur_state,
-                        self.initial_time: initial_time,
-                        self.events_in: bptt_event_in,
-                        self.events_out: bptt_event_out,
-                        self.times_in: bptt_time_in,
-                        self.times_out: bptt_time_out,
-                        self.batch_num_events: batch_num_events
-                    }
-
-                    if check_nans:
-                        raise NotImplemented('tf.add_check_numerics_ops is '
-                                             'incompatible with tf.cond and '
-                                             'tf.while_loop.')
-                        # _, _, cur_state, loss_ = \
-                        #     self.sess.run([self.check_nan, self.update,
-                        #                    self.final_state, self.loss],
-                        #                   feed_dict=feed_dict)
-                    else:
-                        if with_summaries:
-                            _, summaries, cur_state, loss_, step = \
-                                self.sess.run([self.update,
-                                               self.tf_merged_summaries,
-                                               self.final_state,
-                                               self.loss,
-                                               self.global_step],
-                                              feed_dict=feed_dict)
-                            train_writer.add_summary(summaries, step)
-                        else:
-                            _, cur_state, loss_ = \
-                                self.sess.run([self.update,
-                                               self.final_state, self.loss],
-                                              feed_dict=feed_dict)
-                    batch_loss += loss_
+                batch_loss = loss_
 
                 total_loss += batch_loss
-                if batch_idx % 10 == 0:
+                if batch_idx % 1000 == 0:
                     print('Loss during batch {} last BPTT = {:.3f}, lr = {:.5f}'
                           .format(batch_idx, batch_loss, self.sess.run(self.learning_rate)))
+
+                batch_et = time.time()
+                print('Batch {} took {} seconds'.format(batch_idx, batch_et - batch_st))
+                print(currItr, time_in_itr.iterFinished, batch_idx)
+
+            event_in_itr.reset()
+            event_out_itr.reset()
+            time_in_itr.reset()
+            time_out_itr.reset()
 
             # self.sess.run(self.increment_global_step)
             print('Loss on last epoch = {:.4f}, new lr = {:.5f}, global_step = {}'

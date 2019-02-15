@@ -39,7 +39,7 @@ def cmd(event_train_file, time_train_file, event_test_file, time_test_file,
 
     # Set def_opts.bptt = length of largest sequence
     tf_rmtpp.rmtpp_core.def_opts = def_opts.set('bptt', data['train_time_in_seq'].shape[1])
-    print('data_shape:', data['train_time_in_seq'].shape[1])
+    print('data_shape:', data['train_time_in_seq'].shape)
     print('BPTT:', tf_rmtpp.rmtpp_core.def_opts.bptt)
 
     tf.reset_default_graph()
@@ -52,7 +52,7 @@ def cmd(event_train_file, time_train_file, event_test_file, time_test_file,
         num_categories=data['num_categories'],
         summary_dir=summary_dir if summary_dir is not None else tempfile.mkdtemp(),
         batch_size=batch_size,
-        bptt=bptt,
+        bptt=tf_rmtpp.rmtpp_core.def_opts.bptt,
         learning_rate=learning_rate,
         cpu_only=cpu_only,
         _opts=tf_rmtpp.rmtpp_core.def_opts

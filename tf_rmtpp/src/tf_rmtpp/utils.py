@@ -42,9 +42,9 @@ def read_data(event_train_file, event_test_file, time_train_file, time_test_file
     for x in eventTrain + eventTest:
         unique_samples = unique_samples.union(x)
 
-    maxTime = max(itertools.chain((max(x) for x in timeTrain), (max(x) for x in timeTest)))
-    minTime = min(itertools.chain((min(x) for x in timeTrain), (min(x) for x in timeTest)))
-    # minTime, maxTime = 0, 1
+    #maxTime = max(itertools.chain((max(x) for x in timeTrain), (max(x) for x in timeTest)))
+    #minTime = min(itertools.chain((min(x) for x in timeTrain), (min(x) for x in timeTest)))
+    minTime, maxTime = 0, 1
 
     eventTrainIn = [x[:-1] for x in eventTrain]
     eventTrainOut = [x[1:] for x in eventTrain]
