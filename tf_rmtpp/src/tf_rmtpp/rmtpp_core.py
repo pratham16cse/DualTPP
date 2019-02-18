@@ -545,8 +545,8 @@ class RMTPP:
 
                 total_loss += batch_loss
                 if batch_idx % 10 == 0:
-                    print('Loss during batch {} last BPTT = {:.3f}, lr = {:.5f}'
-                          .format(batch_idx, batch_loss, self.sess.run(self.learning_rate)))
+                    print('Loss during batch {} last BPTT = {:.3f}, total loss = {:.3f}, lr = {:.5f}'
+                          .format(batch_idx, batch_loss, total_loss, self.sess.run(self.learning_rate)))
 
                 batch_et = time.time()
                 #print('Batch {} took {} seconds'.format(batch_idx, batch_et - batch_st))
