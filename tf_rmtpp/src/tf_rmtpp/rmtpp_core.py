@@ -27,6 +27,7 @@ def_opts = Deco.Options(
 
     seed=42,
     scope='RMTPP',
+    gtVsPredOutputFile='./output.pkl',
     save_dir='./save.rmtpp/',
     summary_dir='./summary.rmtpp/',
 
