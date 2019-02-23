@@ -14,6 +14,10 @@ __EMBED_SIZE = 4
 __HIDDEN_LAYER_SIZE = 16  # 64, 128, 256, 512, 1024
 
 def_opts = Deco.Options(
+    normalize=False,
+    minTime=0,
+    maxTime=1,
+
     batch_size=64,          # 16, 32, 64
 
     learning_rate=0.1,      # 0.1, 0.01, 0.001
@@ -68,11 +72,14 @@ class RMTPP:
     """Class implementing the Recurrent Marked Temporal Point Process model."""
 
     @Deco.optioned()
-    def __init__(self, sess, num_categories, batch_size,
+    def __init__(self, sess, num_categories, normalize, minTime, maxTime, batch_size,
                  learning_rate, momentum, l2_penalty, embed_size,
                  float_type, bptt, seed, scope, save_dir, decay_steps, decay_rate,
                  device_gpu, device_cpu, summary_dir, cpu_only,
                  Wt, Wem, Wh, bh, wt, Wy, Vy, Vt, bk, bt):
+        self.NORMALIZE = normalize
+        self.minTime = minTime
+        self.maxTime = maxTime
         self.HIDDEN_LAYER_SIZE = Wh.shape[0]
         self.BATCH_SIZE = batch_size
         self.LEARNING_RATE = learning_rate
@@ -651,7 +658,10 @@ class RMTPP:
             with MP.Pool() as pool:
                 all_time_preds = pool.map(_quad_worker, enumerate(all_hidden_states))
 
-        return np.asarray(all_time_preds).T, np.asarray(all_event_preds).swapaxes(0, 1)
+        all_time_preds = np.asarray(all_time_preds).T
+        all_time_preds = all_time_preds * (self.maxTime - self.minTime) + self.minTime
+
+        return all_time_preds, np.asarray(all_event_preds).swapaxes(0, 1)
 
     def eval(self, time_preds, time_true, event_preds, event_true):
         """Prints evaluation of the model on the given dataset."""

@@ -17,7 +17,7 @@ def create_dir(dirname):
 
 
 def read_data(event_train_file, event_test_file, time_train_file, time_test_file,
-              pad=True):
+              pad=True, normalize=False):
     """Read data from given files and return it as a dictionary."""
 
     with open(event_train_file, 'r') as in_file:
@@ -42,9 +42,11 @@ def read_data(event_train_file, event_test_file, time_train_file, time_test_file
     for x in eventTrain + eventTest:
         unique_samples = unique_samples.union(x)
 
-    #maxTime = max(itertools.chain((max(x) for x in timeTrain), (max(x) for x in timeTest)))
-    #minTime = min(itertools.chain((min(x) for x in timeTrain), (min(x) for x in timeTest)))
-    minTime, maxTime = 0, 1
+    if normalize:
+        maxTime = max(itertools.chain((max(x) for x in timeTrain), (max(x) for x in timeTest)))
+        minTime = min(itertools.chain((min(x) for x in timeTrain), (min(x) for x in timeTest)))
+    else:
+        minTime, maxTime = 0, 1
 
     eventTrainIn = [x[:-1] for x in eventTrain]
     eventTrainOut = [x[1:] for x in eventTrain]
@@ -93,7 +95,10 @@ def read_data(event_train_file, event_test_file, time_train_file, time_test_file
         'test_time_in_seq': test_time_in_seq,
         'test_time_out_seq': test_time_out_seq,
 
-        'num_categories': len(unique_samples)
+        'num_categories': len(unique_samples),
+
+        'maxTime': maxTime,
+        'minTime': minTime,
     }
 
 

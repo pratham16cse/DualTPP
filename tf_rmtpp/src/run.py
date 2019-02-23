@@ -13,6 +13,7 @@ def_opts = tf_rmtpp.rmtpp_core.def_opts
 @click.argument('event_test_file')
 @click.argument('time_test_file')
 @click.option('--epochs', 'num_epochs', help='How many epochs to train for.', default=1)
+@click.option('--normalize/--no-normalize', 'normalize', help='Normalize times', default=def_opts.normalize)
 @click.option('--restart/--no-restart', 'restart', help='Can restart from a saved model from the summary folder, if available.', default=False)
 @click.option('--train-eval/--no-train-eval', 'train_eval', help='Should evaluate the model on training data?', default=False)
 @click.option('--test-eval/--no-test-eval', 'test_eval', help='Should evaluate the model on test data?', default=True)
@@ -27,13 +28,15 @@ def_opts = tf_rmtpp.rmtpp_core.def_opts
 @click.option('--save', 'save_dir', help='Which folder to checkpoint to.', default=None)
 def cmd(event_train_file, time_train_file, event_test_file, time_test_file,
         summary_dir, save_dir, num_epochs, restart, train_eval, test_eval, scale,
-        batch_size, bptt, learning_rate, cpu_only, seed, gtVsPredOutputFile):
+        batch_size, bptt, learning_rate, cpu_only, seed, gtVsPredOutputFile, normalize):
     """Read data from EVENT_TRAIN_FILE, TIME_TRAIN_FILE and try to predict the values in EVENT_TEST_FILE, TIME_TEST_FILE."""
+    #print('Normalize:', normalize)
     data = tf_rmtpp.utils.read_data(
         event_train_file=event_train_file,
         event_test_file=event_test_file,
         time_train_file=time_train_file,
-        time_test_file=time_test_file
+        time_test_file=time_test_file,
+        normalize=normalize
     )
 
     data['train_time_out_seq'] /= scale
@@ -51,13 +54,16 @@ def cmd(event_train_file, time_train_file, event_test_file, time_test_file,
     sess = tf.Session()
 
     tf_rmtpp.utils.data_stats(data)
-    print(gtVsPredOutputFile)
+    #print(gtVsPredOutputFile)
 
     rmtpp_mdl = tf_rmtpp.rmtpp_core.RMTPP(
         sess=sess,
         num_categories=data['num_categories'],
         summary_dir=summary_dir if summary_dir is not None else tempfile.mkdtemp(),
         save_dir=save_dir if save_dir is not None else tempfile.mkdtemp(),
+        normalize=normalize,
+        minTime=data['minTime'],
+        maxTime=data['maxTime'],
         batch_size=batch_size,
         bptt=tf_rmtpp.rmtpp_core.def_opts.bptt,
         learning_rate=learning_rate,
@@ -66,7 +72,7 @@ def cmd(event_train_file, time_train_file, event_test_file, time_test_file,
         gtVsPredOutputFile=gtVsPredOutputFile,
         _opts=tf_rmtpp.rmtpp_core.def_opts
     )
-    print(gtVsPredOutputFile)
+    #print(gtVsPredOutputFile)
 
     # TODO: The finalize here has to be false because tf.global_variables()
     # creates a new graph node (why?). Hence, need to be extra careful while
@@ -89,6 +95,8 @@ def cmd(event_train_file, time_train_file, event_test_file, time_test_file,
         rmtpp_mdl.eval(test_time_preds, data['test_time_out_seq'],
                        test_event_preds, data['test_event_out_seq'])
         with open(gtVsPredOutputFile, 'wb') as f:
+            pickle.dump(data['test_time_out_seq'], f)
+            pickle.dump(data['test_event_out_seq'], f)
             pickle.dump(test_time_preds, f)
             pickle.dump(test_event_preds, f)
 
