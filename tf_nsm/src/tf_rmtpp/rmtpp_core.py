@@ -44,7 +44,7 @@ def_opts = Deco.Options(
     Vy=lambda num_categories: np.ones((__HIDDEN_LAYER_SIZE, num_categories)) * 0.001,
     Vt=np.ones((__HIDDEN_LAYER_SIZE, 1)) * 0.001,
     bt=np.log(1.0), # bt is provided by the base_rate
-    bk=lambda num_categories: np.ones((1, num_categories)) * 0.0
+    bk=lambda num_categories: np.ones((1, num_categories)) * 0.0,
 )
 
 
@@ -68,7 +68,6 @@ class RMTPP:
                  float_type, bptt, seed, scope, save_dir, decay_steps, decay_rate,
                  device_gpu, device_cpu, summary_dir, cpu_only,
                  Wt, Wem, Wh, bh, wt, Wy, Vy, Vt, bk, bt):
-        self.HIDDEN_LAYER_SIZE = Wh.shape[0]
         self.BATCH_SIZE = batch_size
         self.LEARNING_RATE = learning_rate
         self.MOMENTUM = momentum
@@ -84,6 +83,7 @@ class RMTPP:
         self.DEVICE_CPU = device_cpu
         self.DEVICE_GPU = device_gpu
 
+        self.HIDDEN_LAYER_SIZE = Wh.shape[0]
         self.sess = sess
         self.seed = seed
         self.last_epoch = 0
@@ -657,3 +657,292 @@ class RMTPP:
         return self.predict(event_in_seq=data['train_event_in_seq'][0:batch_size, :],
                             time_in_seq=data['train_time_in_seq'][0:batch_size, :],
                             single_threaded=single_threaded)
+
+class NSM(RMTPP):
+    """Class implementing NSM"""
+
+    @Deco.optioned()
+    def __init__(self, sess, num_categories, batch_size, learning_rate, momentum, 
+        l2_penalty, embed_size, float_type, bptt, seed, scope, save_dir, decay_steps,
+        decay_rate, device_gpu, device_cpu, summary_dir, cpu_only, Wem, Wt, Wy, Wh, bh, Vt, bt, Vy, bk):
+        
+        # super(NSM, self).__init__()
+        self.NUM_CATEGORIES = num_categories
+        self.BATCH_SIZE = batch_size
+        self.LEARNING_RATE = learning_rate
+        self.MOMENTUM = momentum
+        self.L2_PENALTY = l2_penalty
+        self.EMBED_SIZE = embed_size
+        self.FLOAT_TYPE = float_type
+        self.BPTT = bptt
+        self.SCOPE = scope
+        self.SAVE_DIR = save_dir
+        self.DECAY_STEPS = decay_steps
+        self.DECAY_RATE = decay_rate
+        self.DEVICE_GPU = device_gpu
+        self.DEVICE_CPU = device_cpu
+        self.SUMMARY_DIR = summary_dir
+        self.CPU_ONLY = cpu_only
+        
+        self.HIDDEN_LAYER_SIZE = Wh.shape[0]
+        self.sess = sess
+        self.seed = seed
+        self.last_epoch = 0
+
+        self.rs = np.random.RandomState(seed + 42)
+
+        print('Checking for running NSM seed:', seed)
+
+        with tf.variable_scope(scope):
+            with tf.device(device_gpu if not cpu_only else device_cpu):
+                # Make input variables
+                self.events_in = tf.placeholder(tf.int32, [None, self.BPTT], name='events_in')
+                self.times_in = tf.placeholder(self.FLOAT_TYPE, [None, self.BPTT], name='times_in')
+
+                self.events_out = tf.placeholder(tf.int32, [None, self.BPTT], name='events_out')
+                self.times_out = tf.placeholder(self.FLOAT_TYPE, [None, self.BPTT], name='times_out')
+
+                self.batch_num_events = tf.placeholder(self.FLOAT_TYPE, [], name='bptt_events')
+
+                self.inf_batch_size = tf.shape(self.events_in)[0]
+
+                # Make variables
+                with tf.variable_scope('hidden_state'):
+                    self.Wt = tf.get_variable(name='Wt',
+                                              shape=(1, self.HIDDEN_LAYER_SIZE),
+                                              dtype=self.FLOAT_TYPE,
+                                              initializer=tf.constant_initializer(Wt))
+
+                    # TODO: Generalize to multiple marks (need to be predicted
+                    # for future events) and context for the present event
+                    # (which need not be predicted).
+                    # self.Wem will be converted to a list of embedding
+                    # matrices depending on the number of marks or contexts
+                    # each event has.
+                    # A similar self.Wctx will also be needed to embed
+                    # contextual data.
+                    # The marks can then be independently constructed from the
+                    # hidden state by a similar list of matrices from self.Wy.
+                    self.Wem = tf.get_variable(name='Wem', shape=(self.NUM_CATEGORIES, self.EMBED_SIZE),
+                                               dtype=self.FLOAT_TYPE,
+                                               initializer=tf.constant_initializer(Wem(self.NUM_CATEGORIES)))
+                    self.Wh = tf.get_variable(name='Wh', shape=(self.HIDDEN_LAYER_SIZE, self.HIDDEN_LAYER_SIZE),
+                                              dtype=self.FLOAT_TYPE,
+                                              initializer=tf.constant_initializer(Wh))
+                    self.bh = tf.get_variable(name='bh', shape=(1, self.HIDDEN_LAYER_SIZE),
+                                              dtype=self.FLOAT_TYPE,
+                                              initializer=tf.constant_initializer(bh))
+
+                with tf.variable_scope('output'):
+                    self.Wy = tf.get_variable(name='Wy', shape=(self.EMBED_SIZE, self.HIDDEN_LAYER_SIZE),
+                                              dtype=self.FLOAT_TYPE,
+                                              initializer=tf.constant_initializer(Wy))
+
+                    self.Vt = tf.get_variable(name='Vt', shape=(self.HIDDEN_LAYER_SIZE, 1),
+                                              dtype=self.FLOAT_TYPE,
+                                              initializer=tf.constant_initializer(Vt))
+                    self.bt = tf.get_variable(name='bt', shape=(1, 1),
+                                              dtype=self.FLOAT_TYPE,
+                                              initializer=tf.constant_initializer(bt))
+                    # The first column of Vy is merely a placeholder (will not be trained).
+                    self.Vy = tf.get_variable(name='Vy', shape=(self.HIDDEN_LAYER_SIZE, self.NUM_CATEGORIES),
+                                              dtype=self.FLOAT_TYPE,
+                                              initializer=tf.constant_initializer(Vy(self.NUM_CATEGORIES)))
+                    self.bk = tf.get_variable(name='bk', shape=(1, self.NUM_CATEGORIES),
+                                              dtype=self.FLOAT_TYPE,
+                                              initializer=tf.constant_initializer(bk(num_categories)))
+
+                self.all_vars = [self.Wt, self.Wem, self.Wh, self.bh,
+                                 self.Wy, self.Vy, self.Vt, self.bt, self.bk]
+
+                # Add summaries for all (trainable) variables
+                with tf.device(device_cpu):
+                    for v in self.all_vars:
+                        variable_summaries(v)
+
+                # Make graph
+                # RNNcell = RNN_CELL_TYPE(HIDDEN_LAYER_SIZE)
+
+                # Initial state for GRU cells
+                self.initial_state = state = tf.zeros([self.inf_batch_size, self.HIDDEN_LAYER_SIZE],
+                                                      dtype=self.FLOAT_TYPE,
+                                                      name='initial_state')
+                self.initial_time = last_time = tf.zeros((self.inf_batch_size,),
+                                                         dtype=self.FLOAT_TYPE,
+                                                         name='initial_time')
+
+                self.loss = 0.0
+                ones_2d = tf.ones((self.inf_batch_size, 1), dtype=self.FLOAT_TYPE)
+                # ones_1d = tf.ones((self.inf_batch_size,), dtype=self.FLOAT_TYPE)
+
+                self.hidden_states = []
+                self.event_preds = []
+
+                self.time_LLs = []
+                self.mark_LLs = []
+                self.log_lambdas = []
+                # self.delta_ts = []
+                self.times = []
+                # self.tf_init = tf.global_variables_initializer()
+
+                with tf.name_scope('BPTT'):
+                    print("BPTT in loop: ", self.BPTT)
+                    for i in range(self.BPTT):
+
+                        print("in loop ", i)
+                        events_embedded = tf.nn.embedding_lookup(self.Wem,
+                                                                 tf.mod(self.events_in[:, i] - 1, self.NUM_CATEGORIES))
+                        time = self.times_in[:, i]
+                        time_next = self.times_out[:, i]
+
+                        delta_t_prev = tf.expand_dims(time - last_time, axis=-1)
+                        delta_t_next = tf.expand_dims(time_next - time, axis=-1)
+
+                        last_time = time
+
+                        time_2d = tf.expand_dims(time, axis=-1)
+
+                        # output, state = RNNcell(events_embedded, state)
+
+                        # TODO Does TF automatically broadcast? Then we'll not
+                        # need multiplication with tf.ones
+                        type_delta_t = True
+
+                        with tf.name_scope('state_recursion'):
+                            new_state = tf.tanh(
+                                tf.matmul(state, self.Wh) +
+                                tf.matmul(events_embedded, self.Wy) +
+                                # Two ways of interpretting this term
+                                (tf.matmul(delta_t_prev, self.Wt) if type_delta_t else tf.matmul(time_2d, self.Wt)) +
+                                tf.matmul(ones_2d, self.bh),
+                                name='h_t'
+                            )
+                            state = tf.where(self.events_in[:, i] > 0, new_state, state)
+
+                        with tf.name_scope('loss_calc'):
+                            base_intensity = tf.matmul(ones_2d, self.bt)
+                            # wt_non_zero = tf.sign(self.wt) * tf.maximum(1e-9, tf.abs(self.wt))
+
+                            # wt_soft_plus = tf.nn.softplus(self.wt)
+
+                            log_lambda_ = (tf.matmul(state, self.Vt) +
+                                           base_intensity)
+
+                            # lambda_ = tf.exp(tf.minimum(50.0, log_lambda_), name='lambda_')
+                            lambda_ = tf.log(1+tf.exp(tf.minimum(50.0, log_lambda_)), name='lambda_')
+
+                            # print(lambda_)
+
+
+                #             log_f_star = (log_lambda_ -
+                #                           (1.0 / wt_soft_plus) * tf.exp(tf.minimum(50.0, tf.matmul(state, self.Vt) + base_intensity)) +
+                #                           (1.0 / wt_soft_plus) * lambda_)
+
+                #             events_pred = tf.nn.softmax(
+                #                 tf.minimum(50.0,
+                #                            tf.matmul(state, self.Vy) + ones_2d * self.bk),
+                #                 name='Pr_events'
+                #             )
+
+                #             time_LL = log_f_star
+                #             mark_LL = tf.expand_dims(
+                #                 tf.log(
+                #                     tf.maximum(
+                #                         1e-6,
+                #                         tf.gather_nd(
+                #                             events_pred,
+                #                             tf.concat([
+                #                                 tf.expand_dims(tf.range(self.inf_batch_size), -1),
+                #                                 tf.expand_dims(tf.mod(self.events_out[:, i] - 1, self.NUM_CATEGORIES), -1)
+                #                             ], axis=1, name='Pr_next_event'
+                #                             )
+                #                         )
+                #                     )
+                #                 ), axis=-1, name='log_Pr_next_event'
+                #             )
+                #             step_LL = time_LL + mark_LL
+
+                #             # In the batch some of the sequences may have ended before we get to the
+                #             # end of the seq. In such cases, the events will be zero.
+                #             # TODO Figure out how to do this with RNNCell, LSTM, etc.
+                #             num_events = tf.reduce_sum(tf.where(self.events_in[:, i] > 0,
+                #                                        tf.ones(shape=(self.inf_batch_size,), dtype=self.FLOAT_TYPE),
+                #                                        tf.zeros(shape=(self.inf_batch_size,), dtype=self.FLOAT_TYPE)),
+                #                                        name='num_events')
+
+                #             self.loss -= tf.reduce_sum(
+                #                 tf.where(self.events_in[:, i] > 0,
+                #                          tf.squeeze(step_LL) / self.batch_num_events,
+                #                          tf.zeros(shape=(self.inf_batch_size,)))
+                #             )
+
+                #         self.time_LLs.append(time_LL)
+                #         self.mark_LLs.append(mark_LL)
+                #         self.log_lambdas.append(log_lambda_)
+
+                #         self.hidden_states.append(state)
+                #         self.event_preds.append(events_pred)
+
+                #         # self.delta_ts.append(tf.clip_by_value(delta_t, 0.0, np.inf))
+                        # self.times.append(time)
+
+                # self.final_state = self.hidden_states[-1]
+
+                # with tf.device(device_cpu):
+                #     # Global step needs to be on the CPU (Why?)
+                #     self.global_step = tf.Variable(0, name='global_step', trainable=False)
+
+                # self.learning_rate = tf.train.inverse_time_decay(self.LEARNING_RATE,
+                #                                                  global_step=self.global_step,
+                #                                                  decay_steps=decay_steps,
+                #                                                  decay_rate=decay_rate)
+                # # self.global_step is incremented automatically by the
+                # # optimizer.
+
+                # # self.increment_global_step = tf.assign(
+                # #     self.global_step,
+                # #     self.global_step + 1,
+                # #     name='update_global_step'
+                # # )
+
+                # # self.optimizer = tf.train.GradientDescentOptimizer(learning_rate=self.learning_rate)
+
+                # self.optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate,
+                #                                           beta1=self.MOMENTUM)
+
+                # # Capping the gradient before minimizing.
+                # # update = optimizer.minimize(loss)
+
+                # # Performing manual gradient clipping.
+                # self.gvs = self.optimizer.compute_gradients(self.loss)
+                # # update = optimizer.apply_gradients(gvs)
+
+                # # capped_gvs = [(tf.clip_by_norm(grad, 100.0), var) for grad, var in gvs]
+                # grads, vars_ = list(zip(*self.gvs))
+
+                # self.norm_grads, self.global_norm = tf.clip_by_global_norm(grads, 10.0)
+                # capped_gvs = list(zip(self.norm_grads, vars_))
+
+                # with tf.device(device_cpu):
+                #     tf.contrib.training.add_gradients_summaries(self.gvs)
+                #     # for g, v in zip(grads, vars_):
+                #     #     variable_summaries(g, name='grad-' + v.name.split('/')[-1][:-2])
+
+                #     variable_summaries(self.loss, name='loss')
+                #     variable_summaries(self.hidden_states, name='agg-hidden-states')
+                #     variable_summaries(self.event_preds, name='agg-event-preds-softmax')
+                #     variable_summaries(self.time_LLs, name='agg-time-LL')
+                #     variable_summaries(self.mark_LLs, name='agg-mark-LL')
+                #     variable_summaries(self.time_LLs + self.mark_LLs, name='agg-total-LL')
+                #     # variable_summaries(self.delta_ts, name='agg-delta-ts')
+                #     variable_summaries(self.times, name='agg-times')
+                #     variable_summaries(self.log_lambdas, name='agg-log-lambdas')
+                #     variable_summaries(tf.nn.softplus(self.wt), name='wt-soft-plus')
+
+                #     self.tf_merged_summaries = tf.summary.merge_all()
+
+                # self.update = self.optimizer.apply_gradients(capped_gvs,
+                #                                              global_step=self.global_step)
+
+                # self.tf_init = tf.global_variables_initializer()
+        
