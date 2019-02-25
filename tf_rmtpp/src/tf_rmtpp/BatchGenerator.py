@@ -74,7 +74,7 @@ class BatchGenerator:
             self.iterFinished += 1
             #self.reset()
 
-        return batch, tsIndices, startingTs, endingTs, mask
+        return batch, tsIndices, startingTs, endingTs, np.array(mask, dtype=np.bool)
 
 if __name__ == "__main__":
     iterable = [[[11],[12],[13],[14],[15],[16]],

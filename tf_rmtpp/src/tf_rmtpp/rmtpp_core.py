@@ -609,30 +609,39 @@ class RMTPP:
 
         cur_state = np.zeros((len(event_in_seq), self.HIDDEN_LAYER_SIZE))
 
-        for bptt_idx in range(0, len(event_in_seq[0]) - len(event_in_seq[0]) % self.BPTT, self.BPTT):
-            bptt_range = range(bptt_idx, (bptt_idx + self.BPTT))
-            bptt_event_in = event_in_seq[:, bptt_range]
-            bptt_time_in = time_in_seq[:, bptt_range]
+        event_in_itr = BatchGenerator(event_in_seq, batchSeqLen=self.BPTT)
+        time_in_itr = BatchGenerator(time_in_seq, batchSeqLen=self.BPTT)
 
-            if bptt_idx > 0:
-                initial_time = event_in_seq[:, bptt_idx - 1]
-            else:
-                initial_time = np.zeros(bptt_time_in.shape[0])
+        batch_idx = 0
+        currItr = time_in_itr.iterFinished
+        while currItr == time_in_itr.iterFinished:
+            batch_st = time.time()
+            batch_idx += 1
+
+            batch_generation_st = time.time()
+            batch_event_in, _, _, _, _ = event_in_itr.nextBatch(batchSize=time_in_seq.shape[0])
+            batch_time_in, tsIndices, startingTs, endingTs, mask = time_in_itr.nextBatch(batchSize=time_in_seq.shape[0])
+            batch_generation_et = time.time()
+
+            cur_state = np.zeros((batch_time_in.shape[0], self.HIDDEN_LAYER_SIZE))
+
+            initial_time = np.zeros(batch_time_in.shape[0])
 
             feed_dict = {
                 self.initial_state: cur_state,
                 self.initial_time: initial_time,
-                self.events_in: bptt_event_in,
-                self.times_in: bptt_time_in,
+                self.events_in: batch_event_in,
+                self.times_in: batch_time_in,
             }
 
-            bptt_hidden_states, bptt_events_pred, cur_state = self.sess.run(
+            batch_hidden_states, batch_events_pred, cur_state = self.sess.run(
                 [self.hidden_states, self.event_preds, self.final_state],
                 feed_dict=feed_dict
             )
 
-            all_hidden_states.extend(bptt_hidden_states)
-            all_event_preds.extend(bptt_events_pred)
+            all_hidden_states.extend(batch_hidden_states)
+            all_event_preds.extend(batch_events_pred)
+
 
         # TODO: This calculation is completely ignoring the clipping which
         # happens during the inference step.
@@ -663,10 +672,10 @@ class RMTPP:
 
         return all_time_preds, np.asarray(all_event_preds).swapaxes(0, 1)
 
-    def eval(self, time_preds, time_true, event_preds, event_true):
+    def eval(self, time_preds, time_true, event_preds, event_true, seq_lens):
         """Prints evaluation of the model on the given dataset."""
         # Print test error once every epoch:
-        mae, total_valid = MAE(time_preds, time_true, event_true)
+        mae, total_valid = MAE(time_preds, time_true, event_true, seq_lens)
         print('** MAE = {:.6f}; valid = {}, ACC = {:.6f}'.format(
             mae, total_valid, ACC(event_preds, event_true)))
 

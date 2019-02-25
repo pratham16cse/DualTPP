@@ -86,14 +86,16 @@ def cmd(event_train_file, time_train_file, event_test_file, time_test_file,
         print('\nEvaluation on training data:')
         train_time_preds, train_event_preds = rmtpp_mdl.predict_train(data=data)
         rmtpp_mdl.eval(train_time_preds, data['train_time_out_seq'],
-                       train_event_preds, data['train_event_out_seq'])
+                       train_event_preds, data['train_event_out_seq'],
+                       data['train_seq_lens'])
         print()
 
     if test_eval:
         print('\nEvaluation on testing data:')
         test_time_preds, test_event_preds = rmtpp_mdl.predict_test(data=data)
         rmtpp_mdl.eval(test_time_preds, data['test_time_out_seq'],
-                       test_event_preds, data['test_event_out_seq'])
+                       test_event_preds, data['test_event_out_seq'],
+                       data['test_seq_lens'])
         with open(gtVsPredOutputFile, 'wb') as f:
             pickle.dump(data['test_time_out_seq'], f)
             pickle.dump(data['test_event_out_seq'], f)

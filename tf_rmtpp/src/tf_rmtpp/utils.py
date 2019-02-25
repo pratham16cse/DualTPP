@@ -35,6 +35,9 @@ def read_data(event_train_file, event_test_file, time_train_file, time_test_file
     assert len(timeTrain) == len(eventTrain)
     assert len(eventTest) == len(timeTest)
 
+    train_seq_lens = [len(seq) for seq in timeTrain]
+    test_seq_lens = [len(seq) for seq in timeTest]
+
     # nb_samples = len(eventTrain)
     # max_seqlen = max(len(x) for x in eventTrain)
     unique_samples = set()
@@ -99,6 +102,9 @@ def read_data(event_train_file, event_test_file, time_train_file, time_test_file
 
         'maxTime': maxTime,
         'minTime': minTime,
+
+        'train_seq_lens': train_seq_lens,
+        'test_seq_lens': test_seq_lens,
     }
 
 
@@ -174,9 +180,9 @@ def variable_summaries(var, name=None):
         tf.summary.histogram('histogram', var)
 
 
-def MAE(time_preds, time_true, events_out):
-    """Calculates the MAE between the provided and the given time, ignoring the inf
-    and nans. Returns both the MAE and the number of items considered."""
+def MAE(time_preds, time_true, events_out, seq_lens):
+    """Calculates the MAE between the provided and the given time, ignoring the inf,
+    nans, and with masked sequence lengths. Returns both the MAE and the number of items considered."""
 
     # Predictions may not cover the entire time dimension.
     # This clips time_true to the correct size.
@@ -184,7 +190,9 @@ def MAE(time_preds, time_true, events_out):
     clipped_time_true = time_true[:, :seq_limit]
     clipped_events_out = events_out[:, :seq_limit]
 
-    is_finite = np.isfinite(time_preds) & (clipped_events_out > 0)
+    mask = np.stack([np.concatenate([np.ones(l), np.zeros(time_true.shape[1]-l)]) for l in seq_lens])
+    mask = np.array(mask, dtype=np.bool)
+    is_finite = np.isfinite(time_preds) & (clipped_events_out > 0) & mask
 
     return np.mean(np.abs(time_preds - clipped_time_true)[is_finite]), np.sum(is_finite)
 
