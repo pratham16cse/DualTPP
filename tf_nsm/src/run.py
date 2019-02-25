@@ -50,6 +50,21 @@ def cmd(event_train_file, time_train_file, event_test_file, time_test_file,
     tf_rmtpp.utils.data_stats(data)
     print('data_stats end')
 
+    print('NSM begin')
+    nsm_model = tf_rmtpp.rmtpp_core.NSM(
+        sess=sess,
+        num_categories=data['num_categories'],
+        summary_dir=summary_dir if summary_dir is not None else tempfile.mkdtemp(),
+        batch_size=batch_size,
+        bptt=tf_rmtpp.rmtpp_core.def_opts.bptt,
+        learning_rate=learning_rate,
+        cpu_only=cpu_only,
+        _opts=tf_rmtpp.rmtpp_core.def_opts
+        )
+    print('NSM end')
+
+    return
+    
     print('RMTPP begin')
     rmtpp_mdl = tf_rmtpp.rmtpp_core.RMTPP(
         sess=sess,
@@ -92,3 +107,11 @@ def cmd(event_train_file, time_train_file, event_test_file, time_test_file,
 if __name__ == '__main__':
     cmd()
 
+
+
+'''
+#Run Command 
+
+./run.py arithmatic_prog/event-train.txt arithmatic_prog/time-train.txt arithmatic_prog/event-test.txt arithmatic_prog/time-test.txt --summary ./summ/ --epochs 10 --test-eval --init-learning-rate 0.0001 --cpu-only
+
+'''
