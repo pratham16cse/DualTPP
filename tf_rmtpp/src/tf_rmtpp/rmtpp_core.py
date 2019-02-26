@@ -12,6 +12,7 @@ from .BatchGenerator import BatchGenerator
 
 __EMBED_SIZE = 4
 __HIDDEN_LAYER_SIZE = 16  # 64, 128, 256, 512, 1024
+__NUM_FEATS = 1 # TODO: Read this from data
 
 def_opts = Deco.Options(
     normalize=False,
@@ -40,12 +41,13 @@ def_opts = Deco.Options(
     device_cpu='/cpu:0',
 
     bptt=20,
+    num_feats=1,
     cpu_only=False,
 
     embed_size=__EMBED_SIZE,
     Wem=lambda num_categories: np.random.RandomState(42).randn(num_categories, __EMBED_SIZE) * 0.01,
 
-    Wt=np.ones((1, __HIDDEN_LAYER_SIZE)) * 1e-3,
+    Wt=np.ones((1+__NUM_FEATS, __HIDDEN_LAYER_SIZE)) * 1e-3,
     Wh=np.eye(__HIDDEN_LAYER_SIZE),
     bh=np.ones((1, __HIDDEN_LAYER_SIZE)),
     wt=1.0,
@@ -74,7 +76,7 @@ class RMTPP:
     @Deco.optioned()
     def __init__(self, sess, num_categories, normalize, minTime, maxTime, batch_size,
                  learning_rate, momentum, l2_penalty, embed_size,
-                 float_type, bptt, seed, scope, save_dir, decay_steps, decay_rate,
+                 float_type, bptt, num_feats, seed, scope, save_dir, decay_steps, decay_rate,
                  device_gpu, device_cpu, summary_dir, cpu_only,
                  Wt, Wem, Wh, bh, wt, Wy, Vy, Vt, bk, bt):
         self.NORMALIZE = normalize
@@ -87,6 +89,7 @@ class RMTPP:
         self.L2_PENALTY = l2_penalty
         self.EMBED_SIZE = embed_size
         self.BPTT = bptt
+        self.NUM_FEATS = num_feats
         self.SAVE_DIR = save_dir
         self.SUMMARY_DIR = summary_dir
 
@@ -107,6 +110,7 @@ class RMTPP:
                 # Make input variables
                 self.events_in = tf.placeholder(tf.int32, [None, self.BPTT], name='events_in')
                 self.times_in = tf.placeholder(self.FLOAT_TYPE, [None, self.BPTT], name='times_in')
+                self.feats_in = tf.placeholder(self.FLOAT_TYPE, [None, self.BPTT, self.NUM_FEATS], name='feats_in')
 
                 self.events_out = tf.placeholder(tf.int32, [None, self.BPTT], name='events_out')
                 self.times_out = tf.placeholder(self.FLOAT_TYPE, [None, self.BPTT], name='times_out')
@@ -118,7 +122,7 @@ class RMTPP:
                 # Make variables
                 with tf.variable_scope('hidden_state'):
                     self.Wt = tf.get_variable(name='Wt',
-                                              shape=(1, self.HIDDEN_LAYER_SIZE),
+                                              shape=(1+self.NUM_FEATS, self.HIDDEN_LAYER_SIZE),
                                               dtype=self.FLOAT_TYPE,
                                               initializer=tf.constant_initializer(Wt))
 
@@ -203,9 +207,11 @@ class RMTPP:
                         events_embedded = tf.nn.embedding_lookup(self.Wem,
                                                                  tf.mod(self.events_in[:, i] - 1, self.NUM_CATEGORIES))
                         time = self.times_in[:, i]
+                        feat = self.feats_in[:, i, :]
                         time_next = self.times_out[:, i]
 
                         delta_t_prev = tf.expand_dims(time - last_time, axis=-1)
+                        delta_t_prev = tf.concat([delta_t_prev, feat], axis=-1)
                         delta_t_next = tf.expand_dims(time_next - time, axis=-1)
 
                         last_time = time
@@ -458,11 +464,14 @@ class RMTPP:
 
         train_event_in_seq = training_data['train_event_in_seq']
         train_time_in_seq = training_data['train_time_in_seq']
+        train_feat_in_seq = training_data['train_feat_in_seq']
         train_event_out_seq = training_data['train_event_out_seq']
         train_time_out_seq = training_data['train_time_out_seq']
+        test_feat_in_seq = training_data['test_feat_in_seq']
 
         event_in_itr = BatchGenerator(train_event_in_seq, batchSeqLen=self.BPTT)
         time_in_itr = BatchGenerator(train_time_in_seq, batchSeqLen=self.BPTT)
+        feat_in_itr = BatchGenerator(train_feat_in_seq, batchSeqLen=self.BPTT)
         event_out_itr = BatchGenerator(train_event_out_seq, batchSeqLen=self.BPTT)
         time_out_itr = BatchGenerator(train_time_out_seq, batchSeqLen=self.BPTT)
 
@@ -493,6 +502,7 @@ class RMTPP:
                 batch_event_in, _, _, _, _ = event_in_itr.nextBatch(batchSize=self.BATCH_SIZE)
                 batch_event_out, _, _, _, _ = event_out_itr.nextBatch(batchSize=self.BATCH_SIZE)
                 batch_time_in, tsIndices, startingTs, endingTs, mask = time_in_itr.nextBatch(batchSize=self.BATCH_SIZE)
+                batch_feat_in, _, _, _, _ = feat_in_itr.nextBatch(batchSize=self.BATCH_SIZE)
                 batch_time_out, _, _, _, _ = time_out_itr.nextBatch(batchSize=self.BATCH_SIZE)
                 batch_generation_et = time.time()
                 #print('Generation of batch took {} seconds'.format(batch_generation_et-batch_generation_st))
@@ -519,6 +529,7 @@ class RMTPP:
                     self.events_out: batch_event_out,
                     self.times_in: batch_time_in,
                     self.times_out: batch_time_out,
+                    self.feats_in: batch_feat_in,
                     self.batch_num_events: batch_num_events
                 }
 
@@ -564,6 +575,7 @@ class RMTPP:
             event_out_itr.reset()
             time_in_itr.reset()
             time_out_itr.reset()
+            feat_in_itr.reset()
 
             # self.sess.run(self.increment_global_step)
             print('Loss on last epoch = {:.4f}, new lr = {:.5f}, global_step = {}'
@@ -601,7 +613,7 @@ class RMTPP:
         print('Loading the model from {}'.format(ckpt.model_checkpoint_path))
         saver.restore(self.sess, ckpt.model_checkpoint_path)
 
-    def predict(self, event_in_seq, time_in_seq, single_threaded=False):
+    def predict(self, event_in_seq, time_in_seq, feat_in_seq, single_threaded=False):
         """Treats the entire dataset as a single batch and processes it."""
 
         all_hidden_states = []
@@ -611,6 +623,7 @@ class RMTPP:
 
         event_in_itr = BatchGenerator(event_in_seq, batchSeqLen=self.BPTT)
         time_in_itr = BatchGenerator(time_in_seq, batchSeqLen=self.BPTT)
+        feat_in_itr = BatchGenerator(feat_in_seq, batchSeqLen=self.BPTT)
 
         batch_idx = 0
         currItr = time_in_itr.iterFinished
@@ -621,6 +634,7 @@ class RMTPP:
             batch_generation_st = time.time()
             batch_event_in, _, _, _, _ = event_in_itr.nextBatch(batchSize=time_in_seq.shape[0])
             batch_time_in, tsIndices, startingTs, endingTs, mask = time_in_itr.nextBatch(batchSize=time_in_seq.shape[0])
+            batch_feat_in, _, _, _, _ = feat_in_itr.nextBatch(batchSize=feat_in_seq.shape[0])
             batch_generation_et = time.time()
 
             cur_state = np.zeros((batch_time_in.shape[0], self.HIDDEN_LAYER_SIZE))
@@ -632,6 +646,7 @@ class RMTPP:
                 self.initial_time: initial_time,
                 self.events_in: batch_event_in,
                 self.times_in: batch_time_in,
+                self.feats_in: batch_feat_in,
             }
 
             batch_hidden_states, batch_events_pred, cur_state = self.sess.run(
@@ -683,6 +698,7 @@ class RMTPP:
         """Make (time, event) predictions on the test data."""
         return self.predict(event_in_seq=data['test_event_in_seq'],
                             time_in_seq=data['test_time_in_seq'],
+                            feat_in_seq=data['test_feat_in_seq'],
                             single_threaded=single_threaded)
 
     def predict_train(self, data, single_threaded=False, batch_size=None):
@@ -692,4 +708,5 @@ class RMTPP:
 
         return self.predict(event_in_seq=data['train_event_in_seq'][0:batch_size, :],
                             time_in_seq=data['train_time_in_seq'][0:batch_size, :],
+                            feat_in_seq=data['train_feat_in_seq'][0:batch_size],
                             single_threaded=single_threaded)

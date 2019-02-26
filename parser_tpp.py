@@ -3,6 +3,7 @@ import numpy as np
 import time
 import datetime
 import pandas as pd
+import pickle
 from collections import OrderedDict
 
 from bitmap_model import reader
@@ -36,7 +37,9 @@ def createChunks(latlngList, data):
     by making a chronological split of each sequence, last chunk being test chunk.
     '''
     train_data = list()
+    train_feats = list()
     test_data = list()
+    test_feats = list()
     for s_no, loc in enumerate(data):
         print(s_no)
         num_chunks = 0
@@ -44,21 +47,28 @@ def createChunks(latlngList, data):
             diff = loc[i][1] - ts_start if i>0 else loc[i][1]
             if diff > 60*60*24*7: # Check if next chunk starts at next week.
                 seq = []
+                feats = []
                 durn, ts_start = loc[i]
                 seq.append(ts_start)
                 seq.append(ts_start+durn)
+                feats.append(timestampTotime(ts_start)[2])
+                feats.append(timestampTotime(ts_start+durn)[2])
                 for j in range(i+1, len(loc)): # Creating chunks of one-week sequences.
                     durn, ts = loc[j]
                     if (ts - ts_start) <= 60*60*24*7:
                         seq.append(ts)
                         seq.append(ts+durn)
+                        feats.append(timestampTotime(ts)[2])
+                        feats.append(timestampTotime(ts+durn)[2])
                     else:
                         break
                 train_data.append(seq)
+                train_feats.append(feats)
                 num_chunks += 1
         if num_chunks > 1:
             test_data.append(train_data.pop(-1)) # Last chunk of the sequence moved from train to test.
-    return train_data, test_data
+            test_feats.append(train_feats.pop(-1)) # Last chunk of the feature seq moved from train to test.
+    return train_data, test_data, train_feats, test_feats
 
 def round_timestamps(data):
     
@@ -133,21 +143,31 @@ def writeToFile(filePath, data, typ=''):
             time_f.write(str(loc[-1]) + '\n') 
             event_f.write(str(1) + '\n') 
 
+def writeFeatsToFile(filePath, data, typ=''):
+    cityName = filePath.split('/')[-1].split('-')[0]
+    with open('../datasets/traffic_tpp/'+cityName+'/feats-'+typ+'.pkl', 'w') as feats_f:
+        pickle.dump(data, feats_f)
+
 def main():
     filePath = sys.argv[1]
     latlngList, data = reader.read(filePath)
     #data = round_timestamps(data)
     #data = createPerDayChunks(latlngList, data)
-    train_data, test_data = createChunks(latlngList, data)
+    train_data, test_data, train_feats, test_feats = createChunks(latlngList, data)
     #data = sample(data)
     #data = normalize(data)
     train_data, test_data = normalize_weekly(train_data), normalize_weekly(test_data)
     train_data, test_data = prependZeros(train_data), prependZeros(test_data)
+    train_feats, test_feats = prependZeros(train_feats), prependZeros(test_feats)
     #train_data, test_data = split_train_test(data)
     #writeToFile(filePath, data)
+    for tr_d, tr_f in zip(train_data, train_feats):
+        print(len(tr_d), len(tr_f))
     st = time.time()
     writeToFile(filePath, train_data, typ='train')
     writeToFile(filePath, test_data, typ='test')
+    writeFeatsToFile(filePath, train_feats, typ='train')
+    writeFeatsToFile(filePath, test_feats, typ='test')
     et = time.time()
     print('Time req to write train and test data to files: ', et-st, ' seconds')
 

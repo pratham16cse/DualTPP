@@ -12,6 +12,8 @@ def_opts = tf_rmtpp.rmtpp_core.def_opts
 @click.argument('time_train_file')
 @click.argument('event_test_file')
 @click.argument('time_test_file')
+@click.argument('feats_train_file')
+@click.argument('feats_test_file')
 @click.option('--epochs', 'num_epochs', help='How many epochs to train for.', default=1)
 @click.option('--normalize/--no-normalize', 'normalize', help='Normalize times', default=def_opts.normalize)
 @click.option('--restart/--no-restart', 'restart', help='Can restart from a saved model from the summary folder, if available.', default=False)
@@ -26,7 +28,7 @@ def_opts = tf_rmtpp.rmtpp_core.def_opts
 @click.option('--gtVsPredOutputFile', 'gtVsPredOutputFile', help='Which file to save outputs to.', default=def_opts.gtVsPredOutputFile)
 @click.option('--summary', 'summary_dir', help='Which folder to save summaries to.', default=None)
 @click.option('--save', 'save_dir', help='Which folder to checkpoint to.', default=None)
-def cmd(event_train_file, time_train_file, event_test_file, time_test_file,
+def cmd(event_train_file, time_train_file, event_test_file, time_test_file, feats_train_file, feats_test_file,
         summary_dir, save_dir, num_epochs, restart, train_eval, test_eval, scale,
         batch_size, bptt, learning_rate, cpu_only, seed, gtVsPredOutputFile, normalize):
     """Read data from EVENT_TRAIN_FILE, TIME_TRAIN_FILE and try to predict the values in EVENT_TEST_FILE, TIME_TEST_FILE."""
@@ -36,6 +38,8 @@ def cmd(event_train_file, time_train_file, event_test_file, time_test_file,
         event_test_file=event_test_file,
         time_train_file=time_train_file,
         time_test_file=time_test_file,
+        feats_train_file=feats_train_file,
+        feats_test_file=feats_test_file,
         normalize=normalize
     )
 
