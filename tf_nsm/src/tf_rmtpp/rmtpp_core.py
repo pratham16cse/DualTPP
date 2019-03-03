@@ -738,6 +738,7 @@ class NSM(RMTPP):
                                               dtype=self.FLOAT_TYPE,
                                               initializer=tf.constant_initializer(Wy))
 
+                    #RAZAR: Replacement 1 to 100 for Testing
                     self.Vt = tf.get_variable(name='Vt', shape=(self.HIDDEN_LAYER_SIZE, 1),
                                               dtype=self.FLOAT_TYPE,
                                               initializer=tf.constant_initializer(Vt))
@@ -784,6 +785,7 @@ class NSM(RMTPP):
                 # self.delta_ts = []
                 self.times = []
                 # self.tf_init = tf.global_variables_initializer()
+                self.inten = []
 
                 with tf.name_scope('BPTT'):
                     print("BPTT in loop: ", self.BPTT)
@@ -832,7 +834,10 @@ class NSM(RMTPP):
                             lambda_ = tf.log(1+tf.exp(tf.minimum(50.0, log_lambda_)), name='lambda_')
 
                             # print(lambda_)
-                            f_star = tf.multiply(lambda_, tf.exp(-1*tf.cumsum(lambda_)))
+                            cum_lambda_ = tf.cumsum(lambda_)
+                            int_lambda_ =  tf.exp(-1*tf.cumsum(lambda_))
+
+                            f_star = tf.multiply(lambda_, int_lambda_)
 
                 #             log_f_star = (log_lambda_ -
                 #                           (1.0 / wt_soft_plus) * tf.exp(tf.minimum(50.0, tf.matmul(state, self.Vt) + base_intensity)) +
@@ -843,7 +848,17 @@ class NSM(RMTPP):
                                 name='Pr_events'
                             )
 
-                            time_LL = tf.log(f_star)
+                            time_LL = int_lambda_
+                            
+                            #RAZAR: Add if for array out of bound 
+                            # time_LL -= tf.log(lambda_[time_next])
+                            # time_LL += int_lambda_[time_next]
+
+
+                            # if i>0:
+                                # time_LL += time_LLs[-1]
+
+    
                             mark_LL = tf.expand_dims(
                                 tf.log(
                                     tf.maximum(
@@ -869,7 +884,7 @@ class NSM(RMTPP):
                             #                            tf.zeros(shape=(self.inf_batch_size,), dtype=self.FLOAT_TYPE)),
                             #                            name='num_events')
 
-                            #TODO: RAZAR Use loss function of equation 7
+                            #TODO: RAZAR Use loss function of equation 6
                             self.loss -= tf.reduce_sum(
                                 tf.where(self.events_in[:, i] > 0,
                                          tf.squeeze(step_LL) / self.batch_num_events,

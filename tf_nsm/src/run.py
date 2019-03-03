@@ -50,20 +50,27 @@ def cmd(event_train_file, time_train_file, event_test_file, time_test_file,
     tf_rmtpp.utils.data_stats(data)
     print('data_stats end')
 
-    print('NSM begin')
-    nsm_model = tf_rmtpp.rmtpp_core.NSM(
-        sess=sess,
-        num_categories=data['num_categories'],
-        summary_dir=summary_dir if summary_dir is not None else tempfile.mkdtemp(),
-        batch_size=batch_size,
-        bptt=tf_rmtpp.rmtpp_core.def_opts.bptt,
-        learning_rate=learning_rate,
-        cpu_only=cpu_only,
-        _opts=tf_rmtpp.rmtpp_core.def_opts
-        )
-    print('NSM end')
-
-    return
+    # print('NSM begin')
+    # nsm_model = tf_rmtpp.rmtpp_core.NSM(
+    #     sess=sess,
+    #     num_categories=data['num_categories'],
+    #     summary_dir=summary_dir if summary_dir is not None else tempfile.mkdtemp(),
+    #     batch_size=batch_size,
+    #     bptt=tf_rmtpp.rmtpp_core.def_opts.bptt,
+    #     learning_rate=learning_rate,
+    #     cpu_only=cpu_only,
+    #     _opts=tf_rmtpp.rmtpp_core.def_opts
+    #     )
+    # print('NSM end')
+    # print('begin init')
+    # nsm_model.initialize(finalize=False)
+    # print('end init')
+    # print("training begin")
+    # nsm_model.train(training_data=data, restart=restart,
+    #                 with_summaries=summary_dir is not None,
+    #                 num_epochs=num_epochs, with_evals=False)
+    # print("training end")
+    # return
     
     print('RMTPP begin')
     rmtpp_mdl = tf_rmtpp.rmtpp_core.RMTPP(
