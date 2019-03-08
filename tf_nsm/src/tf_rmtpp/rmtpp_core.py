@@ -1041,8 +1041,8 @@ class NSM(RMTPP):
 
             print("returned bptt_hidden_states, cur_state")
 
-            times_in, times_in_ut = self.sess.run(
-                [self.times_in, self.times_in_ut],
+            times_in, times_in_ut, times_in_Ut = self.sess.run(
+                [self.times_in, self.times_in_ut, self.times_in_Ut],
                 feed_dict=feed_dict
             )
 
