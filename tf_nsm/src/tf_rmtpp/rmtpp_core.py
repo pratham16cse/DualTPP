@@ -53,7 +53,7 @@ def softplus(x):
     return np.log1p(np.exp(x))
 
 
-def quad_func(t, c, w):
+def quad_func(t, c):
     """This is the t * f(t) function calculating the mean time to next event,
     given c, w."""
     return c * t * np.exp(-w * t + (c / w) * (np.exp(-w * t) - 1))
@@ -658,6 +658,37 @@ class RMTPP:
                             time_in_seq=data['train_time_in_seq'][0:batch_size, :],
                             single_threaded=single_threaded)
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 class NSM(RMTPP):
     """Class implementing NSM"""
 
@@ -691,6 +722,9 @@ class NSM(RMTPP):
 
         self.rs = np.random.RandomState(seed + 42)
 
+        self.del_t = 0.02
+        self.multiply = tf.constant([6])
+
         print('Checking for running NSM seed:', seed)
 
         with tf.variable_scope(scope):
@@ -698,6 +732,7 @@ class NSM(RMTPP):
                 # Make input variables
                 self.events_in = tf.placeholder(tf.int32, [None, self.BPTT], name='events_in')
                 self.times_in = tf.placeholder(self.FLOAT_TYPE, [None, self.BPTT], name='times_in')
+                self.times_adder = tf.range(0, 0.6, 0.1, dtype=self.FLOAT_TYPE)
 
                 self.events_out = tf.placeholder(tf.int32, [None, self.BPTT], name='events_out')
                 self.times_out = tf.placeholder(self.FLOAT_TYPE, [None, self.BPTT], name='times_out')
@@ -705,6 +740,16 @@ class NSM(RMTPP):
                 self.batch_num_events = tf.placeholder(self.FLOAT_TYPE, [], name='bptt_events')
 
                 self.inf_batch_size = tf.shape(self.events_in)[0]
+
+
+                self.times_in_ut = tf.tile(tf.expand_dims(self.times_in,-1), [1, 1, 6])
+                # print(self.times_in_ut)
+                # self.times_in_ut = tf.reshape(self.times_in_ut, [-1, self.BPTT, self.multiply[0]])
+                print(self.times_in)
+                print(self.times_in_ut)
+
+                self.times_in_Ut = self.times_in_ut + self.times_adder
+                print(self.times_in_ut)
 
                 # Make variables
                 with tf.variable_scope('hidden_state'):
@@ -781,7 +826,7 @@ class NSM(RMTPP):
 
                 self.time_LLs = []
                 self.mark_LLs = []
-                self.log_lambdas = []
+                # self.log_lambdas = []
                 # self.delta_ts = []
                 self.times = []
                 # self.tf_init = tf.global_variables_initializer()
@@ -827,11 +872,11 @@ class NSM(RMTPP):
 
                             # wt_soft_plus = tf.nn.softplus(self.wt)
 
-                            log_lambda_ = (tf.matmul(state, self.Vt) +
+                            lambda_ = (tf.matmul(state, self.Vt) +
                                            base_intensity)
 
                             # lambda_ = tf.exp(tf.minimum(50.0, log_lambda_), name='lambda_')
-                            lambda_ = tf.log(1+tf.exp(tf.minimum(50.0, log_lambda_)), name='lambda_')
+                            lambda_ = tf.log(1+tf.exp(tf.minimum(50.0, lambda_)), name='lambda_')
 
                             # print(lambda_)
                             cum_lambda_ = tf.cumsum(lambda_)
@@ -896,7 +941,7 @@ class NSM(RMTPP):
 
                         self.time_LLs.append(time_LL)
                         self.mark_LLs.append(mark_LL)
-                        self.log_lambdas.append(log_lambda_)
+                        # self.log_lambdas.append(log_lambda_)
 
                         self.hidden_states.append(state)
                         self.event_preds.append(events_pred)
@@ -954,7 +999,7 @@ class NSM(RMTPP):
                     variable_summaries(self.time_LLs + self.mark_LLs, name='agg-total-LL')
                     # variable_summaries(self.delta_ts, name='agg-delta-ts')
                     variable_summaries(self.times, name='agg-times')
-                    variable_summaries(self.log_lambdas, name='agg-log-lambdas')
+                    # variable_summaries(self.log_lambdas, name='agg-log-lambdas')
                     # variable_summaries(tf.nn.softplus(self.wt), name='wt-soft-plus')
 
                     self.tf_merged_summaries = tf.summary.merge_all()
@@ -963,3 +1008,89 @@ class NSM(RMTPP):
                                                              global_step=self.global_step)
 
                 self.tf_init = tf.global_variables_initializer()
+
+    def predict(self, event_in_seq, time_in_seq, single_threaded=False):
+        """Treats the entire dataset as a single batch and processes it."""
+
+        all_hidden_states = []
+        all_event_preds = []
+
+        cur_state = np.zeros((len(event_in_seq), self.HIDDEN_LAYER_SIZE))
+
+        for bptt_idx in range(0, len(event_in_seq[0]) - len(event_in_seq[0]) % self.BPTT, self.BPTT):
+            bptt_range = range(bptt_idx, (bptt_idx + self.BPTT))
+            bptt_event_in = event_in_seq[:, bptt_range]
+            bptt_time_in = time_in_seq[:, bptt_range]
+
+            if bptt_idx > 0:
+                initial_time = event_in_seq[:, bptt_idx - 1]
+            else:
+                initial_time = np.zeros(bptt_time_in.shape[0])
+
+            feed_dict = {
+                self.initial_state: cur_state,
+                self.initial_time: initial_time,
+                self.events_in: bptt_event_in,
+                self.times_in: bptt_time_in,
+            }
+
+            bptt_hidden_states, bptt_events_pred, cur_state = self.sess.run(
+                [self.hidden_states, self.event_preds, self.final_state],
+                feed_dict=feed_dict
+            )
+
+            print("returned bptt_hidden_states, cur_state")
+
+            times_in, times_in_ut = self.sess.run(
+                [self.times_in, self.times_in_ut],
+                feed_dict=feed_dict
+            )
+
+            print(times_in[:, 0])
+            print(times_in_ut[:, 0, :])
+            print(times_in_Ut[:, 0, :])
+            
+            all_hidden_states.extend(bptt_hidden_states)
+            all_event_preds.extend(bptt_events_pred)
+
+        # TODO: This calculation is completely ignoring the clipping which
+        # happens during the inference step.
+        [int_lambda_]  = self.sess.run([self.int_lambda_])
+
+        global _quad_worker
+        def _quad_worker(params):
+            idx, h_i = params
+            preds_i = []
+            # C = np.exp(np.dot(h_i, Vt) + bt).reshape(-1)
+            S = int_lambda_.reshape(-1)
+
+            for s_, t_last in zip(S, time_in_seq[:, idx]):
+                args = (s_)
+                val, _err = quad(quad_func, bptt_time_in, np.inf, args=args)
+                preds_i.append(t_last + val)
+
+            return preds_i
+
+        if single_threaded:
+            all_time_preds = [_quad_worker((idx, x)) for idx, x in enumerate(all_hidden_states)]
+        else:
+            with MP.Pool() as pool:
+                all_time_preds = pool.map(_quad_worker, enumerate(all_hidden_states))
+
+        return np.asarray(all_time_preds).T, np.asarray(all_event_preds).swapaxes(0, 1)
+
+
+    def predict_test(self, data, single_threaded=False):
+        """Make (time, event) predictions on the test data."""
+        return self.predict(event_in_seq=data['test_event_in_seq'],
+                            time_in_seq=data['test_time_in_seq'],
+                            single_threaded=single_threaded)
+
+    def predict_train(self, data, single_threaded=False, batch_size=None):
+        """Make (time, event) predictions on the training data."""
+        if batch_size == None:
+            batch_size = data['train_event_in_seq'].shape[0]
+
+        return self.predict(event_in_seq=data['train_event_in_seq'][0:batch_size, :],
+                            time_in_seq=data['train_time_in_seq'][0:batch_size, :],
+                            single_threaded=single_threaded)
