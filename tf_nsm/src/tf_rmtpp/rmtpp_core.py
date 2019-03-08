@@ -724,6 +724,7 @@ class NSM(RMTPP):
 
         self.del_t = 0.02
         self.multiply = tf.constant([6])
+        self.ut_size = 6
 
         print('Checking for running NSM seed:', seed)
 
@@ -742,7 +743,7 @@ class NSM(RMTPP):
                 self.inf_batch_size = tf.shape(self.events_in)[0]
 
 
-                self.times_in_ut = tf.tile(tf.expand_dims(self.times_in,-1), [1, 1, 6])
+                self.times_in_ut = tf.tile(tf.expand_dims(self.times_in,-1), [1, 1, self.ut_size])
                 # print(self.times_in_ut)
                 # self.times_in_ut = tf.reshape(self.times_in_ut, [-1, self.BPTT, self.multiply[0]])
                 print(self.times_in)
@@ -839,110 +840,116 @@ class NSM(RMTPP):
                         print("in loop ", i)
                         events_embedded = tf.nn.embedding_lookup(self.Wem,
                                                                  tf.mod(self.events_in[:, i] - 1, self.NUM_CATEGORIES))
-                        time = self.times_in[:, i]
-                        time_next = self.times_out[:, i]
 
-                        delta_t_prev = tf.expand_dims(time - last_time, axis=-1)
-                        delta_t_next = tf.expand_dims(time_next - time, axis=-1)
+                        time_LL_sum = tf.constant(0.0)
 
-                        last_time = time
+                        for j in range(self.ut_size):
 
-                        time_2d = tf.expand_dims(time, axis=-1)
+                            time = self.times_in_Ut[:, i, j]
+                            time_next = self.times_out[:, i]
 
-                        # output, state = RNNcell(events_embedded, state)
+                            delta_t_prev = tf.expand_dims(time - last_time, axis=-1)
+                            delta_t_next = tf.expand_dims(time_next - time, axis=-1)
 
-                        # TODO Does TF automatically broadcast? Then we'll not
-                        # need multiplication with tf.ones
-                        type_delta_t = True
+                            last_time = time
 
-                        with tf.name_scope('state_recursion'):
-                            new_state = tf.tanh(
-                                tf.matmul(state, self.Wh) +
-                                tf.matmul(events_embedded, self.Wy) +
-                                # Two ways of interpretting this term
-                                (tf.matmul(delta_t_prev, self.Wt) if type_delta_t else tf.matmul(time_2d, self.Wt)) +
-                                tf.matmul(ones_2d, self.bh),
-                                name='h_t'
-                            )
-                            state = tf.where(self.events_in[:, i] > 0, new_state, state)
+                            time_2d = tf.expand_dims(time, axis=-1)
 
-                        with tf.name_scope('loss_calc'):
-                            base_intensity = tf.matmul(ones_2d, self.bt)
-                            # wt_non_zero = tf.sign(self.wt) * tf.maximum(1e-9, tf.abs(self.wt))
+                            # output, state = RNNcell(events_embedded, state)
 
-                            # wt_soft_plus = tf.nn.softplus(self.wt)
+                            # TODO Does TF automatically broadcast? Then we'll not
+                            # need multiplication with tf.ones
+                            type_delta_t = True
 
-                            lambda_ = (tf.matmul(state, self.Vt) +
-                                           base_intensity)
+                            with tf.name_scope('state_recursion'):
+                                new_state = tf.tanh(
+                                    tf.matmul(state, self.Wh) +
+                                    tf.matmul(events_embedded, self.Wy) +
+                                    # Two ways of interpretting this term
+                                    (tf.matmul(delta_t_prev, self.Wt) if type_delta_t else tf.matmul(time_2d, self.Wt)) +
+                                    tf.matmul(ones_2d, self.bh),
+                                    name='h_t'
+                                )
+                                state = tf.where(self.events_in[:, i] > 0, new_state, state)
 
-                            # lambda_ = tf.exp(tf.minimum(50.0, log_lambda_), name='lambda_')
-                            lambda_ = tf.log(1+tf.exp(tf.minimum(50.0, lambda_)), name='lambda_')
+                            with tf.name_scope('loss_calc'):
+                                base_intensity = tf.matmul(ones_2d, self.bt)
+                                # wt_non_zero = tf.sign(self.wt) * tf.maximum(1e-9, tf.abs(self.wt))
 
-                            # print(lambda_)
-                            cum_lambda_ = tf.cumsum(lambda_)
-                            int_lambda_ =  tf.exp(-1*tf.cumsum(lambda_))
+                                # wt_soft_plus = tf.nn.softplus(self.wt)
 
-                            f_star = tf.multiply(lambda_, int_lambda_)
+                                lambda_ = (tf.matmul(state, self.Vt) + base_intensity)
 
-                #             log_f_star = (log_lambda_ -
-                #                           (1.0 / wt_soft_plus) * tf.exp(tf.minimum(50.0, tf.matmul(state, self.Vt) + base_intensity)) +
-                #                           (1.0 / wt_soft_plus) * lambda_)
+                                # lambda_ = tf.exp(tf.minimum(50.0, log_lambda_), name='lambda_')
+                                lambda_ = tf.log(1+tf.exp(tf.minimum(50.0, lambda_)), name='lambda_')
 
-                            events_pred = tf.nn.softmax(tf.minimum(50.0,
-                                           tf.matmul(state, self.Vy) + ones_2d * self.bk),
-                                name='Pr_events'
-                            )
+                                # print(lambda_)
+                                # cum_lambda_ = tf.cumsum(lambda_)
+                                int_lambda_ =  tf.exp(-1*lambda_)
 
-                            time_LL = int_lambda_
-                            
-                            #RAZAR: Add if for array out of bound 
-                            # time_LL -= tf.log(lambda_[time_next])
-                            # time_LL += int_lambda_[time_next]
+                                f_star = tf.multiply(lambda_, int_lambda_)
+
+                    #             log_f_star = (log_lambda_ -
+                    #                           (1.0 / wt_soft_plus) * tf.exp(tf.minimum(50.0, tf.matmul(state, self.Vt) + base_intensity)) +
+                    #                           (1.0 / wt_soft_plus) * lambda_)
+
+                                events_pred = tf.nn.softmax(tf.minimum(50.0,
+                                               tf.matmul(state, self.Vy) + ones_2d * self.bk),
+                                    name='Pr_events'
+                                )
+
+                                time_LL = lambda_
+                                time_LL_sum += time_LL
+                                
+                                #RAZAR: Add if for array out of bound 
+                                # time_LL -= tf.log(lambda_[time_next])
+                                # time_LL += int_lambda_[time_next]
 
 
-                            # if i>0:
-                                # time_LL += time_LLs[-1]
+                                # if i>0:
+                                    # time_LL += time_LLs[-1]
 
-    
-                            mark_LL = tf.expand_dims(
-                                tf.log(
-                                    tf.maximum(
-                                        1e-6,
-                                        tf.gather_nd(
-                                            events_pred,
-                                            tf.concat([
-                                                tf.expand_dims(tf.range(self.inf_batch_size), -1),
-                                                tf.expand_dims(tf.mod(self.events_out[:, i] - 1, self.NUM_CATEGORIES), -1)
-                                            ], axis=1, name='Pr_next_event'
+        
+                                mark_LL = tf.expand_dims(
+                                    tf.log(
+                                        tf.maximum(
+                                            1e-6,
+                                            tf.gather_nd(
+                                                events_pred,
+                                                tf.concat([
+                                                    tf.expand_dims(tf.range(self.inf_batch_size), -1),
+                                                    tf.expand_dims(tf.mod(self.events_out[:, i] - 1, self.NUM_CATEGORIES), -1)
+                                                ], axis=1, name='Pr_next_event'
+                                                )
                                             )
                                         )
-                                    )
-                                ), axis=-1, name='log_Pr_next_event'
-                            )
-                            step_LL = time_LL + mark_LL
+                                    ), axis=-1, name='log_Pr_next_event'
+                                )
+                                step_LL = time_LL + mark_LL
 
-                            # In the batch some of the sequences may have ended before we get to the
-                            # end of the seq. In such cases, the events will be zero.
-                            # TODO Figure out how to do this with RNNCell, LSTM, etc.
-                            # num_events = tf.reduce_sum(tf.where(self.events_in[:, i] > 0,
-                            #                            tf.ones(shape=(self.inf_batch_size,), dtype=self.FLOAT_TYPE),
-                            #                            tf.zeros(shape=(self.inf_batch_size,), dtype=self.FLOAT_TYPE)),
-                            #                            name='num_events')
+                                # In the batch some of the sequences may have ended before we get to the
+                                # end of the seq. In such cases, the events will be zero.
+                                # TODO Figure out how to do this with RNNCell, LSTM, etc.
+                                # num_events = tf.reduce_sum(tf.where(self.events_in[:, i] > 0,
+                                #                            tf.ones(shape=(self.inf_batch_size,), dtype=self.FLOAT_TYPE),
+                                #                            tf.zeros(shape=(self.inf_batch_size,), dtype=self.FLOAT_TYPE)),
+                                #                            name='num_events')
 
-                            #TODO: RAZAR Use loss function of equation 6
-                            self.loss -= tf.reduce_sum(
-                                tf.where(self.events_in[:, i] > 0,
-                                         tf.squeeze(step_LL) / self.batch_num_events,
-                                         tf.zeros(shape=(self.inf_batch_size,)))
-                            )
+                                #TODO: RAZAR Use loss function of equation 6
+                                self.loss -= tf.reduce_sum(
+                                    tf.where(self.events_in[:, i] > 0,
+                                             tf.squeeze(step_LL) / self.batch_num_events,
+                                             tf.zeros(shape=(self.inf_batch_size,)))
+                                )
 
-                            #Loss sur
-                            # self.loss = 
+                                #Loss sur
+                                # self.loss = 
 
-                        self.time_LLs.append(time_LL)
+                        self.time_LLs.append(time_LL_sum)
                         self.mark_LLs.append(mark_LL)
                         # self.log_lambdas.append(log_lambda_)
 
+                        #TODO: RAZAR hidden state will become hidden states
                         self.hidden_states.append(state)
                         self.event_preds.append(events_pred)
 
