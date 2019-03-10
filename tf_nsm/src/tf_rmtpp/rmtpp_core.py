@@ -872,7 +872,7 @@ class NSM(RMTPP):
                                 )
                                 state = tf.where(self.events_in[:, i] > 0, new_state, state)
 
-                                states.append(state)
+                                self.states.append(state)
 
                         with tf.name_scope('loss_calc'):
                             base_intensity = tf.matmul(ones_2d, self.bt)
@@ -954,11 +954,14 @@ class NSM(RMTPP):
                         # self.log_lambdas.append(log_lambda_)
 
                         #TODO: RAZAR hidden state will become hidden states
-                        self.hidden_states.append(states)
+                        self.hidden_states.append(self.states)
                         self.event_preds.append(events_pred)
 
                         # self.delta_ts.append(tf.clip_by_value(delta_t, 0.0, np.inf))
                         self.times.append(time)
+
+                    print(np.array(self.hidden_states).shape)
+                    print(self.hidden_states[0][0])
 
                 self.final_state = self.hidden_states[-1]
 
@@ -1052,45 +1055,67 @@ class NSM(RMTPP):
 
             print("returned bptt_hidden_states, cur_state")
 
-            times_in, times_in_ut, times_in_Ut, lambdas, last_time = self.sess.run(
-                [self.times_in, self.times_in_ut, self.times_in_Ut, self.lambdas, self.last_time],
+            times_in, times_in_ut, times_in_Ut = self.sess.run(
+                [self.times_in, self.times_in_ut, self.times_in_Ut],
                 feed_dict=feed_dict
             )
 
-            print(times_in[:, 0])
-            print(times_in_ut[:, 0, :])
-            print(times_in_Ut[:, 0, :])
-            print(lambdas)
-            print(last_time)
-            
+            # print(times_in[:, 0])
+            # print(times_in_ut[:, 0, :])
+            # print(times_in_Ut[:, 0, :])
+           
             all_hidden_states.extend(bptt_hidden_states)
             all_event_preds.extend(bptt_events_pred)
+
+        # print(np.array(all_hidden_states).shape)
 
         # TODO: This calculation is completely ignoring the clipping which
         # happens during the inference step.
 
-
-
+        [Vt, bt]  = self.sess.run([self.Vt, self.bt])
+        # print(Vt)
+        # print('bt', bt)
 
         global _quad_worker
         def _quad_worker(params):
             idx, h_i = params
             preds_i = []
-            C = np.exp(np.dot(h_i, Vt) + bt).reshape(-1)
 
-            print("C", C)
-            for c_, t_last in zip(C, time_in_seq[:, idx]):
+            # print("idx", idx)
+            # print("h_i", h_i)
 
-                # int_lambdas = -1*np.cumsum(c_)
-                # f_star = np.multiply(lambdas, np.exp(int_lambdas))
-                # pred_i = np.dot(last_time, f_star)
+            C = []
+            for x in range(6):
+                C.append(np.exp(np.dot(h_i[x], Vt) + bt).reshape(-1))
+            # print("C", C)
+            # print(np.array(time_in_seq).shape)
+            # print(np.array(time_in_seq[:, idx]).shape)
+            # print('time_in_seq[:, idx]', time_in_seq[:, idx])
 
-                print("c_", C)
-                print("t_", t_last)
+            t_adder = np.arange(0.0, 0.6, 0.1)
+            t_adder = np.expand_dims(t_adder, axis=1)
 
-                args = (c_, wt)
-                val, _err = quad(quad_func, 0, np.inf, args=args)
-                preds_i.append(t_last + val)
+            time_ut = np.array(time_in_seq[:, idx])
+            ut_t_last = np.tile(time_ut, (6, 1))
+            Ut_t_last = t_adder + ut_t_last
+            # print("Ut_t_last", Ut_t_last)
+
+            pred_i = np.zeros(time_ut.shape)
+            # print("pred_i", pred_i)
+
+            for c_, t_last in zip(C, Ut_t_last):
+
+                # print("t_last", t_last)
+
+                # print("c_", c_)
+                int_lambdas = -1*np.cumsum(c_)
+                # print("int_lambdas", int_lambdas)
+                f_star = np.multiply(c_, np.exp(int_lambdas))
+                # print("f_star", f_star)
+
+                pred_i += np.multiply(t_last, f_star)
+                # print('pred_i', idx, pred_i)
+            preds_i = time_ut + pred_i
 
             return preds_i
 
