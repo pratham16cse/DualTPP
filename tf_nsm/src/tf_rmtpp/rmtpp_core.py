@@ -841,7 +841,7 @@ class NSM(RMTPP):
                         events_embedded = tf.nn.embedding_lookup(self.Wem,
                                                                  tf.mod(self.events_in[:, i] - 1, self.NUM_CATEGORIES))
 
-                        time_LL_sum = tf.constant(0.0)
+                        self.states = []
 
                         for j in range(self.ut_size):
 
@@ -872,85 +872,89 @@ class NSM(RMTPP):
                                 )
                                 state = tf.where(self.events_in[:, i] > 0, new_state, state)
 
-                            with tf.name_scope('loss_calc'):
-                                base_intensity = tf.matmul(ones_2d, self.bt)
-                                # wt_non_zero = tf.sign(self.wt) * tf.maximum(1e-9, tf.abs(self.wt))
+                                states.append(state)
 
-                                # wt_soft_plus = tf.nn.softplus(self.wt)
+                        with tf.name_scope('loss_calc'):
+                            base_intensity = tf.matmul(ones_2d, self.bt)
+                            # wt_non_zero = tf.sign(self.wt) * tf.maximum(1e-9, tf.abs(self.wt))
 
-                                lambda_ = (tf.matmul(state, self.Vt) + base_intensity)
+                            # wt_soft_plus = tf.nn.softplus(self.wt)
 
-                                # lambda_ = tf.exp(tf.minimum(50.0, log_lambda_), name='lambda_')
-                                lambda_ = tf.log(1+tf.exp(tf.minimum(50.0, lambda_)), name='lambda_')
+                            lambda_ = (tf.matmul(state, self.Vt) + base_intensity)
 
-                                # print(lambda_)
-                                # cum_lambda_ = tf.cumsum(lambda_)
-                                int_lambda_ =  tf.exp(-1*lambda_)
+                            # lambda_ = tf.exp(tf.minimum(50.0, log_lambda_), name='lambda_')
+                            lambda_ = tf.log(1+tf.exp(tf.minimum(50.0, lambda_)), name='lambda_')
 
-                                f_star = tf.multiply(lambda_, int_lambda_)
+                            # print(lambda_)
+                            # cum_lambda_ = tf.cumsum(lambda_)
+                            # int_lambda_ =  tf.exp(-1*lambda_)
 
-                    #             log_f_star = (log_lambda_ -
-                    #                           (1.0 / wt_soft_plus) * tf.exp(tf.minimum(50.0, tf.matmul(state, self.Vt) + base_intensity)) +
-                    #                           (1.0 / wt_soft_plus) * lambda_)
+                            # f_star = tf.multiply(lambda_, int_lambda_)
 
-                                events_pred = tf.nn.softmax(tf.minimum(50.0,
-                                               tf.matmul(state, self.Vy) + ones_2d * self.bk),
-                                    name='Pr_events'
-                                )
+                #             log_f_star = (log_lambda_ -
+                #                           (1.0 / wt_soft_plus) * tf.exp(tf.minimum(50.0, tf.matmul(state, self.Vt) + base_intensity)) +
+                #                           (1.0 / wt_soft_plus) * lambda_)
 
-                                time_LL = lambda_
-                                time_LL_sum += time_LL
-                                
-                                #RAZAR: Add if for array out of bound 
-                                # time_LL -= tf.log(lambda_[time_next])
-                                # time_LL += int_lambda_[time_next]
+                            events_pred = tf.nn.softmax(tf.minimum(50.0,
+                                           tf.matmul(state, self.Vy) + ones_2d * self.bk),
+                                name='Pr_events'
+                            )
+
+                            time_LL = lambda_
+                            # time_LL_sum += time_LL
+                            
+                            #RAZAR: Add if for array out of bound 
+                            # time_LL -= tf.log(lambda_[time_next])
+                            # time_LL += int_lambda_[time_next]
 
 
-                                # if i>0:
-                                    # time_LL += time_LLs[-1]
+                            # if i>0:
+                                # time_LL += time_LLs[-1]
 
-        
-                                mark_LL = tf.expand_dims(
-                                    tf.log(
-                                        tf.maximum(
-                                            1e-6,
-                                            tf.gather_nd(
-                                                events_pred,
-                                                tf.concat([
-                                                    tf.expand_dims(tf.range(self.inf_batch_size), -1),
-                                                    tf.expand_dims(tf.mod(self.events_out[:, i] - 1, self.NUM_CATEGORIES), -1)
-                                                ], axis=1, name='Pr_next_event'
-                                                )
+    
+                            mark_LL = tf.expand_dims(
+                                tf.log(
+                                    tf.maximum(
+                                        1e-6,
+                                        tf.gather_nd(
+                                            events_pred,
+                                            tf.concat([
+                                                tf.expand_dims(tf.range(self.inf_batch_size), -1),
+                                                tf.expand_dims(tf.mod(self.events_out[:, i] - 1, self.NUM_CATEGORIES), -1)
+                                            ], axis=1, name='Pr_next_event'
                                             )
                                         )
-                                    ), axis=-1, name='log_Pr_next_event'
-                                )
-                                step_LL = time_LL + mark_LL
+                                    )
+                                ), axis=-1, name='log_Pr_next_event'
+                            )
+                            step_LL = time_LL + mark_LL
 
-                                # In the batch some of the sequences may have ended before we get to the
-                                # end of the seq. In such cases, the events will be zero.
-                                # TODO Figure out how to do this with RNNCell, LSTM, etc.
-                                # num_events = tf.reduce_sum(tf.where(self.events_in[:, i] > 0,
-                                #                            tf.ones(shape=(self.inf_batch_size,), dtype=self.FLOAT_TYPE),
-                                #                            tf.zeros(shape=(self.inf_batch_size,), dtype=self.FLOAT_TYPE)),
-                                #                            name='num_events')
+                            # In the batch some of the sequences may have ended before we get to the
+                            # end of the seq. In such cases, the events will be zero.
+                            # TODO Figure out how to do this with RNNCell, LSTM, etc.
+                            # num_events = tf.reduce_sum(tf.where(self.events_in[:, i] > 0,
+                            #                            tf.ones(shape=(self.inf_batch_size,), dtype=self.FLOAT_TYPE),
+                            #                            tf.zeros(shape=(self.inf_batch_size,), dtype=self.FLOAT_TYPE)),
+                            #                            name='num_events')
 
-                                #TODO: RAZAR Use loss function of equation 6
-                                self.loss -= tf.reduce_sum(
-                                    tf.where(self.events_in[:, i] > 0,
-                                             tf.squeeze(step_LL) / self.batch_num_events,
-                                             tf.zeros(shape=(self.inf_batch_size,)))
-                                )
+                            #TODO: RAZAR Use loss function of equation 6
+                            self.loss -= tf.reduce_sum(
+                                tf.where(self.events_in[:, i] > 0,
+                                         tf.squeeze(step_LL) / self.batch_num_events,
+                                         tf.zeros(shape=(self.inf_batch_size,)))
+                            )
 
-                                #Loss sur
-                                # self.loss = 
+                            #Loss sur
+                            # self.loss = 
 
-                        self.time_LLs.append(time_LL_sum)
+                            # self.lambdas.append(lambda_)
+
+                        self.time_LLs.append(time_LL)
                         self.mark_LLs.append(mark_LL)
                         # self.log_lambdas.append(log_lambda_)
 
                         #TODO: RAZAR hidden state will become hidden states
-                        self.hidden_states.append(state)
+                        self.hidden_states.append(states)
                         self.event_preds.append(events_pred)
 
                         # self.delta_ts.append(tf.clip_by_value(delta_t, 0.0, np.inf))
@@ -1048,32 +1052,44 @@ class NSM(RMTPP):
 
             print("returned bptt_hidden_states, cur_state")
 
-            times_in, times_in_ut, times_in_Ut = self.sess.run(
-                [self.times_in, self.times_in_ut, self.times_in_Ut],
+            times_in, times_in_ut, times_in_Ut, lambdas, last_time = self.sess.run(
+                [self.times_in, self.times_in_ut, self.times_in_Ut, self.lambdas, self.last_time],
                 feed_dict=feed_dict
             )
 
             print(times_in[:, 0])
             print(times_in_ut[:, 0, :])
             print(times_in_Ut[:, 0, :])
+            print(lambdas)
+            print(last_time)
             
             all_hidden_states.extend(bptt_hidden_states)
             all_event_preds.extend(bptt_events_pred)
 
         # TODO: This calculation is completely ignoring the clipping which
         # happens during the inference step.
-        [int_lambda_]  = self.sess.run([self.int_lambda_])
+
+
+
 
         global _quad_worker
         def _quad_worker(params):
             idx, h_i = params
             preds_i = []
-            # C = np.exp(np.dot(h_i, Vt) + bt).reshape(-1)
-            S = int_lambda_.reshape(-1)
+            C = np.exp(np.dot(h_i, Vt) + bt).reshape(-1)
 
-            for s_, t_last in zip(S, time_in_seq[:, idx]):
-                args = (s_)
-                val, _err = quad(quad_func, bptt_time_in, np.inf, args=args)
+            print("C", C)
+            for c_, t_last in zip(C, time_in_seq[:, idx]):
+
+                # int_lambdas = -1*np.cumsum(c_)
+                # f_star = np.multiply(lambdas, np.exp(int_lambdas))
+                # pred_i = np.dot(last_time, f_star)
+
+                print("c_", C)
+                print("t_", t_last)
+
+                args = (c_, wt)
+                val, _err = quad(quad_func, 0, np.inf, args=args)
                 preds_i.append(t_last + val)
 
             return preds_i
