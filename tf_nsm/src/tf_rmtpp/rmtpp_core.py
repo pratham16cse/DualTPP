@@ -746,11 +746,10 @@ class NSM(RMTPP):
                 self.times_in_ut = tf.tile(tf.expand_dims(self.times_in,-1), [1, 1, self.ut_size])
                 # print(self.times_in_ut)
                 # self.times_in_ut = tf.reshape(self.times_in_ut, [-1, self.BPTT, self.multiply[0]])
-                print(self.times_in)
-                print(self.times_in_ut)
+                # print(self.times_in)
+                # print(self.times_in_ut)
 
                 self.times_in_Ut = self.times_in_ut + self.times_adder
-                print(self.times_in_ut)
 
                 # Make variables
                 with tf.variable_scope('hidden_state'):
@@ -843,13 +842,18 @@ class NSM(RMTPP):
 
                         self.states = []
 
+                        time_next = self.times_out[:, i]
+                        # delta_t_next = tf.expand_dims(time_next - self.times_in_Ut[:,i,0], axis=-1)
+                        delta_t_next = time_next - self.times_in_Ut[:,i,0]
+                        last_in_arr = tf.round(tf.divide(delta_t_next, 0.1))
+                        last_in_arr = tf.cast(last_in_arr, tf.int32)
+                        last_in_arr = tf.clip_by_value(last_in_arr, 0, 5)
+
                         for j in range(self.ut_size):
 
                             time = self.times_in_Ut[:, i, j]
-                            time_next = self.times_out[:, i]
 
                             delta_t_prev = tf.expand_dims(time - last_time, axis=-1)
-                            delta_t_next = tf.expand_dims(time_next - time, axis=-1)
 
                             last_time = time
 
@@ -880,13 +884,27 @@ class NSM(RMTPP):
 
                             # wt_soft_plus = tf.nn.softplus(self.wt)
 
-                            lambda_ = (tf.matmul(state, self.Vt) + base_intensity)
+                            # print(self.states)
+                            # print(self.Vt)
+                            # print(tf.expand_dims(self.Vt, 2))
+
+                            self.lambda_ = []
+
+                            for j in range(6):
+
+                                self.lambda_.append(tf.matmul(self.states[j], self.Vt,) + base_intensity)
+
+                            # print(self.lambda_)
+
+                            lambda_ = tf.convert_to_tensor(self.lambda_)
+                            lambda_ = tf.squeeze(lambda_, [2])
+                            # print(lambda_)
 
                             # lambda_ = tf.exp(tf.minimum(50.0, log_lambda_), name='lambda_')
                             lambda_ = tf.log(1+tf.exp(tf.minimum(50.0, lambda_)), name='lambda_')
+                            cum_lambda_ = tf.cumsum(lambda_, axis=1)
 
                             # print(lambda_)
-                            # cum_lambda_ = tf.cumsum(lambda_)
                             # int_lambda_ =  tf.exp(-1*lambda_)
 
                             # f_star = tf.multiply(lambda_, int_lambda_)
@@ -900,7 +918,32 @@ class NSM(RMTPP):
                                 name='Pr_events'
                             )
 
-                            time_LL = lambda_
+
+
+                            # last_in_arr = tf.clip_by_value(last_in_arr, 0, 5)
+
+                            # print(lambda_)
+                            last_in_arr = tf.expand_dims(last_in_arr, 1)
+
+                            seq_add = tf.multiply(last_in_arr, 0)
+                            seq_add = tf.add(seq_add, 6)
+                            seq_add = tf.cumsum(seq_add)
+                            seq_add = tf.subtract(seq_add, 6)
+                            seq_add = seq_add + last_in_arr
+
+                            # print(last_in_arr[0])
+
+                            # timeLL = tf.gather(cum_lambda_, tf.transpose(last_in_arr), axis=1)
+
+                            timeLL = tf.gather(tf.reshape(cum_lambda_, [-1]), tf.reshape(seq_add, [-1]))
+
+                            # for j in range(20):
+
+                            #     timeLL += tf.gather_nd(cum_lambda_[:,j,0], last_in_arr[j]) - tf.log(tf.gather_nd(lambda_[:,j,0], last_in_arr[j]))
+                                # timeLL += cum_lambda_[tf.reduce_sum(last_in_arr[j]), j, 0] - tf.log(lambda_[tf.reduce_sum(last_in_arr[j]), j, 0])
+
+                            # time_LL = timeLL
+                            time_LL = tf.expand_dims(timeLL, 1)
                             # time_LL_sum += time_LL
                             
                             #RAZAR: Add if for array out of bound 
@@ -927,6 +970,7 @@ class NSM(RMTPP):
                                     )
                                 ), axis=-1, name='log_Pr_next_event'
                             )
+
                             step_LL = time_LL + mark_LL
 
                             # In the batch some of the sequences may have ended before we get to the
@@ -938,6 +982,14 @@ class NSM(RMTPP):
                             #                            name='num_events')
 
                             #TODO: RAZAR Use loss function of equation 6
+
+                            # print(time_LL)
+                            # print(mark_LL)
+                            # print(step_LL)
+                            # print(self.events_in[:,i])
+                            # print(tf.squeeze(step_LL))
+                            # print(tf.zeros(shape=(self.inf_batch_size)))
+
                             self.loss -= tf.reduce_sum(
                                 tf.where(self.events_in[:, i] > 0,
                                          tf.squeeze(step_LL) / self.batch_num_events,
@@ -1010,7 +1062,7 @@ class NSM(RMTPP):
                     variable_summaries(self.event_preds, name='agg-event-preds-softmax')
                     variable_summaries(self.time_LLs, name='agg-time-LL')
                     variable_summaries(self.mark_LLs, name='agg-mark-LL')
-                    variable_summaries(self.time_LLs + self.mark_LLs, name='agg-total-LL')
+                    # variable_summaries(self.time_LLs + self.mark_LLs, name='agg-total-LL')
                     # variable_summaries(self.delta_ts, name='agg-delta-ts')
                     variable_summaries(self.times, name='agg-times')
                     # variable_summaries(self.log_lambdas, name='agg-log-lambdas')
@@ -1067,14 +1119,12 @@ class NSM(RMTPP):
             all_hidden_states.extend(bptt_hidden_states)
             all_event_preds.extend(bptt_events_pred)
 
-        # print(np.array(all_hidden_states).shape)
+        print('Got Hidden states', np.array(all_hidden_states).shape)
 
         # TODO: This calculation is completely ignoring the clipping which
         # happens during the inference step.
 
         [Vt, bt]  = self.sess.run([self.Vt, self.bt])
-        # print(Vt)
-        # print('bt', bt)
 
         global _quad_worker
         def _quad_worker(params):
