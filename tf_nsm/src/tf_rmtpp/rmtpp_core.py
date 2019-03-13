@@ -722,9 +722,10 @@ class NSM(RMTPP):
 
         self.rs = np.random.RandomState(seed + 42)
 
-        self.del_t = 0.02
-        self.multiply = tf.constant([6])
-        self.ut_size = 6
+        self.del_t = 1.2
+        self.ut_size = 8
+        self.ut_range = 9.6
+        # del_t * ut_size
 
         print('Checking for running NSM seed:', seed)
 
@@ -733,7 +734,7 @@ class NSM(RMTPP):
                 # Make input variables
                 self.events_in = tf.placeholder(tf.int32, [None, self.BPTT], name='events_in')
                 self.times_in = tf.placeholder(self.FLOAT_TYPE, [None, self.BPTT], name='times_in')
-                self.times_adder = tf.range(0, 0.6, 0.1, dtype=self.FLOAT_TYPE)
+                self.times_adder = tf.range(0, self.ut_range, self.del_t, dtype=self.FLOAT_TYPE)
 
                 self.events_out = tf.placeholder(tf.int32, [None, self.BPTT], name='events_out')
                 self.times_out = tf.placeholder(self.FLOAT_TYPE, [None, self.BPTT], name='times_out')
@@ -845,9 +846,9 @@ class NSM(RMTPP):
                         time_next = self.times_out[:, i]
                         # delta_t_next = tf.expand_dims(time_next - self.times_in_Ut[:,i,0], axis=-1)
                         delta_t_next = time_next - self.times_in_Ut[:,i,0]
-                        last_in_arr = tf.round(tf.divide(delta_t_next, 0.1))
+                        last_in_arr = tf.round(tf.divide(delta_t_next, self.del_t))
                         last_in_arr = tf.cast(last_in_arr, tf.int32)
-                        last_in_arr = tf.clip_by_value(last_in_arr, 0, 5)
+                        last_in_arr = tf.clip_by_value(last_in_arr, 0, self.ut_size - 1)
 
                         for j in range(self.ut_size):
 
@@ -890,7 +891,7 @@ class NSM(RMTPP):
 
                             self.lambda_ = []
 
-                            for j in range(6):
+                            for j in range(self.ut_size):
 
                                 self.lambda_.append(tf.matmul(self.states[j], self.Vt,) + base_intensity)
 
@@ -926,9 +927,9 @@ class NSM(RMTPP):
                             last_in_arr = tf.expand_dims(last_in_arr, 1)
 
                             seq_add = tf.multiply(last_in_arr, 0)
-                            seq_add = tf.add(seq_add, 6)
+                            seq_add = tf.add(seq_add, self.ut_size)
                             seq_add = tf.cumsum(seq_add)
-                            seq_add = tf.subtract(seq_add, 6)
+                            seq_add = tf.subtract(seq_add, self.ut_size)
                             seq_add = seq_add + last_in_arr
 
                             # print(last_in_arr[0])
@@ -1135,18 +1136,18 @@ class NSM(RMTPP):
             # print("h_i", h_i)
 
             C = []
-            for x in range(6):
+            for x in range(self.ut_size):
                 C.append(np.exp(np.dot(h_i[x], Vt) + bt).reshape(-1))
             # print("C", C)
             # print(np.array(time_in_seq).shape)
             # print(np.array(time_in_seq[:, idx]).shape)
             # print('time_in_seq[:, idx]', time_in_seq[:, idx])
 
-            t_adder = np.arange(0.0, 0.6, 0.1)
+            t_adder = np.arange(0.0, self.ut_range, self.del_t)
             t_adder = np.expand_dims(t_adder, axis=1)
 
             time_ut = np.array(time_in_seq[:, idx])
-            ut_t_last = np.tile(time_ut, (6, 1))
+            ut_t_last = np.tile(time_ut, (self.ut_size, 1))
             Ut_t_last = t_adder + ut_t_last
             # print("Ut_t_last", Ut_t_last)
 
