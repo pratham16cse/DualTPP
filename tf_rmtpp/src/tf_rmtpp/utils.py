@@ -28,7 +28,7 @@ def pad_features(feats, max_seq_len):
     return padded_feats
 
 def read_data(event_train_file, event_test_file, time_train_file, time_test_file,
-              feats_train_file, feats_test_file,
+              feats_train_file=None, feats_test_file=None,
               pad=True, normalize=False):
     """Read data from given files and return it as a dictionary."""
 
@@ -44,11 +44,17 @@ def read_data(event_train_file, event_test_file, time_train_file, time_test_file
     with open(time_test_file, 'r') as in_file:
         timeTest = [[float(y) for y in x.strip().split()] for x in in_file]
 
-    with open(feats_train_file, 'rb') as in_file:
-        featsTrain = pickle.load(in_file)
+    if feats_train_file is not None:
+        with open(feats_train_file, 'rb') as in_file:
+            featsTrain = pickle.load(in_file)
+    else:
+        featsTrain = []
 
-    with open(feats_test_file, 'rb') as in_file:
-        featsTest = pickle.load(in_file)
+    if feats_test_file is not None:
+        with open(feats_test_file, 'rb') as in_file:
+            featsTest = pickle.load(in_file)
+    else:
+        featsTest = []
 
     assert len(timeTrain) == len(eventTrain)
     assert len(eventTest) == len(timeTest)
@@ -80,7 +86,10 @@ def read_data(event_train_file, event_test_file, time_train_file, time_test_file
         train_event_out_seq = pad_sequences(eventTrainOut, maxlen=max_seq_len, padding='post')
         train_time_in_seq = pad_sequences(timeTrainIn, maxlen=max_seq_len, dtype=float, padding='post')
         train_time_out_seq = pad_sequences(timeTrainOut, maxlen=max_seq_len, dtype=float, padding='post')
-        train_feat_in_seq = pad_features(featsTrain, max_seq_len)
+        if feats_train_file is not None:
+            train_feat_in_seq = pad_features(featsTrain, max_seq_len)
+        else:
+            train_feat_in_seq = []
     else:
         train_event_in_seq = eventTrainIn
         train_event_out_seq = eventTrainOut
@@ -99,7 +108,10 @@ def read_data(event_train_file, event_test_file, time_train_file, time_test_file
         test_event_out_seq = pad_sequences(eventTestOut, maxlen=max_seq_len, padding='post')
         test_time_in_seq = pad_sequences(timeTestIn, maxlen=max_seq_len, dtype=float, padding='post')
         test_time_out_seq = pad_sequences(timeTestOut, maxlen=max_seq_len, dtype=float, padding='post')
-        test_feat_in_seq = pad_features(featsTest, max_seq_len)
+        if feats_test_file is not None:
+            test_feat_in_seq = pad_features(featsTest, max_seq_len)
+        else:
+            test_feat_in_seq = []
     else:
         test_event_in_seq = eventTestIn
         test_event_out_seq = eventTestOut

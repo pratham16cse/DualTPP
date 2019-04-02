@@ -4,13 +4,14 @@ import numpy as np
 import random
 
 class BatchGenerator:
-    def __init__(self, iterable, batchSeqLen=16, shuffle_batches=False, seed=None):
+    def __init__(self, iterable, batchSeqLen=16, shuffle_batches=False, seed=None, batch_pad=True):
         self.iterable = iterable
         #if self.iterable!=None:
         self.batchSeqLen = batchSeqLen
         # self.stepLen = stepLen
         keys = range(len(self.iterable))
         self.seed = seed
+        self.batch_pad = batch_pad
         self.shuffle_batches = shuffle_batches
         if self.shuffle_batches:
             random.Random(self.seed).shuffle(keys)
@@ -68,7 +69,11 @@ class BatchGenerator:
             tsIndices = tsIndices + [0] * (batchSize-batch.shape[0])
             startingTs = startingTs + [0] * (batchSize-batch.shape[0])
             endingTs = endingTs + [0] * (batchSize-batch.shape[0])
-            batch = np.concatenate([batch, np.zeros(([batchSize-batch.shape[0]]+list(batch.shape[1:])))], axis=0)
+            if self.batch_pad:
+                batch = np.concatenate([batch, 
+                                        np.zeros(([batchSize-batch.shape[0]] \
+                                                   + list(batch.shape[1:])))],
+                                        axis=0)
 
         if not self.cursorDict:
             self.iterFinished += 1
