@@ -343,7 +343,6 @@ def run_full_eval(model_dir,
                   sample_src_time_data,
                   sample_tgt_mark_data,
                   sample_tgt_time_data,
-                  sample_tgt_data,
                   avg_ckpts=False):
   """Wrapper for running sample_decode, internal_eval and external_eval.
 
@@ -355,8 +354,8 @@ def run_full_eval(model_dir,
     eval_sess: Evaluation TensorFlow session.
     hparams: Model hyper-parameters.
     summary_writer: Summary writer for logging metrics to TensorBoard.
-    sample_src_data: sample of source data for sample decoding.
-    sample_tgt_data: sample of target data for sample decoding.
+    sample_src_mark_data: sample of source mark data for sample decoding.
+    sample_src_time_data: sample of source time data for sample decoding.
     avg_ckpts: Whether to compute average external evaluation scores.
   Returns:
     Triple containing results summary, global step Tensorflow Variable and

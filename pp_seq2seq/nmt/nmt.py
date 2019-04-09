@@ -264,6 +264,14 @@ def add_arguments(parser):
   # Inference
   parser.add_argument("--ckpt", type=str, default="",
                       help="Checkpoint file to load a model for inference.")
+  parser.add_argument("--decode_mark", type="bool", nargs="?",
+                      const=True, default=False,
+                      help="True to dynamically decode mark using GreedyDecoder \
+                      or BeamSearchDecoder")
+  parser.add_argument("--decode_time", type="bool", nargs="?",
+                      const=True, default=False,
+                      help="True to dynamically decode time using GreedyDecoder \
+                      or BeamSearchDecoder")
   parser.add_argument("--inference_input_mark_file", type=str, default=None,
                       help="Set to the mark file to decode.")
   parser.add_argument("--inference_input_time_file", type=str, default=None,
@@ -376,6 +384,8 @@ def create_hparams(flags):
       src_max_len_infer=flags.src_max_len_infer,
       tgt_max_len_infer=flags.tgt_max_len_infer,
       infer_batch_size=flags.infer_batch_size,
+      decode_mark=flags.decode_mark,
+      decode_time=flags.decode_time,
 
       # Advanced inference arguments
       infer_mode=flags.infer_mode,

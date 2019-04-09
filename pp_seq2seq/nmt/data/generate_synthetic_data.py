@@ -7,7 +7,7 @@ enc_len = 6
 dec_len = 4
 
 input_mark_data = np.random.randint(1, 11, size=(102000, 6))
-input_time_data = np.random.randint(1, 1000, size=(102000, 1)) + np.tile(np.arange(enc_len), [102000, 1])
+input_time_data = np.random.randint(1, 11, size=(102000, 1)) + np.tile(np.arange(enc_len), [102000, 1])
 output_mark_data = np.flip(input_mark_data[:, 2:], axis=1)
 output_time_data = input_time_data[:, [-1]] + np.tile(np.arange(1, dec_len+1), [102000, 1])
 print(input_time_data)
