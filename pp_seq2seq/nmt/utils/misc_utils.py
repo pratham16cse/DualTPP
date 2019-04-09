@@ -160,6 +160,13 @@ def format_text(words):
     words = [words]
   return b" ".join(words)
 
+def format_float(times):
+  """Convert a sequence `times` into string."""
+  if (not hasattr(times, "__len__") and  # for numpy array
+      not isinstance(times, collections.Iterable)):
+    times = [times]
+  times = ["%.4f" % time for time in times]
+  return b" ".join(times)
 
 def format_bpe_text(symbols, delimiter=b"@@"):
   """Convert a sequence of bpe words into sentence."""

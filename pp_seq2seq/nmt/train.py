@@ -734,14 +734,16 @@ def _sample_decode(model, global_step, sess, hparams, iterator,
   }
   sess.run(iterator.initializer, feed_dict=iterator_feed_dict)
 
-  nmt_outputs, attention_summary = model.decode(sess) #TODO Need to edit the model
+  mark_outputs, time_outputs, attention_summary = model.decode(sess)
 
   if hparams.infer_mode == "beam_search":
     # get the top translation.
-    nmt_outputs = nmt_outputs[0]
+    mark_outputs = mark_outputs[0]
+    time_outputs = time_outputs[0]
 
-  translation = nmt_utils.get_translation(
-      nmt_outputs,
+  mark_text, time_text = nmt_utils.get_translation(
+      mark_outputs,
+      time_outputs,
       sent_id=0,
       tgt_eos=hparams.eos,
       subword_option=hparams.subword_option)
@@ -749,7 +751,8 @@ def _sample_decode(model, global_step, sess, hparams, iterator,
   utils.print_out("    src_time: %s" % src_time_data[decode_id])
   utils.print_out("    ref_mark: %s" % tgt_mark_data[decode_id])
   utils.print_out("    ref_time: %s" % tgt_time_data[decode_id])
-  utils.print_out(b"    nmt: " + translation)
+  utils.print_out(b"    model_mark: " + mark_text)
+  utils.print_out(b"    model_time: " + time_text)
 
   # Summary
   if attention_summary is not None:

@@ -52,9 +52,9 @@ class EvalOutputTuple(collections.namedtuple(
 
 
 class InferOutputTuple(collections.namedtuple(
-    "InferOutputTuple", ("infer_logits", "infer_summary",
+    "InferOutputTuple", ("infer_logits", "infer_time", "infer_summary",
                          "mark_sample_id", "time_sample_val",
-                         "sample_words"))):
+                         "sample_words", "sample_times"))):
   """To allow for flexibily in returing different outputs."""
   pass
 
@@ -187,10 +187,11 @@ class BaseModel(object):
       self.eval_loss = res[1]
     elif self.mode == tf.contrib.learn.ModeKeys.INFER:
       self.infer_logits, _, self.final_context_state, \
-      self.mark_sample_id, self.time_sample_val = res
+      self.mark_sample_id, self.infer_time = res
       self.sample_words = reverse_target_vocab_table.lookup(
           tf.to_int64(self.mark_sample_id))
-      #self.sample_times = tf.squeeze(self.time_sample_val)
+      self.time_sample_val = self.infer_time   # These variables are used to ensure
+      self.sample_times = self.time_sample_val # analogy between mark and time
 
     if self.mode != tf.contrib.learn.ModeKeys.INFER:
       ## Count the number of predicted words for compute ppl.
@@ -696,7 +697,7 @@ class BaseModel(object):
     return crossent
 
   def _time_loss(self, time_pred, target_time_output):
-    return tf.squared_difference(target_time_output, time_pred)
+    return tf.squared_difference(target_time_output, tf.squeeze(time_pred, axis=-1))
 
   def _compute_loss(self, logits, decoder_cell_outputs, time_pred):
     """Compute optimization loss."""
@@ -728,10 +729,12 @@ class BaseModel(object):
   def infer(self, sess):
     assert self.mode == tf.contrib.learn.ModeKeys.INFER
     output_tuple = InferOutputTuple(infer_logits=self.infer_logits,
+                                    infer_time=self.infer_time,
                                     infer_summary=self.infer_summary,
                                     mark_sample_id=self.mark_sample_id,
                                     time_sample_val=self.time_sample_val,
-                                    sample_words=self.sample_words)
+                                    sample_words=self.sample_words,
+                                    sample_times=self.sample_times)
     return sess.run(output_tuple)
 
   def decode(self, sess):
@@ -746,16 +749,18 @@ class BaseModel(object):
     """
     output_tuple = self.infer(sess)
     sample_words = output_tuple.sample_words
+    sample_times = output_tuple.sample_times
     infer_summary = output_tuple.infer_summary
 
     # make sure outputs is of shape [batch_size, time] or [beam_width,
     # batch_size, time] when using beam search.
     if self.time_major:
       sample_words = sample_words.transpose()
+      sample_times = sample_times.transpose()
     elif sample_words.ndim == 3:
       # beam search output in [batch_size, time, beam_width] shape.
       sample_words = sample_words.transpose([2, 0, 1])
-    return sample_words, infer_summary
+    return sample_words, sample_times, infer_summary
 
   def build_encoder_states(self, include_embeddings=False):
     """Stack encoder states and return tensor [batch, length, layer, size]."""

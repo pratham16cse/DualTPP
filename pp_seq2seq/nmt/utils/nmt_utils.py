@@ -62,22 +62,24 @@ def decode_and_evaluate(name,
 
       while True:
         try:
-          nmt_outputs, _ = model.decode(sess) #TODO will need to change this
+          mark_outputs, time_outputs, _ = model.decode(sess)
           if infer_mode != "beam_search":
-            nmt_outputs = np.expand_dims(nmt_outputs, 0)
+            mark_outputs = np.expand_dims(mark_outputs, 0)
+            time_outputs = np.expand_dims(time_outputs, 0)
 
-          batch_size = nmt_outputs.shape[1]
+          batch_size = mark_outputs.shape[1]
           num_sentences += batch_size
 
           for sent_id in range(batch_size):
             for beam_id in range(num_translations_per_input):
-              translation = get_translation( #TODO This will get modified
-                  nmt_outputs[beam_id],
+              mark_text, time_text = get_translation(
+                  mark_outputs[beam_id],
+                  time_outputs[beam_id],
                   sent_id,
                   tgt_eos=tgt_eos,
                   subword_option=subword_option)
-              trans_mark_f.write((translation + b"\n").decode("utf-8"))
-              trans_time_f.write((translation + b"\n").decode("utf-8")) #TODO this will also change
+              trans_mark_f.write((mark_text + b"\n").decode("utf-8"))
+              trans_time_f.write((time_text + b"\n").decode("utf-8"))
         except tf.errors.OutOfRangeError:
           utils.print_time(
               "  done, num sentences %d, num translations per input %d" %
@@ -99,21 +101,26 @@ def decode_and_evaluate(name,
   return evaluation_scores
 
 
-def get_translation(nmt_outputs, sent_id, tgt_eos, subword_option):
+def get_translation(mark_outputs, time_outputs, sent_id, tgt_eos, subword_option):
   """Given batch decoding outputs, select a sentence and turn to text."""
   if tgt_eos: tgt_eos = tgt_eos.encode("utf-8")
   # Select a sentence
-  output = nmt_outputs[sent_id, :].tolist()
+  mark_output = mark_outputs[sent_id, :].tolist()
+  time_output = time_outputs[sent_id, :].tolist()
 
   # If there is an eos symbol in outputs, cut them at that point.
-  if tgt_eos and tgt_eos in output:
-    output = output[:output.index(tgt_eos)]
+  if tgt_eos and tgt_eos in mark_output:
+    mark_output = mark_output[:mark_output.index(tgt_eos)]
+    #time_output = time_output[:time_output.index(tgt_eos)] #TODO need to change this
 
   if subword_option == "bpe":  # BPE
-    translation = utils.format_bpe_text(output)
+    mark_text = utils.format_bpe_text(mark_output)
+    time_text = utils.format_bpe_text(time_output)
   elif subword_option == "spm":  # SPM
-    translation = utils.format_spm_text(output)
+    mark_text = utils.format_spm_text(mark_output)
+    time_text = utils.format_spm_text(time_output)
   else:
-    translation = utils.format_text(output)
+    mark_text = utils.format_text(mark_output)
+    time_text = utils.format_float(time_output)
 
-  return translation
+  return mark_text, time_text
