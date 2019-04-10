@@ -38,15 +38,17 @@ __all__ = ["BaseModel", "Model"]
 
 
 class TrainOutputTuple(collections.namedtuple(
-    "TrainOutputTuple", ("train_summary", "train_loss", "predict_count",
-                         "global_step", "word_count", "batch_size", "grad_norm",
-                         "learning_rate"))):
+    "TrainOutputTuple", ("train_summary", "train_loss",
+                         "train_mark_loss", "train_time_loss", "predict_count",
+                         "global_step", "word_count", "batch_size",
+                         "grad_norm", "learning_rate"))):
   """To allow for flexibily in returing different outputs."""
   pass
 
 
 class EvalOutputTuple(collections.namedtuple(
-    "EvalOutputTuple", ("eval_loss", "predict_count", "batch_size"))):
+    "EvalOutputTuple", ("eval_loss", "eval_mark_loss", "eval_time_loss",
+                        "predict_count", "batch_size"))):
   """To allow for flexibily in returing different outputs."""
   pass
 
@@ -179,14 +181,16 @@ class BaseModel(object):
   def _set_train_or_infer(self, res, reverse_target_vocab_table, hparams):
     """Set up training and inference."""
     if self.mode == tf.contrib.learn.ModeKeys.TRAIN:
-      self.train_loss = res[1]
+      self.train_mark_loss, self.train_time_loss = res[1], res[2]
+      self.train_loss = res[1] + res[2]
       self.word_count = tf.reduce_sum(
           self.iterator.source_sequence_length) + tf.reduce_sum(
               self.iterator.target_sequence_length)
     elif self.mode == tf.contrib.learn.ModeKeys.EVAL:
-      self.eval_loss = res[1]
+      self.eval_mark_loss, self.eval_time_loss = res[1], res[2]
+      self.eval_loss = res[1] + res[2]
     elif self.mode == tf.contrib.learn.ModeKeys.INFER:
-      self.infer_logits, _, self.final_context_state, \
+      self.infer_logits, _, _, self.final_context_state, \
       self.mark_sample_id, self.infer_time = res
       self.sample_words = reverse_target_vocab_table.lookup(
           tf.to_int64(self.mark_sample_id))
@@ -340,6 +344,8 @@ class BaseModel(object):
     assert self.mode == tf.contrib.learn.ModeKeys.TRAIN
     output_tuple = TrainOutputTuple(train_summary=self.train_summary,
                                     train_loss=self.train_loss,
+                                    train_mark_loss=self.train_mark_loss,
+                                    train_time_loss=self.train_time_loss,
                                     predict_count=self.predict_count,
                                     global_step=self.global_step,
                                     word_count=self.word_count,
@@ -352,6 +358,8 @@ class BaseModel(object):
     """Execute eval graph."""
     assert self.mode == tf.contrib.learn.ModeKeys.EVAL
     output_tuple = EvalOutputTuple(eval_loss=self.eval_loss,
+                                   eval_mark_loss=self.eval_mark_loss,
+                                   eval_time_loss=self.eval_time_loss,
                                    predict_count=self.predict_count,
                                    batch_size=self.batch_size)
     return sess.run(output_tuple)
@@ -413,11 +421,11 @@ class BaseModel(object):
       if self.mode != tf.contrib.learn.ModeKeys.INFER:
         with tf.device(model_helper.get_device_str(self.num_encoder_layers - 1,
                                                    self.num_gpus)):
-          loss = self._compute_loss(logits, decoder_cell_outputs, time_pred)
+          mark_loss, time_loss = self._compute_loss(logits, decoder_cell_outputs, time_pred)
       else:
-        loss = tf.constant(0.0)
+        mark_loss, time_loss = tf.constant(0.0), tf.constant(0.0)
 
-      return logits, loss, final_context_state, mark_sample_id, time_sample_val
+      return logits, mark_loss, time_loss, final_context_state, mark_sample_id, time_sample_val
 
   @abc.abstractmethod
   def _build_encoder(self, hparams):
@@ -718,9 +726,12 @@ class BaseModel(object):
     if self.time_major:
       target_weights = tf.transpose(target_weights)
 
-    loss = tf.reduce_sum(
-        (crossent + timeloss) * target_weights) / tf.to_float(self.batch_size)
-    return loss
+    mark_loss = tf.reduce_sum(
+        crossent * target_weights) / tf.to_float(self.batch_size)
+    time_loss = tf.reduce_sum(
+        timeloss * target_weights) / tf.to_float(self.batch_size)
+
+    return mark_loss, time_loss
 
   def _get_infer_summary(self, hparams):
     del hparams

@@ -22,6 +22,11 @@ test_mark_input, test_mark_output = mark_data[101000:102000, :6], mark_data[1010
 train_time_input, train_time_output = time_data[:100000, :6], time_data[:100000, 6:]
 dev_time_input, dev_time_output = time_data[100000:101000, :6], time_data[100000:101000, 6:]
 test_time_input, test_time_output = time_data[101000:102000, :6], time_data[101000:102000, 6:]
+def get_diff(data):
+    return data[:, 1:] - data[:, :-1]
+train_time_output = get_diff(np.concatenate([train_time_input[:, -1:], train_time_output], axis=1))
+dev_time_output = get_diff(np.concatenate([dev_time_input[:, -1:], dev_time_output], axis=1))
+test_time_output = get_diff(np.concatenate([test_time_input[:, -1:], test_time_output], axis=1))
 
 
 def write_to_file(fptr, sequences):

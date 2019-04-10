@@ -18,7 +18,7 @@ import codecs
 import os
 import re
 import subprocess
-
+import numpy as np
 import tensorflow as tf
 
 from ..scripts import bleu
@@ -28,22 +28,34 @@ from ..scripts import rouge
 __all__ = ["evaluate"]
 
 
-def evaluate(ref_file, trans_file, metric, subword_option=None): #TODO need to update this function
-  """Pick a metric and evaluate depending on task."""
+def evaluate(ref_mark_file, trans_mark_file,
+             ref_time_file, trans_time_file,
+             metric, subword_option=None):
+  """Pick a pair of metrics and evaluate depending on task."""
+  #`metric` is a underscore separated pair of 
+  # mark and time metrics
+  mark_metric, time_metric = metric.split('_')
   # BLEU scores for translation task
-  if metric.lower() == "bleu":
+  if mark_metric.lower() == "bleu":
     evaluation_score = _bleu(ref_file, trans_file,
                              subword_option=subword_option)
   # ROUGE scores for summarization tasks
-  elif metric.lower() == "rouge":
-    evaluation_score = _rouge(ref_file, trans_file,
+  elif mark_metric.lower() == "rouge":
+    evaluation_score = _rouge(ref_mark_file, trans_mark_file,
                               subword_option=subword_option)
-  elif metric.lower() == "accuracy":
-    evaluation_score = _accuracy(ref_file, trans_file)
-  elif metric.lower() == "word_accuracy":
-    evaluation_score = _word_accuracy(ref_file, trans_file)
+  elif mark_metric.lower() == "accuracy":
+    evaluation_score = _accuracy(ref_mark_file, trans_mark_file)
+  elif mark_metric.lower() == "percenterror":
+    evaluation_score = _percenterror(ref_mark_file, trans_mark_file)
+  elif mark_metric.lower() == "word_accuracy":
+    evaluation_score = _word_accuracy(ref_mark_file, trans_mark_file)
   else:
-    raise ValueError("Unknown metric %s" % metric)
+    raise ValueError("Unknown mark_metric %s" % mark_metric)
+
+  if time_metric.lower() == "rmse":
+    evaluation_score += _rmse(ref_time_file, trans_time_file)
+  else:
+    raise ValueError("Unknown time_metric %s" % time_metric)
 
   return evaluation_score
 
@@ -129,6 +141,8 @@ def _accuracy(label_file, pred_file):
         count += 1
   return 100 * match / count
 
+def _percenterror(label_file, pred_file):
+  return 100.0 - _accuracy(label_file, pred_file)
 
 def _word_accuracy(label_file, pred_file):
   """Compute accuracy on per word basis."""
@@ -182,3 +196,17 @@ def _moses_bleu(multi_bleu_script, tgt_test, trans_file, subword_option=None):
   bleu_score = float(m.group(1))
 
   return bleu_score
+
+
+def _rmse(ref_file, trans_file):
+  with codecs.getreader("utf-8")(tf.gfile.GFile(ref_file, "rb")) as ref_fh:
+    with codecs.getreader("utf-8")(tf.gfile.GFile(trans_file, "rb")) as trans_fh:
+      count = 0.0
+      err = 0.0
+      for ref in ref_fh:
+        ref = [float(r) for r in ref.strip().split()]
+        trans = [float(t) for t in trans_fh.readline().strip().split()]
+        err += np.sum((np.array(ref)-np.array(trans))**2*1.0)
+        count += 1
+  err = np.sqrt(err/count)
+  return err

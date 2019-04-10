@@ -232,9 +232,10 @@ def add_arguments(parser):
                       help="Number of gpus in each worker.")
   parser.add_argument("--log_device_placement", type="bool", nargs="?",
                       const=True, default=False, help="Debug GPU allocation.")
-  parser.add_argument("--metrics", type=str, default="bleu",
-                      help=("Comma-separated list of evaluations "
-                            "metrics (bleu,rouge,accuracy)"))
+  parser.add_argument("--metrics", type=str, default="accurac_rmse",
+                      help=("Comma-separated list of underscore separated \
+                            pairs of (mark, time) evaluation metrics \
+                            e.g. bleu_RMSE,rouge_RMSE,accuracy_MAE"))
   parser.add_argument("--steps_per_external_eval", type=int, default=None,
                       help="""\
       How many training steps to do per external evaluation.  Automatically set
@@ -564,7 +565,7 @@ def extend_hparams(hparams):
   for metric in hparams.metrics:
     best_metric_dir = os.path.join(hparams.out_dir, "best_" + metric)
     tf.gfile.MakeDirs(best_metric_dir)
-    _add_argument(hparams, "best_" + metric, 0, update=False)
+    _add_argument(hparams, "best_" + metric, np.inf, update=False)
     _add_argument(hparams, "best_" + metric + "_dir", best_metric_dir)
 
     if getattr(hparams, "avg_ckpts", None):

@@ -86,13 +86,15 @@ def decode_and_evaluate(name,
               (num_sentences, num_translations_per_input), start_time)
           break
 
-  # Evaluation    #TODO This block will also change
+  # Evaluation
   evaluation_scores = {}
   if ref_mark_file and tf.gfile.Exists(trans_mark_file):
     for metric in metrics:
       score = evaluation_utils.evaluate(
           ref_mark_file,
           trans_mark_file,
+          ref_time_file,
+          trans_time_file,
           metric,
           subword_option=subword_option)
       evaluation_scores[metric] = score

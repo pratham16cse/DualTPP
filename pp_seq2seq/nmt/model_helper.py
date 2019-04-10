@@ -681,3 +681,36 @@ def compute_perplexity(model, sess, name):
   utils.print_time("  eval %s: perplexity %.2f" % (name, perplexity),
                    start_time)
   return perplexity
+
+def compute_combined_loss(model, sess, name):
+  """Compute combined loss of the mark and time
+     outputs of the model.
+
+  Args:
+    model: model for compute loss.
+    sess: tensorflow session to use.
+    name: name of the batch.
+
+  Returns:
+    The combined loss of the eval outputs.
+  """
+  total_mark_loss, total_time_loss = 0, 0
+  total_predict_count = 0
+  start_time = time.time()
+
+  while True:
+    try:
+      output_tuple = model.eval(sess)
+      total_mark_loss += output_tuple.eval_mark_loss * output_tuple.batch_size
+      total_time_loss += output_tuple.eval_time_loss * output_tuple.batch_size
+      total_predict_count += output_tuple.predict_count
+    except tf.errors.OutOfRangeError:
+      break
+
+  mark_loss = utils.safe_exp(total_mark_loss / total_predict_count)
+  time_loss = total_time_loss /total_predict_count
+  combined_loss = mark_loss + time_loss
+  utils.print_time("  eval %s: combined_loss %.2f" % (name, combined_loss),
+                   start_time)
+  return combined_loss
+
