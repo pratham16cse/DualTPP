@@ -180,15 +180,16 @@ class BaseModel(object):
 
   def _set_train_or_infer(self, res, reverse_target_vocab_table, hparams):
     """Set up training and inference."""
+    res_1, res_2 = (res[1] if self.decode_mark else tf.constant(0.0)), (res[2] if self.decode_time else tf.constant(0.0))
     if self.mode == tf.contrib.learn.ModeKeys.TRAIN:
-      self.train_mark_loss, self.train_time_loss = res[1], res[2]
-      self.train_loss = res[1] + res[2]
+      self.train_mark_loss, self.train_time_loss = res_1, res_2
+      self.train_loss = res_1 + res_2
       self.word_count = tf.reduce_sum(
           self.iterator.source_sequence_length) + tf.reduce_sum(
               self.iterator.target_sequence_length)
     elif self.mode == tf.contrib.learn.ModeKeys.EVAL:
-      self.eval_mark_loss, self.eval_time_loss = res[1], res[2]
-      self.eval_loss = res[1] + res[2]
+      self.eval_mark_loss, self.eval_time_loss = res_1, res_2
+      self.eval_loss = res_1 + res_2
     elif self.mode == tf.contrib.learn.ModeKeys.INFER:
       self.infer_logits, _, _, self.final_context_state, \
       self.mark_sample_id, self.infer_time = res
@@ -393,10 +394,14 @@ class BaseModel(object):
     if not self.extract_encoder_layers:
       with tf.variable_scope(scope or "build_network"):
         with tf.variable_scope("decoder/output_projection"):
-          self.output_mark_layer = tf.layers.Dense(
-              self.tgt_vocab_size, use_bias=False, name="output_mark_projection")
-          self.output_time_layer = tf.layers.Dense(
-              1, activation=tf.nn.softplus, name="output_time_projection")
+          if self.decode_mark:
+            self.output_mark_layer = tf.layers.Dense(
+                self.tgt_vocab_size, use_bias=False, name="output_mark_projection")
+          else: self.output_mark_layer = None
+          if self.decode_time:
+            self.output_time_layer = tf.layers.Dense(
+                1, activation=tf.nn.softplus, name="output_time_projection")
+          else: self.output_time_layer = None
 
     with tf.variable_scope(scope or "dynamic_seq2seq", dtype=self.dtype):
       # Encoder
@@ -542,10 +547,8 @@ class BaseModel(object):
             swap_memory=True,
             scope=decoder_scope)
 
-        if self.decode_mark:
-          mark_sample_id = outputs.mark_sample_id
-        if self.decode_time:
-          time_sample_val = outputs.time_sample_val
+        mark_sample_id = outputs.mark_sample_id if self.decode_mark else outputs.time_sample_val
+        time_sample_val = outputs.time_sample_val if self.decode_time else outputs.mark_sample_id
 
         if self.num_sampled_softmax > 0:
           # Note: this is required when using sampled_softmax_loss.
@@ -612,10 +615,14 @@ class BaseModel(object):
               softmax_temperature=sampling_temperature,
               seed=self.random_seed)
         elif infer_mode == "greedy":
-          mark_helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(
-              self.embedding_decoder, mark_start_tokens, mark_end_token)
-          time_helper = my_helper.TimeGreedyHelper(
-              time_start_tokens, time_end_token)
+          if self.decode_mark:
+            mark_helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(
+                self.embedding_decoder, mark_start_tokens, mark_end_token)
+          else: mark_helper = None
+          if self.decode_time:
+            time_helper = my_helper.TimeGreedyHelper(
+                time_start_tokens, time_end_token)
+          else: time_helper = None
         else:
           raise ValueError("Unknown infer_mode '%s'", infer_mode)
 
@@ -624,8 +631,8 @@ class BaseModel(object):
               cell,
               decoder_initial_state,
               mark_helper, time_helper,
-              output_mark_layer=self.output_mark_layer,  # applied per timestep
-              output_time_layer=self.output_time_layer,  # applied per timestep
+              output_mark_layer=self.output_mark_layer if self.decode_mark else None,  # applied per timestep
+              output_time_layer=self.output_time_layer if self.decode_time else None,  # applied per timestep
           )
 
         # Dynamic decoding
@@ -642,11 +649,11 @@ class BaseModel(object):
           if self.decode_mark:
             logits = outputs.mark_rnn_output
             mark_sample_id = outputs.mark_sample_id
-          else: logits, mark_sample_id = None, None
+          else: logits, mark_sample_id = tf.no_op(), tf.no_op()
           if self.decode_time:
             time_pred = outputs.time_rnn_output
             time_sample_val = outputs.time_sample_val
-          else: time_pred, time_sample_val = None, None
+          else: time_pred, time_sample_val = tf.no_op(), tf.no_op()
 
     return logits, decoder_cell_outputs, time_pred, mark_sample_id, time_sample_val, final_context_state
 
@@ -718,18 +725,23 @@ class BaseModel(object):
 
     crossent = self._softmax_cross_entropy_loss(
         logits, decoder_cell_outputs, target_mark_output)
-    timeloss = self._time_loss(
-        time_pred, target_time_output)
+    if self.decode_time:
+      timeloss = self._time_loss(
+          time_pred, target_time_output)
 
     target_weights = tf.sequence_mask(
         self.iterator.target_sequence_length, max_time, dtype=self.dtype)
     if self.time_major:
       target_weights = tf.transpose(target_weights)
 
-    mark_loss = tf.reduce_sum(
-        crossent * target_weights) / tf.to_float(self.batch_size)
-    time_loss = tf.reduce_sum(
-        timeloss * target_weights) / tf.to_float(self.batch_size)
+    if self.decode_mark:
+      mark_loss = tf.reduce_sum(
+          crossent * target_weights) / tf.to_float(self.batch_size)
+    else: mark_loss = None
+    if self.decode_time:
+      time_loss = tf.reduce_sum(
+          timeloss * target_weights) / tf.to_float(self.batch_size)
+    else: time_loss = None
 
     return mark_loss, time_loss
 
@@ -759,15 +771,15 @@ class BaseModel(object):
         outputs: of size [batch_size, time]
     """
     output_tuple = self.infer(sess)
-    sample_words = output_tuple.sample_words
-    sample_times = output_tuple.sample_times
+    sample_words = output_tuple.sample_words if self.decode_mark else None
+    sample_times = output_tuple.sample_times if self.decode_time else None
     infer_summary = output_tuple.infer_summary
 
     # make sure outputs is of shape [batch_size, time] or [beam_width,
     # batch_size, time] when using beam search.
     if self.time_major:
-      sample_words = sample_words.transpose()
-      sample_times = sample_times.transpose()
+      sample_words = sample_words.transpose() if self.decode_mark else None
+      sample_times = sample_times.transpose() if self.decode_time else None
     elif sample_words.ndim == 3:
       # beam search output in [batch_size, time, beam_width] shape.
       sample_words = sample_words.transpose([2, 0, 1])

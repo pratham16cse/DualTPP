@@ -132,8 +132,8 @@ class MyBasicDecoder(decoder.Decoder):
     return BasicDecoderOutput(
         mark_rnn_output=self._mark_rnn_output_size(),
         time_rnn_output=self._time_rnn_output_size(),
-        mark_sample_id=self._mark_helper.sample_ids_shape if self._mark_helper else None,
-        time_sample_val=self._time_helper.sample_ids_shape if self._time_helper else None)
+        mark_sample_id=self._mark_helper.sample_ids_shape if self._mark_helper else self._time_helper.sample_ids_shape,
+        time_sample_val=self._time_helper.sample_ids_shape if self._time_helper else self._mark_helper.sample_ids_shape)
 
   @property
   def output_dtype(self):
@@ -144,8 +144,8 @@ class MyBasicDecoder(decoder.Decoder):
     return BasicDecoderOutput(
         nest.map_structure(lambda _: dtype, self._mark_rnn_output_size()),
         nest.map_structure(lambda _: dtype, self._time_rnn_output_size()),
-        self._mark_helper.sample_ids_dtype if self._mark_helper else None,
-        self._time_helper.sample_ids_dtype if self._time_helper else None)
+        self._mark_helper.sample_ids_dtype if self._mark_helper else self._time_helper.sample_ids_dtype,
+        self._time_helper.sample_ids_dtype if self._time_helper else self._mark_helper.sample_ids_dtype)
 
   def initialize(self, name=None):
     """Initialize the decoder.
@@ -216,22 +216,20 @@ class MyBasicDecoder(decoder.Decoder):
             state=cell_state,
             sample_ids=time_sample_ids)
 
+      if self._mark_helper is None:
+        mark_sample_ids = tf.zeros_like(time_sample_ids)
+      if self._time_helper is None:
+        time_sample_ids = tf.zeros_like(mark_sample_ids)
+
       if self._mark_helper is not None and self._time_helper is not None:
-        #if self._output_mark_layer is not None and self._output_time_layer is not None:
-        #  cell_outputs = tf.concat([cell_mark_outputs, cell_time_outputs], axis=-1)
         finished = tf.logical_and(mark_finished, time_finished)
         next_inputs = tf.concat([mark_next_inputs, time_next_inputs], axis=-1)
         assert mark_next_state == time_next_state #TODO make sure this works
         next_state = mark_next_state
-        #sample_ids = tf.concat([mark_sample_ids, time_sample_ids], axis=-1)
       elif self._mark_helper is not None:
-        #cell_outputs = cell_mark_outputs if self.output_mark_layer is not None else cell_outputs
         finished, next_inputs, next_state = mark_finished, mark_next_inputs, mark_next_state
-        #sample_ids = mark_sample_ids
       elif self._time_helper is not None:
-        #cell_outputs = cell_time_outputs if self.output_time_layer is not None else cell_outputs
         finished, next_inputs, next_state = time_finished, time_next_inputs, time_next_state
-        #sample_ids = time_sample_ids
 
 
     outputs = BasicDecoderOutput(cell_mark_outputs, cell_time_outputs,

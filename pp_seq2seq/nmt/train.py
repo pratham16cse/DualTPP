@@ -753,8 +753,8 @@ def _sample_decode(model, global_step, sess, hparams, iterator,
   utils.print_out("    src_time: %s" % src_time_data[decode_id])
   utils.print_out("    ref_mark: %s" % tgt_mark_data[decode_id])
   utils.print_out("    ref_time: %s" % tgt_time_data[decode_id])
-  utils.print_out(b"    model_mark: " + mark_text)
-  utils.print_out(b"    model_time: " + time_text)
+  if hparams.decode_mark: utils.print_out(b"    model_mark: " + mark_text)
+  if hparams.decode_time: utils.print_out(b"    model_time: " + time_text)
 
   # Summary
   if attention_summary is not None:
@@ -792,7 +792,9 @@ def _external_eval(model, global_step, sess, hparams, iterator,
       beam_width=hparams.beam_width,
       tgt_eos=hparams.eos,
       decode=decode,
-      infer_mode=hparams.infer_mode)
+      infer_mode=hparams.infer_mode,
+      decode_mark=hparams.decode_mark,
+      decode_time=hparams.decode_time)
   # Save on best metrics
   if decode:
     for metric in hparams.metrics:

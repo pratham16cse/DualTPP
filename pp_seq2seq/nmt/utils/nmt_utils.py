@@ -40,7 +40,9 @@ def decode_and_evaluate(name,
                         tgt_eos,
                         num_translations_per_input=1,
                         decode=True,
-                        infer_mode="greedy"):
+                        infer_mode="greedy",
+                        decode_mark=False,
+                        decode_time=False):
   """Decode a test set and compute a score according to the evaluation task."""
   # Decode
   if decode:
@@ -78,8 +80,8 @@ def decode_and_evaluate(name,
                   sent_id,
                   tgt_eos=tgt_eos,
                   subword_option=subword_option)
-              trans_mark_f.write((mark_text + b"\n").decode("utf-8"))
-              trans_time_f.write((time_text + b"\n").decode("utf-8"))
+              if decode_mark: trans_mark_f.write((mark_text + b"\n").decode("utf-8"))
+              if decode_time: trans_time_f.write((time_text + b"\n").decode("utf-8"))
         except tf.errors.OutOfRangeError:
           utils.print_time(
               "  done, num sentences %d, num translations per input %d" %
@@ -96,6 +98,8 @@ def decode_and_evaluate(name,
           ref_time_file,
           trans_time_file,
           metric,
+          decode_mark,
+          decode_time,
           subword_option=subword_option)
       evaluation_scores[metric] = score
       utils.print_out("  %s %s: %.1f" % (metric, name, score))
@@ -107,8 +111,8 @@ def get_translation(mark_outputs, time_outputs, sent_id, tgt_eos, subword_option
   """Given batch decoding outputs, select a sentence and turn to text."""
   if tgt_eos: tgt_eos = tgt_eos.encode("utf-8")
   # Select a sentence
-  mark_output = mark_outputs[sent_id, :].tolist()
-  time_output = time_outputs[sent_id, :].tolist()
+  mark_output = mark_outputs[sent_id, :].tolist() if mark_outputs is not None else None
+  time_output = time_outputs[sent_id, :].tolist() if time_outputs is not None else None
 
   # If there is an eos symbol in outputs, cut them at that point.
   if tgt_eos and tgt_eos in mark_output:
@@ -122,7 +126,9 @@ def get_translation(mark_outputs, time_outputs, sent_id, tgt_eos, subword_option
     mark_text = utils.format_spm_text(mark_output)
     time_text = utils.format_spm_text(time_output)
   else:
-    mark_text = utils.format_text(mark_output)
-    time_text = utils.format_float(time_output)
+    if mark_outputs is not None: mark_text = utils.format_text(mark_output)
+    else: mark_text = None
+    if time_outputs is not None: time_text = utils.format_float(time_output)
+    else: time_text = None
 
   return mark_text, time_text

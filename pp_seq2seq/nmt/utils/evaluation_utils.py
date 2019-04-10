@@ -30,32 +30,36 @@ __all__ = ["evaluate"]
 
 def evaluate(ref_mark_file, trans_mark_file,
              ref_time_file, trans_time_file,
-             metric, subword_option=None):
+             metric, decode_mark, decode_time,
+             subword_option=None):
   """Pick a pair of metrics and evaluate depending on task."""
   #`metric` is a underscore separated pair of 
   # mark and time metrics
   mark_metric, time_metric = metric.split('_')
-  # BLEU scores for translation task
-  if mark_metric.lower() == "bleu":
-    evaluation_score = _bleu(ref_file, trans_file,
-                             subword_option=subword_option)
-  # ROUGE scores for summarization tasks
-  elif mark_metric.lower() == "rouge":
-    evaluation_score = _rouge(ref_mark_file, trans_mark_file,
-                              subword_option=subword_option)
-  elif mark_metric.lower() == "accuracy":
-    evaluation_score = _accuracy(ref_mark_file, trans_mark_file)
-  elif mark_metric.lower() == "percenterror":
-    evaluation_score = _percenterror(ref_mark_file, trans_mark_file)
-  elif mark_metric.lower() == "word_accuracy":
-    evaluation_score = _word_accuracy(ref_mark_file, trans_mark_file)
-  else:
-    raise ValueError("Unknown mark_metric %s" % mark_metric)
+  evaluation_score = 0.0
+  if decode_mark:
+    # BLEU scores for translation task
+    if mark_metric.lower() == "bleu":
+      evaluation_score += _bleu(ref_file, trans_file,
+                               subword_option=subword_option)
+    # ROUGE scores for summarization tasks
+    elif mark_metric.lower() == "rouge":
+      evaluation_score += _rouge(ref_mark_file, trans_mark_file,
+                                subword_option=subword_option)
+    elif mark_metric.lower() == "accuracy":
+      evaluation_score += _accuracy(ref_mark_file, trans_mark_file)
+    elif mark_metric.lower() == "percenterror":
+      evaluation_score += _percenterror(ref_mark_file, trans_mark_file)
+    elif mark_metric.lower() == "word_accuracy":
+      evaluation_score += _word_accuracy(ref_mark_file, trans_mark_file)
+    else:
+      raise ValueError("Unknown mark_metric %s" % mark_metric)
 
-  if time_metric.lower() == "rmse":
-    evaluation_score += _rmse(ref_time_file, trans_time_file)
-  else:
-    raise ValueError("Unknown time_metric %s" % time_metric)
+  if decode_time:
+    if time_metric.lower() == "rmse":
+      evaluation_score += _rmse(ref_time_file, trans_time_file)
+    else:
+      raise ValueError("Unknown time_metric %s" % time_metric)
 
   return evaluation_score
 
