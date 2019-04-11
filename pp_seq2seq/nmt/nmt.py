@@ -60,6 +60,9 @@ def add_arguments(parser):
       For gnmt, we build 1 bi-directional layer, and (num_encoder_layers - 1)
         uni-directional layers.\
       """)
+  parser.add_argument("--decoder_type", type=str, default="", help="""
+      Currently supports only `joint_time`. Otherwise not required.
+      """)
   parser.add_argument("--residual", type="bool", nargs="?", const=True,
                       default=False,
                       help="Whether to add residual connections.")
@@ -131,6 +134,8 @@ def add_arguments(parser):
                       default=True,
                       help=("Whether try colocating gradients with "
                             "corresponding op"))
+  parser.add_argument("--infer_learning_rate", type=float, default=0.1,
+                      help="Learning rate for inference optimization")
 
   # initializer
   parser.add_argument("--init_op", type=str, default="uniform",
@@ -351,6 +356,7 @@ def create_hparams(flags):
       dropout=flags.dropout,
       unit_type=flags.unit_type,
       encoder_type=flags.encoder_type,
+      decoder_type=flags.decoder_type,
       residual=flags.residual,
       time_major=flags.time_major,
       num_embeddings_partitions=flags.num_embeddings_partitions,
@@ -387,6 +393,7 @@ def create_hparams(flags):
       infer_batch_size=flags.infer_batch_size,
       decode_mark=flags.decode_mark,
       decode_time=flags.decode_time,
+      infer_learning_rate=flags.infer_learning_rate,
 
       # Advanced inference arguments
       infer_mode=flags.infer_mode,

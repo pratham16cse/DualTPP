@@ -749,7 +749,7 @@ class BaseModel(object):
     del hparams
     return tf.no_op()
 
-  def infer(self, sess):
+  def infer(self, sess, iterator_feed_dict=None):
     assert self.mode == tf.contrib.learn.ModeKeys.INFER
     output_tuple = InferOutputTuple(infer_logits=self.infer_logits,
                                     infer_time=self.infer_time,
@@ -760,7 +760,7 @@ class BaseModel(object):
                                     sample_times=self.sample_times)
     return sess.run(output_tuple)
 
-  def decode(self, sess):
+  def decode(self, sess, iterator_feed_dict=None):
     """Decode a batch.
 
     Args:
@@ -770,7 +770,7 @@ class BaseModel(object):
       A tuple consiting of outputs, infer_summary.
         outputs: of size [batch_size, time]
     """
-    output_tuple = self.infer(sess)
+    output_tuple = self.infer(sess, iterator_feed_dict)
     sample_words = output_tuple.sample_words if self.decode_mark else None
     sample_times = output_tuple.sample_times if self.decode_time else None
     infer_summary = output_tuple.infer_summary

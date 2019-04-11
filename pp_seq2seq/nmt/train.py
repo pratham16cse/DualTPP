@@ -22,6 +22,7 @@ import time
 
 import tensorflow as tf
 
+from . import s2stpp_model
 from . import attention_model
 from . import gnmt_model
 from . import inference
@@ -471,6 +472,8 @@ def get_model_creator(hparams):
     model_creator = gnmt_model.GNMTModel
   elif hparams.attention and hparams.attention_architecture == "standard":
     model_creator = attention_model.AttentionModel
+  elif hparams.decoder_type == 'joint_time':
+    model_creator = s2stpp_model.S2stppModel
   elif not hparams.attention:
     model_creator = nmt_model.Model
   else:
@@ -736,7 +739,7 @@ def _sample_decode(model, global_step, sess, hparams, iterator,
   }
   sess.run(iterator.initializer, feed_dict=iterator_feed_dict)
 
-  mark_outputs, time_outputs, attention_summary = model.decode(sess)
+  mark_outputs, time_outputs, attention_summary = model.decode(sess, iterator_feed_dict)
 
   if hparams.infer_mode == "beam_search":
     # get the top translation.

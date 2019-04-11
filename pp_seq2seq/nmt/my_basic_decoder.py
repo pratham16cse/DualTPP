@@ -24,7 +24,8 @@ __all__ = [
 
 
 class BasicDecoderOutput(
-    collections.namedtuple("BasicDecoderOutput", ("mark_rnn_output",
+    collections.namedtuple("BasicDecoderOutput", ("cell_output",
+                                                  "mark_rnn_output",
                                                   "time_rnn_output",
                                                   "mark_sample_id",
                                                   "time_sample_val"))):
@@ -90,6 +91,9 @@ class MyBasicDecoder(decoder.Decoder):
   def batch_size(self):
     return self._mark_helper.batch_size
 
+  def _cell_output_size(self):
+      return self._cell.output_size
+
   def _mark_rnn_output_size(self):
     size = self._cell.output_size
     if self._output_mark_layer is None:
@@ -130,6 +134,7 @@ class MyBasicDecoder(decoder.Decoder):
   def output_size(self):
     # Return the cell output and the id
     return BasicDecoderOutput(
+        cell_output=self._cell_output_size(),
         mark_rnn_output=self._mark_rnn_output_size(),
         time_rnn_output=self._time_rnn_output_size(),
         mark_sample_id=self._mark_helper.sample_ids_shape if self._mark_helper else self._time_helper.sample_ids_shape,
@@ -142,6 +147,7 @@ class MyBasicDecoder(decoder.Decoder):
     # Return that structure and the sample_ids_dtype from the helper.
     dtype = nest.flatten(self._initial_state)[0].dtype
     return BasicDecoderOutput(
+        nest.map_structure(lambda _: dtype, self._cell_output_size()),
         nest.map_structure(lambda _: dtype, self._mark_rnn_output_size()),
         nest.map_structure(lambda _: dtype, self._time_rnn_output_size()),
         self._mark_helper.sample_ids_dtype if self._mark_helper else self._time_helper.sample_ids_dtype,
@@ -232,6 +238,6 @@ class MyBasicDecoder(decoder.Decoder):
         finished, next_inputs, next_state = time_finished, time_next_inputs, time_next_state
 
 
-    outputs = BasicDecoderOutput(cell_mark_outputs, cell_time_outputs,
+    outputs = BasicDecoderOutput(cell_outputs, cell_mark_outputs, cell_time_outputs,
                                  mark_sample_ids, time_sample_ids)
     return (outputs, next_state, next_inputs, finished)
