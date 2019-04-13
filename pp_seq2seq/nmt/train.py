@@ -23,6 +23,7 @@ import time
 import tensorflow as tf
 
 from . import s2stpp_model
+from . import vae_model
 from . import attention_model
 from . import gnmt_model
 from . import inference
@@ -472,6 +473,8 @@ def get_model_creator(hparams):
     model_creator = gnmt_model.GNMTModel
   elif hparams.attention and hparams.attention_architecture == "standard":
     model_creator = attention_model.AttentionModel
+  elif hparams.decoder_type == 'joint_time':
+    model_creator = vae_model.VAEmodel
   elif hparams.decoder_type == 'joint_time':
     model_creator = s2stpp_model.S2stppModel
   elif not hparams.attention:
