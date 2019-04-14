@@ -42,7 +42,8 @@ def decode_and_evaluate(name,
                         decode=True,
                         infer_mode="greedy",
                         decode_mark=False,
-                        decode_time=False):
+                        decode_time=False,
+                        iterator_feed_dict=None):
   """Decode a test set and compute a score according to the evaluation task."""
   # Decode
   if decode:
@@ -64,7 +65,7 @@ def decode_and_evaluate(name,
 
       while True:
         try:
-          mark_outputs, time_outputs, _ = model.decode(sess)
+          mark_outputs, time_outputs, _ = model.decode(sess, iterator_feed_dict=iterator_feed_dict)
           if infer_mode != "beam_search":
             mark_outputs = np.expand_dims(mark_outputs, 0)
             time_outputs = np.expand_dims(time_outputs, 0)

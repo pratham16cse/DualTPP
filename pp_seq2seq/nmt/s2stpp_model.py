@@ -111,7 +111,13 @@ class S2stppModel(model.Model):
 
       #################### Create new function for this block ################
       if self.mode != tf.contrib.learn.ModeKeys.INFER:
-        neg_ln_joint_distribution, _ = self.f_star(self.encoder_outputs, self.decoder_outputs)
+        target_mark_output = self.iterator.target_mark_output
+        target_time_output = self.iterator.target_time_output
+        neg_ln_joint_distribution, _ = self.f_star(self.encoder_outputs, self.decoder_outputs, target_time_output)
+        self.encoder_outputs_ph = tf.no_op()
+        self.decoder_outputs_ph = tf.no_op()
+        #self.time_optimizer = tf.no_op()
+        self.time_optimizer = tf.train.AdamOptimizer(self.infer_learning_rate).minimize(neg_ln_joint_distribution)
 
       else:
         if not self.decode_time:
@@ -125,7 +131,7 @@ class S2stppModel(model.Model):
       if self.mode != tf.contrib.learn.ModeKeys.INFER:
         with tf.device(model_helper.get_device_str(self.num_encoder_layers - 1,
                                                    self.num_gpus)):
-          mark_loss, time_loss = self._compute_loss(logits, decoder_cell_outputs, time_pred, neg_ln_joint_distribution)
+          mark_loss, time_loss = self._compute_loss(target_mark_output, target_time_output, logits, decoder_cell_outputs, time_pred, neg_ln_joint_distribution)
       else:
         mark_loss, time_loss = tf.constant(0.0), tf.constant(0.0)
 
@@ -315,12 +321,17 @@ class S2stppModel(model.Model):
 
     return logits, decoder_cell_outputs, time_pred, mark_sample_id, time_sample_val, final_context_state, outputs.cell_output
 
-  def f_star(self, encoder_outputs=None, decoder_outputs=None):
-    print('Inside f_star.........', self.mode)
+  def f_star(self, encoder_outputs=None, decoder_outputs=None, target_time_output=None):
+    print('Inside f_star.........', self.mode, self.batch_size)
     if self.mode != tf.contrib.learn.ModeKeys.INFER:
-      time_pred = self.iterator.target_time_output #TODO make this a non-trainable variable with validate_shape=False
+      #TODO make `time_pred` a non-trainable variable with validate_shape=False
+      time_pred = tf.get_variable('time_pred', initializer=target_time_output, validate_shape=False)
     else:
-      time_pred = tf.get_variable('time_pred', initializer=tf.random_normal((1, self.tgt_max_len_infer)))
+      time_pred = tf.get_variable('time_pred',
+                                  initializer=tf.random_normal((self.batch_size, self.tgt_max_len_infer)),
+                                  validate_shape=False)
+      if self.time_major:
+        time_pred = tf.transpose(time_pred)
       encoder_outputs = self.encoder_outputs_ph = tf.placeholder(tf.float32, shape=[None, None, self.num_units])
       decoder_outputs = self.decoder_outputs_ph = tf.placeholder(tf.float32, shape=[None, None, self.num_units])
 
@@ -331,9 +342,21 @@ class S2stppModel(model.Model):
     self.w = tf.layers.dense(inputs, 1)
     self.gamma = tf.layers.dense(inputs, 1) #TODO `gamma` should be shared across all decoder positions
 
-    time_j_minus_1 = tf.concat([tf.zeros((self.batch_size, 1)), time_pred[:, -1:]], axis=0 if self.time_major else 1)
+    batch_size = tf.shape(time_pred)[1] if self.time_major else tf.shape(time_pred)[0]
+    zeros = tf.zeros((batch_size, 1))
+    time_pred_ = time_pred[:-1, :] if self.time_major else time_pred[:, :-1]
+    if self.time_major:
+        zeros = tf.transpose(zeros)
+
+    time_j_minus_1 = tf.concat([zeros, time_pred_], axis=0 if self.time_major else 1)
     time_diff = time_pred - time_j_minus_1 
 
+    time_j_minus_1 = tf.Print(time_j_minus_1, [tf.shape(self.gamma), tf.shape(time_j_minus_1),
+                                               tf.shape(self.w), tf.shape(time_diff),
+                                               tf.shape(encoder_outputs), tf.shape(decoder_outputs),
+                                               tf.shape(time_pred)])
+    if target_time_output is not None:
+        time_j_minus_1 = tf.Print(time_j_minus_1, [target_time_output])
     ln_lambda_star = self.lambda_0 + self.gamma * time_j_minus_1 + self.w * time_diff
     neg_ln_joint_distribution = (-1.0) \
                               * (ln_lambda_star \
@@ -352,22 +375,20 @@ class S2stppModel(model.Model):
                                     time_sample_val=self.time_sample_val,
                                     sample_words=self.sample_words,
                                     sample_times=self.sample_times)
-    sess.run(self.iterator.initializer, feed_dict=iterator_feed_dict)
-    _, encoder_outputs_ret, decoder_outputs_ret = sess.run([self.infer_logits,
-                                                    self.encoder_outputs,
-                                                    self.decoder_outputs])
-    sess.run(self.iterator.initializer, feed_dict=iterator_feed_dict)
-    for _ in range(10):
+    output_tuple_ret, encoder_outputs_ret, decoder_outputs_ret = sess.run([output_tuple,
+                                                                           self.encoder_outputs,
+                                                                           self.decoder_outputs])
+    #print('Inside infer ... iterator_feed_dict:', iterator_feed_dict)
+    for _ in range(100):
         sess.run(self.time_optimizer, feed_dict={self.encoder_outputs_ph:encoder_outputs_ret,
                                                  self.decoder_outputs_ph:decoder_outputs_ret})
-        sess.run(self.iterator.initializer, feed_dict=iterator_feed_dict)
-    return sess.run(output_tuple)
+    return output_tuple_ret
 
 
-  def _compute_loss(self, logits, decoder_cell_outputs, time_pred, neg_ln_joint_distribution):
+  def _compute_loss(self, target_mark_output, target_time_output, logits, decoder_cell_outputs, time_pred, neg_ln_joint_distribution):
     """Compute optimization loss."""
-    target_mark_output = self.iterator.target_mark_output
-    target_time_output = self.iterator.target_time_output
+    #target_mark_output = self.iterator.target_mark_output
+    #target_time_output = self.iterator.target_time_output
     if self.time_major:
       target_mark_output = tf.transpose(target_mark_output)
       target_time_output = tf.transpose(target_time_output)
