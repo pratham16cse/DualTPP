@@ -468,12 +468,13 @@ def before_train(loaded_train_model, train_model, train_sess, global_step,
 
 def get_model_creator(hparams):
   """Get the right model class depending on configuration."""
+  print(hparams.encoder_type, ": Encoder Type")
   if (hparams.encoder_type == "gnmt" or
       hparams.attention_architecture in ["gnmt", "gnmt_v2"]):
     model_creator = gnmt_model.GNMTModel
   elif hparams.attention and hparams.attention_architecture == "standard":
     model_creator = attention_model.AttentionModel
-  elif hparams.decoder_type == 'joint_time':
+  elif hparams.decoder_type == 'vae_joint_time':
     model_creator = vae_model.VAEmodel
   elif hparams.decoder_type == 'joint_time':
     model_creator = s2stpp_model.S2stppModel

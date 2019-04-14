@@ -41,6 +41,8 @@ class VAEmodel(model.Model):
       raise Exception('VAEmodel requires tgt_max_len_infer attribute to be set.')
     self.tgt_max_len_infer = hparams.tgt_max_len_infer
     self.infer_learning_rate = hparams.infer_learning_rate
+    self.z_dim = 5
+    self.padder = True
 
     super(VAEmodel, self).__init__(
         hparams=hparams,
@@ -97,7 +99,10 @@ class VAEmodel(model.Model):
         self.encoder_outputs = None
         encoder_state = None
       else:
-        self.encoder_outputs, encoder_state = self._build_encoder(hparams)
+        self.encoder_outputs, encoder_state, self.mean, self.stddev = self._build_encoder(hparams)
+
+      self.latent_vector = self.mean + self.stddev * tf.random_normal(tf.shape(self.mean), mean=0., stddev=1., dtype=tf.float32)
+
 
       # Skip decoder if extracting only encoder layers
       if self.extract_encoder_layers:
@@ -107,7 +112,7 @@ class VAEmodel(model.Model):
       logits, decoder_cell_outputs, time_pred, \
       mark_sample_id, time_sample_val, \
       final_context_state, self.decoder_outputs = (
-          self._build_decoder(self.encoder_outputs, encoder_state, hparams))
+          self._build_decoder(self.latent_vector, encoder_state, hparams))
 
       #################### Create new function for this block ################
       if self.mode != tf.contrib.learn.ModeKeys.INFER:
@@ -207,7 +212,18 @@ class VAEmodel(model.Model):
     # Use the top layer for now
     self.encoder_state_list = [encoder_outputs]
 
-    return encoder_outputs, encoder_state
+    if self.padder:
+      pad = tf.Variable(tf.random_normal(tf.shape(encoder_outputs), 2*tf.shape(encoder_outputs)))
+      encoder_outputs = tf.matmul(encoder_outputs, pad)
+
+    self.z_dim = tf.shape(encoder_outputs)
+    # The mean parameter is unconstrained
+    mean = encoder_outputs[:, :self.z_dim]
+    # The standard deviation must be positive.
+    # Parameterize with a softplus and add a small epsilon for numerical stability
+    stddev = 1e-6 + tf.nn.softplus(encoder_outputs[:, self.z_dim:])
+
+    return encoder_outputs, encoder_state, mean, stddev
 
   def _build_encoder(self, hparams):
     """Build encoder from source."""
