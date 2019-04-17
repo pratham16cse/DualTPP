@@ -471,14 +471,19 @@ def get_model_creator(hparams):
   print(hparams.encoder_type, ": Encoder Type")
   if (hparams.encoder_type == "gnmt" or
       hparams.attention_architecture in ["gnmt", "gnmt_v2"]):
+    print('GNMT Model')
     model_creator = gnmt_model.GNMTModel
   elif hparams.attention and hparams.attention_architecture == "standard":
+    print('Attention Model')
     model_creator = attention_model.AttentionModel
   elif hparams.decoder_type == 'vae_joint_time':
+    print('VAE Model')
     model_creator = vae_model.VAEmodel
   elif hparams.decoder_type == 'joint_time':
+    print('S2S Model')
     model_creator = s2stpp_model.S2stppModel
   elif not hparams.attention:
+    print('NMT Model')
     model_creator = nmt_model.Model
   else:
     raise ValueError("Unknown attention architecture %s" %

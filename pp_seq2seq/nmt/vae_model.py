@@ -101,7 +101,10 @@ class VAEmodel(model.Model):
       else:
         self.encoder_outputs, encoder_state, self.mean, self.stddev = self._build_encoder(hparams)
 
+
+      self.latent_vector = self.encoder_outputs[-1]
       self.latent_vector = self.mean + self.stddev * tf.random_normal(tf.shape(self.mean), mean=0., stddev=1., dtype=tf.float32)
+
 
 
       # Skip decoder if extracting only encoder layers
@@ -115,14 +118,14 @@ class VAEmodel(model.Model):
           self._build_decoder(self.latent_vector, encoder_state, hparams))
 
       #################### Create new function for this block ################
-      if self.mode != tf.contrib.learn.ModeKeys.INFER:
-        neg_ln_joint_distribution, _ = self.f_star(self.encoder_outputs, self.decoder_outputs)
+      # if self.mode != tf.contrib.learn.ModeKeys.INFER:
+      #   neg_ln_joint_distribution, _ = self.f_star(self.encoder_outputs, self.decoder_outputs)
 
-      else:
-        if not self.decode_time:
-          neg_ln_joint_distribution, time_pred = self.f_star()
-          neg_ln_joint_distribution = tf.reduce_sum(neg_ln_joint_distribution, axis=0 if self.time_major else 1)
-          self.time_optimizer = tf.train.AdamOptimizer(self.infer_learning_rate).minimize(neg_ln_joint_distribution)
+      # else:
+      #   if not self.decode_time:
+      #     neg_ln_joint_distribution, time_pred = self.f_star()
+      #     neg_ln_joint_distribution = tf.reduce_sum(neg_ln_joint_distribution, axis=0 if self.time_major else 1)
+      #     self.time_optimizer = tf.train.AdamOptimizer(self.infer_learning_rate).minimize(neg_ln_joint_distribution)
       #################### Create new function for this block ################
 
 
@@ -130,7 +133,7 @@ class VAEmodel(model.Model):
       if self.mode != tf.contrib.learn.ModeKeys.INFER:
         with tf.device(model_helper.get_device_str(self.num_encoder_layers - 1,
                                                    self.num_gpus)):
-          mark_loss, time_loss = self._compute_loss(logits, decoder_cell_outputs, time_pred, neg_ln_joint_distribution)
+          mark_loss, time_loss = self._compute_loss(logits, decoder_cell_outputs, time_pred)
       else:
         mark_loss, time_loss = tf.constant(0.0), tf.constant(0.0)
 
@@ -173,6 +176,7 @@ class VAEmodel(model.Model):
         cell = self._build_encoder_cell(hparams, num_layers,
                                         num_residual_layers)
 
+        #TODO: rnn_input should be given in each step.
         encoder_outputs, encoder_state = tf.nn.dynamic_rnn(
             cell,
             #self.encoder_emb_inp,
@@ -212,16 +216,23 @@ class VAEmodel(model.Model):
     # Use the top layer for now
     self.encoder_state_list = [encoder_outputs]
 
-    if self.padder:
-      pad = tf.Variable(tf.random_normal(tf.shape(encoder_outputs), 2*tf.shape(encoder_outputs)))
-      encoder_outputs = tf.matmul(encoder_outputs, pad)
+    latent_vector_out = encoder_outputs[-1]
 
-    self.z_dim = tf.shape(encoder_outputs)
-    # The mean parameter is unconstrained
-    mean = encoder_outputs[:, :self.z_dim]
-    # The standard deviation must be positive.
-    # Parameterize with a softplus and add a small epsilon for numerical stability
-    stddev = 1e-6 + tf.nn.softplus(encoder_outputs[:, self.z_dim:])
+    if self.padder:
+      W_mu = tf.Variable(tf.random_normal([128, 128]))
+      W_std = tf.Variable(tf.random_normal([128, 128]))
+      mean = tf.matmul(latent_vector_out, W_mu)
+      stddev = 1e-6 + tf.nn.softplus(tf.matmul(latent_vector_out, W_std))
+
+    else:
+      self.z_dim = latent_vector_out.get_shape()
+      print(self.z_dim)
+      self.z_dim = self.z_dim[1]//2
+      # The mean parameter is unconstrained
+      mean = latent_vector_out[:, :self.z_dim]
+      # The standard deviation must be positive.
+      # Parameterize with a softplus and add a small epsilon for numerical stability
+      stddev = 1e-6 + tf.nn.softplus(latent_vector_out[:, self.z_dim:])
 
     return encoder_outputs, encoder_state, mean, stddev
 
@@ -494,19 +505,54 @@ class VAEmodel(model.Model):
                                     time_sample_val=self.time_sample_val,
                                     sample_words=self.sample_words,
                                     sample_times=self.sample_times)
-    sess.run(self.iterator.initializer, feed_dict=iterator_feed_dict)
-    _, encoder_outputs_ret, decoder_outputs_ret = sess.run([self.infer_logits,
-                                                    self.encoder_outputs,
-                                                    self.decoder_outputs])
-    sess.run(self.iterator.initializer, feed_dict=iterator_feed_dict)
-    for _ in range(10):
-        sess.run(self.time_optimizer, feed_dict={self.encoder_outputs_ph:encoder_outputs_ret,
-                                                 self.decoder_outputs_ph:decoder_outputs_ret})
-        sess.run(self.iterator.initializer, feed_dict=iterator_feed_dict)
+    # sess.run(self.iterator.initializer, feed_dict=iterator_feed_dict)
+    # _, encoder_outputs_ret, decoder_outputs_ret = sess.run([self.infer_logits,
+    #                                                 self.encoder_outputs,
+    #                                                 self.decoder_outputs])
+    # sess.run(self.iterator.initializer, feed_dict=iterator_feed_dict)
+    # for _ in range(10):
+    #     sess.run(self.time_optimizer, feed_dict={self.encoder_outputs_ph:encoder_outputs_ret,
+    #                                              self.decoder_outputs_ph:decoder_outputs_ret})
+    #     sess.run(self.iterator.initializer, feed_dict=iterator_feed_dict)
     return sess.run(output_tuple)
 
+  def _softmax_cross_entropy_loss(
+      self, logits, decoder_cell_outputs, labels):
+    """Compute softmax loss or sampled softmax loss."""
+    if self.num_sampled_softmax > 0:
 
-  def _compute_loss(self, logits, decoder_cell_outputs, time_pred, neg_ln_joint_distribution):
+      is_sequence = (decoder_cell_outputs.shape.ndims == 3)
+
+      if is_sequence:
+        labels = tf.reshape(labels, [-1, 1])
+        inputs = tf.reshape(decoder_cell_outputs, [-1, self.num_units])
+
+      crossent = tf.nn.sampled_softmax_loss(
+          weights=tf.transpose(self.output_mark_layer.kernel),
+          biases=self.output_mark_layer.bias or tf.zeros([self.tgt_vocab_size]),
+          labels=labels,
+          inputs=inputs,
+          num_sampled=self.num_sampled_softmax,
+          num_classes=self.tgt_vocab_size,
+          partition_strategy="div",
+          seed=self.random_seed)
+
+      if is_sequence:
+        if self.time_major:
+          crossent = tf.reshape(crossent, [-1, self.batch_size])
+        else:
+          crossent = tf.reshape(crossent, [self.batch_size, -1])
+
+    else:
+      crossent = tf.nn.sparse_softmax_cross_entropy_with_logits(
+          labels=labels, logits=logits)
+
+    return crossent
+
+  def _time_loss(self, time_pred, target_time_output):
+    return tf.squared_difference(target_time_output, tf.squeeze(time_pred, axis=-1))
+
+  def _compute_loss(self, logits, decoder_cell_outputs, time_pred):
     """Compute optimization loss."""
     target_mark_output = self.iterator.target_mark_output
     target_time_output = self.iterator.target_time_output
@@ -532,7 +578,7 @@ class VAEmodel(model.Model):
     else: mark_loss = None
     if self.decode_time:
       time_loss = tf.reduce_sum(
-          neg_ln_joint_distribution * target_weights) / tf.to_float(self.batch_size)
+          timeloss * target_weights) / tf.to_float(self.batch_size)
     else: time_loss = None
 
     return mark_loss, time_loss
