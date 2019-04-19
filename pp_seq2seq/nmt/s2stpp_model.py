@@ -54,7 +54,6 @@ class S2stppModel(model.Model):
 
 
   def build_graph(self, hparams, scope=None):
-      #TODO Edit docstring
     """
     Creates a s2stpp graph with dynamic RNN decoder API.
     Args:
@@ -65,10 +64,11 @@ class S2stppModel(model.Model):
       A tuple of the form (logits, loss_tuple, final_context_state, mark_sample_id, time_sample_val),
       where:
         logits: float32 Tensor [batch_size x num_decoder_symbols].
-        loss: loss = the total loss / batch_size.
+        mark_loss: mark_loss = the mark loss / batch_size.
+        time_loss: time_loss = the time loss / batch_size.
         final_context_state: the final state of decoder RNN.
-        mark_sample_id: sampling indices.
-        time_sample_val: sampled time
+        mark_sample_id: predicted time
+        time_pred: predicted time 
 
     Raises:
       ValueError: if encoder_type differs from mono and bi, or
@@ -104,38 +104,29 @@ class S2stppModel(model.Model):
         return
 
       ## Decoder
-      logits, decoder_cell_outputs, time_pred, \
-      mark_sample_id, time_sample_val, \
+      logits, decoder_cell_outputs, _, \
+      mark_sample_id, _, \
       final_context_state, self.decoder_outputs = (
           self._build_decoder(self.encoder_outputs, encoder_state, hparams))
 
-      #################### Create new function for this block ################
-      if self.mode != tf.contrib.learn.ModeKeys.INFER:
-        target_mark_output = self.iterator.target_mark_output
-        target_time_output = self.iterator.target_time_output
-        neg_ln_joint_distribution, _ = self.f_star(self.encoder_outputs, self.decoder_outputs, target_time_output)
-        self.encoder_outputs_ph = tf.no_op()
-        self.decoder_outputs_ph = tf.no_op()
-        #self.time_optimizer = tf.no_op()
-        self.time_optimizer = tf.train.AdamOptimizer(self.infer_learning_rate).minimize(neg_ln_joint_distribution)
+      #---- Computing negative log joint distribution (train and infer) ----#
+      neg_ln_joint_distribution_train, neg_ln_joint_distribution_infer, gap_pred, time_pred \
+              = self.f_star(self.encoder_outputs, self.decoder_outputs)
 
-      else:
-        if not self.decode_time:
-          neg_ln_joint_distribution, time_pred = self.f_star()
-          neg_ln_joint_distribution = tf.reduce_sum(neg_ln_joint_distribution, axis=0 if self.time_major else 1)
-          self.time_optimizer = tf.train.AdamOptimizer(self.infer_learning_rate).minimize(neg_ln_joint_distribution)
-      #################### Create new function for this block ################
+      neg_ln_joint_distribution_infer = tf.reduce_sum(neg_ln_joint_distribution_infer, axis=0 if self.time_major else 1)
+      self.time_optimizer = tf.train.AdamOptimizer(self.infer_learning_rate).minimize(neg_ln_joint_distribution_infer, var_list=[gap_pred])
+      self.gap_pred = gap_pred
 
 
       ## Loss
       if self.mode != tf.contrib.learn.ModeKeys.INFER:
         with tf.device(model_helper.get_device_str(self.num_encoder_layers - 1,
                                                    self.num_gpus)):
-          mark_loss, time_loss = self._compute_loss(target_mark_output, target_time_output, logits, decoder_cell_outputs, time_pred, neg_ln_joint_distribution)
+          mark_loss, time_loss = self._compute_loss(logits, decoder_cell_outputs, time_pred, neg_ln_joint_distribution_train)
       else:
         mark_loss, time_loss = tf.constant(0.0), tf.constant(0.0)
 
-      return logits, mark_loss, time_loss, final_context_state, mark_sample_id, time_sample_val
+      return logits, mark_loss, time_loss, final_context_state, mark_sample_id, time_pred
 
 
   def _build_decoder(self, encoder_outputs, encoder_state, hparams):
@@ -180,7 +171,7 @@ class S2stppModel(model.Model):
           target_mark_input = tf.transpose(target_mark_input)
           target_time_input = tf.transpose(target_time_input)
         if target_time_input.get_shape().ndims == 2:
-            target_time_input = tf.expand_dims(target_time_input, axis=2)
+          target_time_input = tf.expand_dims(target_time_input, axis=2)
         decoder_emb_inp = tf.nn.embedding_lookup(
             self.embedding_decoder, target_mark_input)
 
@@ -239,10 +230,11 @@ class S2stppModel(model.Model):
       ## Inference
       else:
         infer_mode = hparams.infer_mode
-        mark_start_tokens = tf.fill([self.batch_size], tgt_sos_id)
-        #mark_start_tokens = iterator.source_mark[-1] #TODO Does this work?
-        time_start_tokens = tf.fill([self.batch_size], 0.0)
-        #time_start_tokens = iterator.source_time[-1] #TODO Does this work?
+        #mark_start_tokens = tf.fill([self.batch_size], tgt_sos_id)
+        mark_start_tokens = iterator.source_mark[:self.batch_size, -1]
+        #time_start_tokens = tf.fill([self.batch_size], 0.0)
+        time_start_tokens = iterator.source_time[:self.batch_size, -1]
+        print(mark_start_tokens, time_start_tokens)
         if time_start_tokens.get_shape().ndims == 2:
             time_start_tokens= tf.expand_dims(time_start_tokens, axis=2)
         mark_end_token = tgt_eos_id
@@ -321,52 +313,75 @@ class S2stppModel(model.Model):
 
     return logits, decoder_cell_outputs, time_pred, mark_sample_id, time_sample_val, final_context_state, outputs.cell_output
 
-  def f_star(self, encoder_outputs=None, decoder_outputs=None, target_time_output=None):
+  def f_star(self, encoder_outputs=None, decoder_outputs=None):
     print('Inside f_star.........', self.mode, self.batch_size)
-    if self.mode != tf.contrib.learn.ModeKeys.INFER:
-      #TODO make `time_pred` a non-trainable variable with validate_shape=False
-      time_pred = tf.get_variable('time_pred', initializer=target_time_output, validate_shape=False)
-    else:
-      time_pred = tf.get_variable('time_pred',
-                                  initializer=tf.random_normal((self.batch_size, self.tgt_max_len_infer)),
-                                  validate_shape=False)
-      if self.time_major:
-        time_pred = tf.transpose(time_pred)
-      encoder_outputs = self.encoder_outputs_ph = tf.placeholder(tf.float32, shape=[None, None, self.num_units])
-      decoder_outputs = self.decoder_outputs_ph = tf.placeholder(tf.float32, shape=[None, None, self.num_units])
-
-    h_m = encoder_outputs[-1:, :, :] if self.time_major else encoder_outputs[:, -1:, :]
-
-    inputs = tf.concat([h_m, decoder_outputs], axis=0 if self.time_major else 1)
-    self.lambda_0 = tf.layers.dense(inputs, 1)
-    self.w = tf.layers.dense(inputs, 1)
-    self.gamma = tf.layers.dense(inputs, 1) #TODO `gamma` should be shared across all decoder positions
-
-    batch_size = tf.shape(time_pred)[1] if self.time_major else tf.shape(time_pred)[0]
-    zeros = tf.zeros((batch_size, 1))
-    time_pred_ = time_pred[:-1, :] if self.time_major else time_pred[:, :-1]
     if self.time_major:
-        zeros = tf.transpose(zeros)
+      pred_shape = (self.tgt_max_len_infer, self.batch_size)
+    else:
+      pred_shape = (self.batch_size, self.tgt_max_len_infer)
+    gap_pred = tf.get_variable('gap_pred', initializer=tf.random_normal(pred_shape))
+    if self.mode != tf.contrib.learn.ModeKeys.INFER:
+      target_time_output = self.iterator.target_time_output
+    else:
+      target_time_output = tf.zeros_like(gap_pred) #In infer mode, true target is irrelevant
 
-    time_j_minus_1 = tf.concat([zeros, time_pred_], axis=0 if self.time_major else 1)
-    time_diff = time_pred - time_j_minus_1 
+    encoder_outputs_ph = self.encoder_outputs_ph = tf.placeholder(tf.float32, shape=[None, None, self.num_units])
+    decoder_outputs_ph = self.decoder_outputs_ph = tf.placeholder(tf.float32, shape=[None, None, self.num_units])
 
-    time_j_minus_1 = tf.Print(time_j_minus_1, [tf.shape(self.gamma), tf.shape(time_j_minus_1),
-                                               tf.shape(self.w), tf.shape(time_diff),
-                                               tf.shape(encoder_outputs), tf.shape(decoder_outputs),
-                                               tf.shape(time_pred)])
-    if target_time_output is not None:
-        time_j_minus_1 = tf.Print(time_j_minus_1, [target_time_output])
-    ln_lambda_star = self.lambda_0 + self.gamma * time_j_minus_1 + self.w * time_diff
-    neg_ln_joint_distribution = (-1.0) \
+    lambda_0_layer = tf.layers.Dense(1, name='lambda_layer')
+    w_layer = tf.layers.Dense(1, name='w_layer')
+    gamma_layer = tf.layers.Dense(1, name='gamma_layer')
+
+
+    #---- Computing joint likelihood for inference ----#
+    h_m = encoder_outputs_ph[-1:, :, :] if self.time_major else encoder_outputs_ph[:, -1:, :]
+    dec_len = tf.shape(decoder_outputs_ph)[0] if self.time_major else tf.shape(decoder_outputs_ph)[1]
+    h_m = tf.tile(h_m, [dec_len, 1, 1] if self.time_major else [1, dec_len, 1])
+    inputs = tf.concat([h_m, decoder_outputs_ph], axis=-1)
+    self.lambda_0 = tf.squeeze(lambda_0_layer(inputs), axis=-1)
+    self.w = tf.squeeze(w_layer(inputs), axis=-1)
+    self.gamma = tf.squeeze(gamma_layer(inputs), axis=-1)
+
+
+    ln_lambda_star = self.lambda_0 + self.w * gap_pred
+    neg_ln_joint_distribution_infer = (-1.0) \
                               * (ln_lambda_star \
                               + (1.0/self.w) * tf.exp(self.lambda_0) \
                               - (1.0/self.w) * tf.exp(ln_lambda_star))
 
-    return neg_ln_joint_distribution, time_pred
+
+    #---- Computing joint likelihood on true outputs ----#
+    h_m = encoder_outputs[-1:, :, :] if self.time_major else encoder_outputs[:, -1:, :]
+    dec_len = tf.shape(decoder_outputs)[0] if self.time_major else tf.shape(decoder_outputs)[1]
+    h_m = tf.tile(h_m, [dec_len, 1, 1] if self.time_major else [1, dec_len, 1])
+    inputs = tf.concat([h_m, decoder_outputs], axis=-1)
+    self.lambda_0 = tf.squeeze(lambda_0_layer(inputs), axis=-1)
+    self.w = tf.squeeze(w_layer(inputs), axis=-1)
+    self.gamma = tf.squeeze(gamma_layer(inputs), axis=-1)
+
+    last_time_input = self.iterator.source_time[:self.batch_size, -1:]
+    last_time_input = tf.transpose(last_time_input) if self.time_major else last_time_input
+    target_time_output_concat = tf.concat([last_time_input, target_time_output], axis=0 if self.time_major else 1)
+    if self.time_major:
+      target_gap = target_time_output_concat[1:, :] - target_time_output_concat[:-1, :]
+    else:
+      target_gap = target_time_output_concat[:, 1:] - target_time_output_concat[:, :-1]
+    #target_gap = tf.Print(target_gap, [target_gap], message='Printing target_gap')
+
+    ln_lambda_star = self.lambda_0 + self.w * target_gap
+    neg_ln_joint_distribution_train = (-1.0) \
+                              * (ln_lambda_star \
+                              + (1.0/self.w) * tf.exp(self.lambda_0) \
+                              - (1.0/self.w) * tf.exp(ln_lambda_star))
+
+    #---- Obtain predicted time from gaps ----#
+    gap_pred_pos = tf.nn.softplus(gap_pred)
+    time_pred = last_time_input + tf.cumsum(gap_pred_pos, axis=0 if self.time_major else 1)
+
+    return neg_ln_joint_distribution_train, neg_ln_joint_distribution_infer, gap_pred, time_pred
 
 
-  def infer(self, sess, iterator_feed_dict):
+  def infer(self, sess):
     assert self.mode == tf.contrib.learn.ModeKeys.INFER
     output_tuple = InferOutputTuple(infer_logits=self.infer_logits,
                                     infer_time=self.infer_time,
@@ -378,17 +393,22 @@ class S2stppModel(model.Model):
     output_tuple_ret, encoder_outputs_ret, decoder_outputs_ret = sess.run([output_tuple,
                                                                            self.encoder_outputs,
                                                                            self.decoder_outputs])
-    #print('Inside infer ... iterator_feed_dict:', iterator_feed_dict)
-    for _ in range(100):
-        sess.run(self.time_optimizer, feed_dict={self.encoder_outputs_ph:encoder_outputs_ret,
+    sess.run(tf.initialize_variables([self.gap_pred]))
+    for i in range(10):
+        try:
+          sess.run(self.time_optimizer, feed_dict={self.encoder_outputs_ph:encoder_outputs_ret,
                                                  self.decoder_outputs_ph:decoder_outputs_ret})
+        except:
+          print('An exception occured')
+    #print(output_tuple_ret.sample_words.shape, output_tuple_ret.sample_times.shape)
+    output_tuple_ret = output_tuple_ret._replace(infer_time=self.infer_time)
     return output_tuple_ret
 
 
-  def _compute_loss(self, target_mark_output, target_time_output, logits, decoder_cell_outputs, time_pred, neg_ln_joint_distribution):
+  def _compute_loss(self, logits, decoder_cell_outputs, time_pred, neg_ln_joint_distribution):
     """Compute optimization loss."""
-    #target_mark_output = self.iterator.target_mark_output
-    #target_time_output = self.iterator.target_time_output
+    target_mark_output = self.iterator.target_mark_output
+    target_time_output = self.iterator.target_time_output
     if self.time_major:
       target_mark_output = tf.transpose(target_mark_output)
       target_time_output = tf.transpose(target_time_output)
@@ -396,22 +416,42 @@ class S2stppModel(model.Model):
 
     crossent = self._softmax_cross_entropy_loss(
         logits, decoder_cell_outputs, target_mark_output)
-    if self.decode_time:
-      timeloss = self._time_loss(
-          time_pred, target_time_output)
+    timeloss = neg_ln_joint_distribution
 
     target_weights = tf.sequence_mask(
         self.iterator.target_sequence_length, max_time, dtype=self.dtype)
     if self.time_major:
       target_weights = tf.transpose(target_weights)
 
-    if self.decode_mark:
-      mark_loss = tf.reduce_sum(
-          crossent * target_weights) / tf.to_float(self.batch_size)
-    else: mark_loss = None
-    if self.decode_time:
-      time_loss = tf.reduce_sum(
-          neg_ln_joint_distribution * target_weights) / tf.to_float(self.batch_size)
-    else: time_loss = None
+    mark_loss = tf.reduce_sum(
+            crossent * target_weights) / tf.to_float(self.batch_size)
+    time_loss = tf.reduce_sum(
+            timeloss * target_weights) / tf.to_float(self.batch_size)
 
     return mark_loss, time_loss
+
+  def decode(self, sess):
+    """Decode a batch.
+
+    Args:
+      sess: tensorflow session to use.
+
+    Returns:
+      A tuple consiting of outputs, infer_summary.
+        outputs: of size [batch_size, time]
+    """
+    output_tuple = self.infer(sess)
+    sample_words = output_tuple.sample_words
+    sample_times = output_tuple.sample_times
+    infer_summary = output_tuple.infer_summary
+
+    # make sure outputs is of shape [batch_size, time] or [beam_width,
+    # batch_size, time] when using beam search.
+    if self.time_major:
+      sample_words = sample_words.transpose()
+      sample_times = sample_times.transpose()
+    elif sample_words.ndim == 3:
+      # beam search output in [batch_size, time, beam_width] shape.
+      sample_words = sample_words.transpose([2, 0, 1])
+    return sample_words, sample_times, infer_summary
+

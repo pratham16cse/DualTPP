@@ -37,31 +37,32 @@ def evaluate(ref_mark_file, trans_mark_file,
   # mark and time metrics
   mark_metric, time_metric = metric.split('_')
   evaluation_score = 0.0
-  if decode_mark:
-    # BLEU scores for translation task
-    if mark_metric.lower() == "bleu":
-      evaluation_score += _bleu(ref_file, trans_file,
-                               subword_option=subword_option)
-    # ROUGE scores for summarization tasks
-    elif mark_metric.lower() == "rouge":
-      evaluation_score += _rouge(ref_mark_file, trans_mark_file,
-                                subword_option=subword_option)
-    elif mark_metric.lower() == "accuracy":
-      evaluation_score += _accuracy(ref_mark_file, trans_mark_file)
-    elif mark_metric.lower() == "percenterror":
-      evaluation_score += _percenterror(ref_mark_file, trans_mark_file)
-    elif mark_metric.lower() == "word_accuracy":
-      evaluation_score += _word_accuracy(ref_mark_file, trans_mark_file)
-    else:
-      raise ValueError("Unknown mark_metric %s" % mark_metric)
+  mark_score, time_score = 0.0, 0.0
+  # BLEU scores for translation task
+  if mark_metric.lower() == "bleu":
+    evaluation_score += _bleu(ref_file, trans_file,
+                             subword_option=subword_option)
+  # ROUGE scores for summarization tasks
+  elif mark_metric.lower() == "rouge":
+    mark_score = _rouge(ref_mark_file, trans_mark_file,
+                              subword_option=subword_option)
+  elif mark_metric.lower() == "accuracy":
+    mark_score = _accuracy(ref_mark_file, trans_mark_file)
+  elif mark_metric.lower() == "percenterror":
+    mark_score = _percenterror(ref_mark_file, trans_mark_file)
+  elif mark_metric.lower() == "word_accuracy":
+    mark_score = _word_accuracy(ref_mark_file, trans_mark_file)
+  else:
+    raise ValueError("Unknown mark_metric %s" % mark_metric)
+  evaluation_score += mark_score
 
-  if decode_time:
-    if time_metric.lower() == "rmse":
-      evaluation_score += _rmse(ref_time_file, trans_time_file)
-    else:
-      raise ValueError("Unknown time_metric %s" % time_metric)
+  if time_metric.lower() == "rmse":
+    time_score = _rmse(ref_time_file, trans_time_file)
+  else:
+    raise ValueError("Unknown time_metric %s" % time_metric)
+  evaluation_score += time_score
 
-  return evaluation_score
+  return evaluation_score, mark_score, time_score
 
 
 def _clean(sentence, subword_option):
@@ -137,9 +138,9 @@ def _accuracy(label_file, pred_file):
     with codecs.getreader("utf-8")(tf.gfile.GFile(pred_file, "rb")) as pred_fh:
       count = 0.0
       match = 0.0
-      for label in label_fh:
-        label = label.strip()
-        pred = pred_fh.readline().strip()
+      for pred in pred_fh:
+        label = label_fh.readline().strip()
+        pred = pred.strip()
         if label == pred:
           match += 1
         count += 1
@@ -207,9 +208,9 @@ def _rmse(ref_file, trans_file):
     with codecs.getreader("utf-8")(tf.gfile.GFile(trans_file, "rb")) as trans_fh:
       count = 0.0
       err = 0.0
-      for ref in ref_fh:
-        ref = [float(r) for r in ref.strip().split()]
-        trans = [float(t) for t in trans_fh.readline().strip().split()]
+      for trans in trans_fh:
+        ref = [float(r) for r in ref_fh.readline().strip().split()]
+        trans = [float(t) for t in trans.strip().split()]
         err += np.sum((np.array(ref)-np.array(trans))**2*1.0)
         count += 1
   err = np.sqrt(err/count)

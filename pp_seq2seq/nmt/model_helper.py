@@ -232,7 +232,7 @@ def create_infer_model(model_creator, hparams, scope=None, extra_args=None):
         src_mark_dataset,
         src_time_dataset,
         src_vocab_table,
-        batch_size=batch_size_placeholder,
+        batch_size=hparams.batch_size,
         eos=hparams.eos,
         src_max_len=hparams.src_max_len_infer,
         use_char_encode=hparams.use_char_encode)
@@ -638,21 +638,20 @@ def avg_checkpoints(model_dir, num_last_checkpoints, global_step,
   return avg_model_dir
 
 
-def create_or_load_model(Model, model_dir, session, feed_dict, name):
+def create_or_load_model(model, model_dir, session, name):
   """Create translation model and initialize or load parameters in session."""
   latest_ckpt = tf.train.latest_checkpoint(model_dir)
   if latest_ckpt:
-    model = load_model(Model.model, latest_ckpt, session, name)
+    model = load_model(model, latest_ckpt, session, name)
   else:
-    session.run(tf.tables_initializer())
     start_time = time.time()
-    session.run(Model.model.iterator.initializer, feed_dict=feed_dict)
     session.run(tf.global_variables_initializer())
+    session.run(tf.tables_initializer())
     utils.print_out("  created %s model with fresh parameters, time %.2fs" %
                     (name, time.time() - start_time))
 
-  global_step = Model.model.global_step.eval(session=session)
-  return Model.model, global_step
+  global_step = model.global_step.eval(session=session)
+  return model, global_step
 
 
 def compute_perplexity(model, sess, name):

@@ -42,8 +42,7 @@ def decode_and_evaluate(name,
                         decode=True,
                         infer_mode="greedy",
                         decode_mark=False,
-                        decode_time=False,
-                        iterator_feed_dict=None):
+                        decode_time=False):
   """Decode a test set and compute a score according to the evaluation task."""
   # Decode
   if decode:
@@ -65,7 +64,7 @@ def decode_and_evaluate(name,
 
       while True:
         try:
-          mark_outputs, time_outputs, _ = model.decode(sess, iterator_feed_dict=iterator_feed_dict)
+          mark_outputs, time_outputs, _ = model.decode(sess)
           if infer_mode != "beam_search":
             mark_outputs = np.expand_dims(mark_outputs, 0)
             time_outputs = np.expand_dims(time_outputs, 0)
@@ -81,8 +80,8 @@ def decode_and_evaluate(name,
                   sent_id,
                   tgt_eos=tgt_eos,
                   subword_option=subword_option)
-              if decode_mark: trans_mark_f.write((mark_text + b"\n").decode("utf-8"))
-              if decode_time: trans_time_f.write((time_text + b"\n").decode("utf-8"))
+              trans_mark_f.write((mark_text + b"\n").decode("utf-8"))
+              trans_time_f.write((time_text + b"\n").decode("utf-8"))
         except tf.errors.OutOfRangeError:
           utils.print_time(
               "  done, num sentences %d, num translations per input %d" %
@@ -93,7 +92,7 @@ def decode_and_evaluate(name,
   evaluation_scores = {}
   if ref_mark_file and tf.gfile.Exists(trans_mark_file):
     for metric in metrics:
-      score = evaluation_utils.evaluate(
+      score, mark_score, time_score = evaluation_utils.evaluate(
           ref_mark_file,
           trans_mark_file,
           ref_time_file,
@@ -103,7 +102,9 @@ def decode_and_evaluate(name,
           decode_time,
           subword_option=subword_option)
       evaluation_scores[metric] = score
-      utils.print_out("  %s %s: %.1f" % (metric, name, score))
+      mark_metric, time_metric = metric.split('_')
+      utils.print_out("  %s %s: %.1f = %.1f(%s) + %.1f(%s)" \
+              % (name, metric, score, mark_score, mark_metric, time_score, time_metric))
 
   return evaluation_scores
 
@@ -112,8 +113,8 @@ def get_translation(mark_outputs, time_outputs, sent_id, tgt_eos, subword_option
   """Given batch decoding outputs, select a sentence and turn to text."""
   if tgt_eos: tgt_eos = tgt_eos.encode("utf-8")
   # Select a sentence
-  mark_output = mark_outputs[sent_id, :].tolist() if mark_outputs is not None else None
-  time_output = time_outputs[sent_id, :].tolist() if time_outputs is not None else None
+  mark_output = mark_outputs[sent_id, :].tolist()
+  time_output = time_outputs[sent_id, :].tolist()
 
   # If there is an eos symbol in outputs, cut them at that point.
   if tgt_eos and tgt_eos in mark_output:
@@ -127,9 +128,7 @@ def get_translation(mark_outputs, time_outputs, sent_id, tgt_eos, subword_option
     mark_text = utils.format_spm_text(mark_output)
     time_text = utils.format_spm_text(time_output)
   else:
-    if mark_outputs is not None: mark_text = utils.format_text(mark_output)
-    else: mark_text = None
-    if time_outputs is not None: time_text = utils.format_float(time_output)
-    else: time_text = None
+    mark_text = utils.format_text(mark_output)
+    time_text = utils.format_float(time_output)
 
   return mark_text, time_text

@@ -44,16 +44,9 @@ __all__ = [
 def run_sample_decode(infer_model, infer_sess, model_dir, hparams,
                       summary_writer, src_mark_data, src_time_data, tgt_mark_data, tgt_time_data):
   """Sample decode a random sentence from src_data."""
-  decode_id = random.randint(0, len(src_mark_data) - 1)
-  iterator_feed_dict = {
-      infer_model.src_mark_placeholder: [src_mark_data[decode_id]],
-      infer_model.src_time_placeholder: [src_time_data[decode_id]],
-      infer_model.batch_size_placeholder: 1,
-  }
-
   with infer_model.graph.as_default():
     loaded_infer_model, global_step = model_helper.create_or_load_model(
-        infer_model, model_dir, infer_sess, iterator_feed_dict, "infer")
+        infer_model.model, model_dir, infer_sess, "infer")
 
   _sample_decode(loaded_infer_model, global_step, infer_sess, hparams,
                  infer_model.iterator,
@@ -99,6 +92,9 @@ def run_internal_eval(eval_model,
     dev_eval_iterator_feed_dict = {}
   if test_eval_iterator_feed_dict is None:
     test_eval_iterator_feed_dict = {}
+  with eval_model.graph.as_default():
+    loaded_eval_model, global_step = model_helper.create_or_load_model(
+        eval_model.model, model_dir, eval_sess, "eval")
 
   dev_src_mark_file = "%s.%s.%s" % (hparams.dev_prefix, 'event', hparams.src)
   dev_src_time_file = "%s.%s.%s" % (hparams.dev_prefix, 'time', hparams.src)
@@ -108,10 +104,6 @@ def run_internal_eval(eval_model,
   dev_eval_iterator_feed_dict[eval_model.src_time_file_placeholder] = dev_src_time_file
   dev_eval_iterator_feed_dict[eval_model.tgt_mark_file_placeholder] = dev_tgt_mark_file
   dev_eval_iterator_feed_dict[eval_model.tgt_time_file_placeholder] = dev_tgt_time_file
-
-  with eval_model.graph.as_default():
-    loaded_eval_model, global_step = model_helper.create_or_load_model(
-        eval_model, model_dir, eval_sess, dev_eval_iterator_feed_dict, "eval")
 
   dev_comls = _internal_eval(loaded_eval_model, global_step, eval_sess,
                            eval_model.iterator, dev_eval_iterator_feed_dict,
@@ -174,6 +166,9 @@ def run_external_eval(infer_model,
     dev_infer_iterator_feed_dict = {}
   if test_infer_iterator_feed_dict is None:
     test_infer_iterator_feed_dict = {}
+  with infer_model.graph.as_default():
+    loaded_infer_model, global_step = model_helper.create_or_load_model(
+        infer_model.model, model_dir, infer_sess, "infer")
 
   dev_src_mark_file = "%s.%s.%s" % (hparams.dev_prefix, 'event', hparams.src)
   dev_src_time_file = "%s.%s.%s" % (hparams.dev_prefix, 'time', hparams.src)
@@ -186,11 +181,6 @@ def run_external_eval(infer_model,
       infer_model.src_time_placeholder] = inference.load_data(dev_src_time_file)
   dev_infer_iterator_feed_dict[
       infer_model.batch_size_placeholder] = hparams.infer_batch_size
-
-  with infer_model.graph.as_default():
-    loaded_infer_model, global_step = model_helper.create_or_load_model(
-        infer_model, model_dir, infer_sess, dev_infer_iterator_feed_dict, "infer")
-
   dev_scores = _external_eval(
       loaded_infer_model,
       global_step,
@@ -235,7 +225,7 @@ def run_external_eval(infer_model,
 
 
 def run_avg_external_eval(infer_model, infer_sess, model_dir, hparams,
-                          summary_writer, global_step):                #TODO Check this
+                          summary_writer, global_step):
   """Creates an averaged checkpoint and run external eval with it."""
   avg_dev_scores, avg_test_scores = None, None
   if hparams.avg_ckpts:
@@ -542,11 +532,8 @@ def train(hparams, scope=None, target_session=""):
       target=target_session, config=config_proto, graph=infer_model.graph)
 
   with train_model.graph.as_default():
-    skip_count = hparams.batch_size * hparams.epoch_step
-    train_iterator_feed_dict={train_model.skip_count_placeholder: skip_count}
-
     loaded_train_model, global_step = model_helper.create_or_load_model(
-        train_model, model_dir, train_sess, train_iterator_feed_dict, "train")
+        train_model.model, model_dir, train_sess, "train")
 
   # Summary writer
   summary_writer = tf.summary.FileWriter(
@@ -742,26 +729,27 @@ def _sample_decode(model, global_step, sess, hparams, iterator,
                    iterator_src_time_placeholder,
                    iterator_batch_size_placeholder, summary_writer):
   """Pick a sentence and decode."""
-  decode_id = random.randint(0, len(src_mark_data) - 1)
-  utils.print_out("  # %d" % decode_id)
+  #decode_id = random.randint(0, len(src_mark_data) - 1)
 
   iterator_feed_dict = {
-      iterator_src_mark_placeholder: [src_mark_data[decode_id]],
-      iterator_src_time_placeholder: [src_time_data[decode_id]],
-      iterator_batch_size_placeholder: 1,
+      iterator_src_mark_placeholder: src_mark_data,
+      iterator_src_time_placeholder: src_time_data,
+      iterator_batch_size_placeholder: hparams.infer_batch_size,
   }
   sess.run(iterator.initializer, feed_dict=iterator_feed_dict)
 
-  mark_outputs, time_outputs, attention_summary = model.decode(sess, iterator_feed_dict)
+  mark_outputs, time_outputs, attention_summary = model.decode(sess)
 
+  decode_id = random.randint(0, len(mark_outputs) - 1)
+  utils.print_out("  # %d" % decode_id)
   if hparams.infer_mode == "beam_search":
     # get the top translation.
     mark_outputs = mark_outputs[0]
     time_outputs = time_outputs[0]
 
   mark_text, time_text = nmt_utils.get_translation(
-      mark_outputs,
-      time_outputs,
+      mark_outputs[decode_id:decode_id+1],
+      time_outputs[decode_id:decode_id+1],
       sent_id=0,
       tgt_eos=hparams.eos,
       subword_option=hparams.subword_option)
@@ -769,8 +757,8 @@ def _sample_decode(model, global_step, sess, hparams, iterator,
   utils.print_out("    src_time: %s" % src_time_data[decode_id])
   utils.print_out("    ref_mark: %s" % tgt_mark_data[decode_id])
   utils.print_out("    ref_time: %s" % tgt_time_data[decode_id])
-  if hparams.decode_mark: utils.print_out(b"    model_mark: " + mark_text)
-  if hparams.decode_time: utils.print_out(b"    model_time: " + time_text)
+  utils.print_out(b"    model_mark: " + mark_text)
+  utils.print_out(b"    model_time: " + time_text)
 
   # Summary
   if attention_summary is not None:
@@ -810,8 +798,7 @@ def _external_eval(model, global_step, sess, hparams, iterator,
       decode=decode,
       infer_mode=hparams.infer_mode,
       decode_mark=hparams.decode_mark,
-      decode_time=hparams.decode_time,
-      iterator_feed_dict=iterator_feed_dict)
+      decode_time=hparams.decode_time)
   # Save on best metrics
   if decode:
     for metric in hparams.metrics:
