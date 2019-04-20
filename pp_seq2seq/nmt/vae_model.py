@@ -34,15 +34,16 @@ class VAEmodel(model.Model):
                reverse_target_vocab_table=None,
                scope=None,
                extra_args=None):
-    if hparams.decode_mark is not True \
-        or hparams.decode_time is not False:
-      raise Exception('VAEmodel requires decode_mark=True and decode_time=False')
+    # if hparams.decode_mark is not True \
+        # or hparams.decode_time is not False:
+      # raise Exception('VAEmodel requires decode_mark=True and decode_time=False')
     if not hasattr(hparams, "tgt_max_len_infer"):
       raise Exception('VAEmodel requires tgt_max_len_infer attribute to be set.')
     self.tgt_max_len_infer = hparams.tgt_max_len_infer
     self.infer_learning_rate = hparams.infer_learning_rate
     self.z_dim = 5
     self.padder = True
+    self.initial_state_flag = False
 
     super(VAEmodel, self).__init__(
         hparams=hparams,
@@ -99,13 +100,21 @@ class VAEmodel(model.Model):
         self.encoder_outputs = None
         encoder_state = None
       else:
-        self.encoder_outputs, encoder_state, self.mean, self.stddev = self._build_encoder(hparams)
+        self.encoder_outputs, encoder_state = self._build_encoder(hparams)
 
+      self.mu, self.sigma, self.latent_vector_q_min = self.sampling(self.encoder_outputs, name='encoder_q')
 
-      self.latent_vector = self.encoder_outputs[-1]
-      self.latent_vector = self.mean + self.stddev * tf.random_normal(tf.shape(self.mean), mean=0., stddev=1., dtype=tf.float32)
+      # print(type(encoder_state), encoder_state)
+      # print(type(self.latent_vector_q_min), self.latent_vector_q_min)
+      # print('-----------------------------------')
 
+      self.test_encoder_state = encoder_state
 
+      decoder_initial_state_input = encoder_state
+      if self.initial_state_flag:
+        decoder_initial_state_input = self.latent_vector_q_min
+
+      #TODO: latent vector to be generated in c,t pairs of layer size
 
       # Skip decoder if extracting only encoder layers
       if self.extract_encoder_layers:
@@ -115,7 +124,22 @@ class VAEmodel(model.Model):
       logits, decoder_cell_outputs, time_pred, \
       mark_sample_id, time_sample_val, \
       final_context_state, self.decoder_outputs = (
-          self._build_decoder(self.latent_vector, encoder_state, hparams))
+          self._build_decoder(self.encoder_outputs, decoder_initial_state_input, hparams))
+
+      self.mu_d, self.sigma_d, self.latent_vector_q_dot = self.sampling(self.decoder_outputs, name='decoder_q')
+
+      distribution_a = tf.distributions.Normal(loc=self.mu, scale=self.sigma)
+      distribution_b = tf.distributions.Normal(tf.zeros_like(self.mu), tf.ones_like(self.sigma))
+
+      # distribution_b = tf.distributions.Normal(loc=self.mu_d, scale=self.sigma_d)
+
+      # self.decoder_outputs = tf.clip_by_value(self.decoder_outputs, 1e-8, 1 - 1e-8)
+      # KL_divergence = 0.5 * tf.reduce_sum(tf.square(self.mu) + tf.square(self.sigma) - tf.log(1e-8 + tf.square(self.sigma)) - 1, 1)
+      # KL_divergence = 0.5 * tf.reduce_sum(tf.square(self.mu) + self.sigma - tf.log(1e-8 + self.sigma) - 1, 1)
+
+      KL_divergence = tf.distributions.kl_divergence(distribution_a, distribution_b)
+      KL_divergence = tf.reduce_sum(KL_divergence, 1)
+      self.KL_divergence = tf.reduce_mean(KL_divergence)
 
       #################### Create new function for this block ################
       # if self.mode != tf.contrib.learn.ModeKeys.INFER:
@@ -136,6 +160,12 @@ class VAEmodel(model.Model):
           mark_loss, time_loss = self._compute_loss(logits, decoder_cell_outputs, time_pred)
       else:
         mark_loss, time_loss = tf.constant(0.0), tf.constant(0.0)
+
+      #Based on --decode_time and --decode_mark
+      # self.ELBO = mark_loss + time_loss - self.KL_divergence
+      # self.loss = -self.ELBO
+
+      mark_loss = mark_loss + self.KL_divergence
 
       return logits, mark_loss, time_loss, final_context_state, mark_sample_id, time_sample_val
 
@@ -185,6 +215,11 @@ class VAEmodel(model.Model):
             sequence_length=sequence_length,
             time_major=self.time_major,
             swap_memory=True)
+
+        # print(encoder_outputs, 'encoder_outputs')
+        # print(encoder_state, 'encoder_state')
+        # print('#########################')
+
       elif hparams.encoder_type == "bi":
         num_bi_layers = int(num_layers / 2)
         num_bi_residual_layers = int(num_residual_layers / 2)
@@ -215,26 +250,8 @@ class VAEmodel(model.Model):
 
     # Use the top layer for now
     self.encoder_state_list = [encoder_outputs]
-
-    latent_vector_out = encoder_outputs[-1]
-
-    if self.padder:
-      W_mu = tf.Variable(tf.random_normal([128, 128]))
-      W_std = tf.Variable(tf.random_normal([128, 128]))
-      mean = tf.matmul(latent_vector_out, W_mu)
-      stddev = 1e-6 + tf.nn.softplus(tf.matmul(latent_vector_out, W_std))
-
-    else:
-      self.z_dim = latent_vector_out.get_shape()
-      print(self.z_dim)
-      self.z_dim = self.z_dim[1]//2
-      # The mean parameter is unconstrained
-      mean = latent_vector_out[:, :self.z_dim]
-      # The standard deviation must be positive.
-      # Parameterize with a softplus and add a small epsilon for numerical stability
-      stddev = 1e-6 + tf.nn.softplus(latent_vector_out[:, self.z_dim:])
-
-    return encoder_outputs, encoder_state, mean, stddev
+    
+    return encoder_outputs, encoder_state
 
   def _build_encoder(self, hparams):
     """Build encoder from source."""
@@ -344,11 +361,14 @@ class VAEmodel(model.Model):
         else: time_helper = None
         print(decoder_emb_inp.get_shape(), target_time_input.get_shape())
 
+        # print('mark_helper', tf.shape(mark_helper))
+        # print('time_helper', tf.shape(time_helper))
+
         # Decoder
         my_decoder = my_basic_decoder.MyBasicDecoder(
             cell,
             decoder_initial_state,
-            mark_helper, time_helper,)
+            mark_helper, time_helper, consider_time=False)
 
         # Dynamic decoding
         outputs, final_context_state, _ = tf.contrib.seq2seq.dynamic_decode(
@@ -356,6 +376,20 @@ class VAEmodel(model.Model):
             output_time_major=self.time_major,
             swap_memory=True,
             scope=decoder_scope)
+
+        # # d_Decoder
+        # my_decoder_d = my_basic_decoder.MyBasicDecoder(
+        #     cell,
+        #     decoder_initial_state,
+        #     mark_helper, time_helper)
+
+        # # d_Dynamic decoding
+        # outputs_d, final_context_state_d, _ = tf.contrib.seq2seq.dynamic_decode(
+        #     my_decoder_d,
+        #     output_time_major=self.time_major,
+        #     swap_memory=True,
+        #     scope=decoder_scope)
+
 
         mark_sample_id = outputs.mark_sample_id if self.decode_mark else outputs.time_sample_val
         time_sample_val = outputs.time_sample_val if self.decode_time else outputs.mark_sample_id
@@ -468,6 +502,43 @@ class VAEmodel(model.Model):
 
     return logits, decoder_cell_outputs, time_pred, mark_sample_id, time_sample_val, final_context_state, outputs.cell_output
 
+  def sampling(self, rnn_outputs, name=""):
+    #TODO: Need to sort this problem
+    # latent_vector_out = rnn_outputs[-1]
+    latent_vector_out = rnn_outputs[-1, :, :] if self.time_major else rnn_outputs[:, -1, :]
+    # print("latent_vector_shape", latent_vector_out)
+
+    # print(latent_vector_out)
+    # print(tf.shape(latent_vector_out))
+    # print('---------------------------------')
+
+    if self.padder:
+      # W_mu = tf.Variable(tf.random_normal([128, 128]))
+      # W_std = tf.Variable(tf.random_normal([128, 128]))
+      # b_mu = tf.Variable(tf.random_normal([128]))
+      # b_std = tf.Variable(tf.random_normal([128]))
+
+      #TODO: Check why adding bias not converges.
+      # mean = tf.matmul(latent_vector_out, W_mu)
+      # stddev = 1e-6 + tf.nn.softplus(tf.matmul(latent_vector_out, W_std))
+
+      mean = tf.layers.dense(latent_vector_out, self.num_units)
+      stddev = 1e-6 + tf.nn.softplus(tf.layers.dense(latent_vector_out, self.num_units))
+
+    else:
+      self.z_dim = latent_vector_out.get_shape()
+      print(self.z_dim)
+      self.z_dim = self.z_dim[1]//2
+      # The mean parameter is unconstrained
+      mean = latent_vector_out[:, :self.z_dim]
+      # The standard deviation must be positive.
+      # Parameterize with a softplus and add a small epsilon for numerical stability
+      stddev = 1e-6 + tf.nn.softplus(latent_vector_out[:, self.z_dim:])
+
+    latent_vector = tf.add (mean , tf.matmul(stddev , tf.random_normal([stddev.get_shape().as_list()[1], stddev.get_shape().as_list()[1]], mean=0., stddev=1., dtype=tf.float32)), name=name)
+
+    return mean, stddev, latent_vector
+
   def f_star(self, encoder_outputs=None, decoder_outputs=None):
     print('Inside f_star.........', self.mode)
     if self.mode != tf.contrib.learn.ModeKeys.INFER:
@@ -506,14 +577,23 @@ class VAEmodel(model.Model):
                                     sample_words=self.sample_words,
                                     sample_times=self.sample_times)
     # sess.run(self.iterator.initializer, feed_dict=iterator_feed_dict)
-    # _, encoder_outputs_ret, decoder_outputs_ret = sess.run([self.infer_logits,
+    # _, encoder_outputs_ret, decoder_outputs_ret, test_encoder_state = sess.run([self.infer_logits,
     #                                                 self.encoder_outputs,
-    #                                                 self.decoder_outputs])
+    #                                                 self.decoder_outputs,
+    #                                                 self.test_encoder_state])
+
+    # print('Answer')
+    # print('encoder_outputs_ret', encoder_outputs_ret)
+    # print('decoder_outputs_ret', decoder_outputs_ret)
+    # print('test_encoder_state', test_encoder_state)
     # sess.run(self.iterator.initializer, feed_dict=iterator_feed_dict)
     # for _ in range(10):
     #     sess.run(self.time_optimizer, feed_dict={self.encoder_outputs_ph:encoder_outputs_ret,
     #                                              self.decoder_outputs_ph:decoder_outputs_ret})
     #     sess.run(self.iterator.initializer, feed_dict=iterator_feed_dict)
+    # ans = sess.run([self.mark_losse, self.time_losse], feed_dict=iterator_feed_dict)
+    # print("Answer", ans)
+
     return sess.run(output_tuple)
 
   def _softmax_cross_entropy_loss(

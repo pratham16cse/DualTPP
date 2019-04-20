@@ -37,7 +37,7 @@ class MyBasicDecoder(decoder.Decoder):
 
   def __init__(self, cell, initial_state,
                mark_helper=None, time_helper=None,
-               output_mark_layer=None, output_time_layer=None):
+               output_mark_layer=None, output_time_layer=None, consider_time=True):
     """Initialize MyBasicDecoder.
 
     Args:
@@ -86,6 +86,7 @@ class MyBasicDecoder(decoder.Decoder):
     self._initial_state = initial_state
     self._output_mark_layer = output_mark_layer
     self._output_time_layer = output_time_layer
+    self._consider_time = consider_time
 
   @property
   def batch_size(self):
@@ -168,14 +169,16 @@ class MyBasicDecoder(decoder.Decoder):
         (time_finished, time_inputs) = self._time_helper.initialize()
     
     #print(mark_inputs.get_shape().ndims, time_inputs.get_shape().ndims)
-    if self._mark_helper is not None and self._time_helper is not None:
+    if self._mark_helper is not None and self._time_helper is not None and self._consider_time:
         finished = tf.logical_and(mark_finished, time_finished)
         #print(mark_inputs.get_shape().ndims, time_inputs.get_shape().ndims)
         inputs = tf.concat([mark_inputs, time_inputs], axis=-1)
     elif self._mark_helper is not None:
         finished, inputs = mark_finished, mark_inputs
-    elif self._time_helper is not None:
+    elif self._time_helper is not None and self._consider_time:
         finished, inputs = time_finished, time_inputs
+    else:
+        raise Exception('_mark_helper cannot be None if consider_time is False')
    
     return (finished, inputs) + (self._initial_state,)
 
