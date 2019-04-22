@@ -34,9 +34,7 @@ class VAEmodel(model.Model):
                reverse_target_vocab_table=None,
                scope=None,
                extra_args=None):
-    # if hparams.decode_mark is not True \
-        # or hparams.decode_time is not False:
-      # raise Exception('VAEmodel requires decode_mark=True and decode_time=False')
+
     if not hasattr(hparams, "tgt_max_len_infer"):
       raise Exception('VAEmodel requires tgt_max_len_infer attribute to be set.')
     self.tgt_max_len_infer = hparams.tgt_max_len_infer
@@ -84,14 +82,14 @@ class VAEmodel(model.Model):
     if not self.extract_encoder_layers:
       with tf.variable_scope(scope or "build_network"):
         with tf.variable_scope("decoder/output_projection"):
-          if self.decode_mark:
-            self.output_mark_layer = tf.layers.Dense(
+          # if self.decode_mark:
+          self.output_mark_layer = tf.layers.Dense(
                 self.tgt_vocab_size, use_bias=False, name="output_mark_projection")
-          else: self.output_mark_layer = None
-          if self.decode_time:
-            self.output_time_layer = tf.layers.Dense(
+          # else: self.output_mark_layer = None
+          # if self.decode_time:
+          self.output_time_layer = tf.layers.Dense(
                 1, activation=tf.nn.softplus, name="output_time_projection")
-          else: self.output_time_layer = None
+          # else: self.output_time_layer = None
 
     with tf.variable_scope(scope or "dynamic_seq2seq", dtype=self.dtype):
       # Encoder
@@ -129,9 +127,9 @@ class VAEmodel(model.Model):
       self.mu_d, self.sigma_d, self.latent_vector_q_dot = self.sampling(self.decoder_outputs, name='decoder_q')
 
       distribution_a = tf.distributions.Normal(loc=self.mu, scale=self.sigma)
-      distribution_b = tf.distributions.Normal(tf.zeros_like(self.mu), tf.ones_like(self.sigma))
+      # distribution_b = tf.distributions.Normal(tf.zeros_like(self.mu), tf.ones_like(self.sigma))
 
-      # distribution_b = tf.distributions.Normal(loc=self.mu_d, scale=self.sigma_d)
+      distribution_b = tf.distributions.Normal(loc=self.mu_d, scale=self.sigma_d)
 
       # self.decoder_outputs = tf.clip_by_value(self.decoder_outputs, 1e-8, 1 - 1e-8)
       # KL_divergence = 0.5 * tf.reduce_sum(tf.square(self.mu) + tf.square(self.sigma) - tf.log(1e-8 + tf.square(self.sigma)) - 1, 1)
@@ -326,9 +324,25 @@ class VAEmodel(model.Model):
 
     ## Decoder.
     with tf.variable_scope("decoder") as decoder_scope:
+
       cell, decoder_initial_state = self._build_decoder_cell(
           hparams, encoder_outputs, encoder_state,
           iterator.source_sequence_length)
+
+      # encoder_state_d = encoder_state
+      # iterator_d = iterator
+      # hparams_d = hparams
+
+      # cell_d, decoder_initial_state_d = self._build_decoder_cell(
+      #     hparams_d, encoder_outputs, encoder_state_d,
+      #     iterator_d.source_sequence_length)
+
+      #TODO: decoder_initial_state should be 128/129 depending on consider_time value
+      # consider_time = True if self.decode_time else False
+      # consider_mark = True if self.decode_mark else False
+      
+      consider_time = False
+      consider_mark = True
 
       # Optional ops depends on which mode we are in and which loss function we
       # are using.
@@ -349,12 +363,13 @@ class VAEmodel(model.Model):
             self.embedding_decoder, target_mark_input)
 
         # Helpers
-        if self.decode_mark:
+        if consider_mark:
             mark_helper = tf.contrib.seq2seq.TrainingHelper(
                 decoder_emb_inp, iterator.target_sequence_length,
                 time_major=self.time_major)
         else: mark_helper = None
-        if self.decode_time:
+
+        if consider_time:
             time_helper = my_helper.TimeTrainingHelper(
                 target_time_input, iterator.target_sequence_length,
                 time_major=self.time_major)
@@ -365,10 +380,13 @@ class VAEmodel(model.Model):
         # print('time_helper', tf.shape(time_helper))
 
         # Decoder
+
         my_decoder = my_basic_decoder.MyBasicDecoder(
             cell,
             decoder_initial_state,
-            mark_helper, time_helper, consider_time=False)
+            mark_helper, time_helper,
+            consider_time=consider_time,
+            consider_mark=consider_mark)
 
         # Dynamic decoding
         outputs, final_context_state, _ = tf.contrib.seq2seq.dynamic_decode(
@@ -377,22 +395,25 @@ class VAEmodel(model.Model):
             swap_memory=True,
             scope=decoder_scope)
 
+        # mark_helper_d = mark_helper
+        # time_helper_d = time_helper
+
         # # d_Decoder
         # my_decoder_d = my_basic_decoder.MyBasicDecoder(
-        #     cell,
-        #     decoder_initial_state,
-        #     mark_helper, time_helper)
+        #     cell_d,
+        #     decoder_initial_state_d,
+        #     mark_helper_d, time_helper_d)
 
         # # d_Dynamic decoding
         # outputs_d, final_context_state_d, _ = tf.contrib.seq2seq.dynamic_decode(
         #     my_decoder_d,
         #     output_time_major=self.time_major,
-        #     swap_memory=True,
-        #     scope=decoder_scope)
+        #     swap_memory=True
+        #     )
 
-
-        mark_sample_id = outputs.mark_sample_id if self.decode_mark else outputs.time_sample_val
-        time_sample_val = outputs.time_sample_val if self.decode_time else outputs.mark_sample_id
+        #TODO: do check this
+        mark_sample_id = outputs.mark_sample_id# if self.decode_mark else outputs.time_sample_val
+        time_sample_val = outputs.time_sample_val# if self.decode_time else outputs.mark_sample_id
 
         if self.num_sampled_softmax > 0:
           # Note: this is required when using sampled_softmax_loss.
@@ -410,8 +431,8 @@ class VAEmodel(model.Model):
         # Colocate output layer with the last RNN cell if there is no extra GPU
         # available. Otherwise, put last layer on a separate GPU.
         with tf.device(model_helper.get_device_str(device_id, num_gpus)):
-          logits = self.output_mark_layer(outputs.mark_rnn_output) if self.decode_mark else None
-          time_pred = self.output_time_layer(outputs.time_rnn_output) if self.decode_time else None
+          logits = self.output_mark_layer(outputs.mark_rnn_output)# if self.decode_mark else None
+          time_pred = self.output_time_layer(outputs.time_rnn_output)# if self.decode_time else None
 
         if self.num_sampled_softmax > 0:
           logits = tf.no_op()  # unused when using sampled softmax loss.
@@ -460,14 +481,14 @@ class VAEmodel(model.Model):
               softmax_temperature=sampling_temperature,
               seed=self.random_seed)
         elif infer_mode == "greedy":
-          if self.decode_mark:
-            mark_helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(
+          # if self.decode_mark:
+          mark_helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(
                 self.embedding_decoder, mark_start_tokens, mark_end_token)
-          else: mark_helper = None
-          if self.decode_time:
-            time_helper = my_helper.TimeGreedyHelper(
+          # else: mark_helper = None
+          # if self.decode_time:
+          time_helper = my_helper.TimeGreedyHelper(
                 time_start_tokens, time_end_token)
-          else: time_helper = None
+          # else: time_helper = None
         else:
           raise ValueError("Unknown infer_mode '%s'", infer_mode)
 
@@ -476,8 +497,10 @@ class VAEmodel(model.Model):
               cell,
               decoder_initial_state,
               mark_helper, time_helper,
-              output_mark_layer=self.output_mark_layer if self.decode_mark else None,  # applied per timestep
-              output_time_layer=self.output_time_layer if self.decode_time else None,  # applied per timestep
+              output_mark_layer=self.output_mark_layer,# if self.decode_mark else None,  # applied per timestep
+              output_time_layer=self.output_time_layer,# if self.decode_time else None,  # applied per timestep
+              consider_time=consider_time,
+              consider_mark=consider_mark
           )
 
         # Dynamic decoding
@@ -491,14 +514,14 @@ class VAEmodel(model.Model):
         if infer_mode == "beam_search":
           sample_id = outputs.predicted_ids
         else:
-          if self.decode_mark:
-            logits = outputs.mark_rnn_output
-            mark_sample_id = outputs.mark_sample_id
-          else: logits, mark_sample_id = tf.no_op(), tf.no_op()
-          if self.decode_time:
-            time_pred = outputs.time_rnn_output
-            time_sample_val = outputs.time_sample_val
-          else: time_pred, time_sample_val = tf.no_op(), tf.no_op()
+          # if self.decode_mark:
+          logits = outputs.mark_rnn_output
+          mark_sample_id = outputs.mark_sample_id
+          # else: logits, mark_sample_id = tf.no_op(), tf.no_op()
+          # if self.decode_time:
+          time_pred = outputs.time_rnn_output
+          time_sample_val = outputs.time_sample_val
+          # else: time_pred, time_sample_val = tf.no_op(), tf.no_op()
 
     return logits, decoder_cell_outputs, time_pred, mark_sample_id, time_sample_val, final_context_state, outputs.cell_output
 
@@ -636,29 +659,27 @@ class VAEmodel(model.Model):
     """Compute optimization loss."""
     target_mark_output = self.iterator.target_mark_output
     target_time_output = self.iterator.target_time_output
+
     if self.time_major:
       target_mark_output = tf.transpose(target_mark_output)
       target_time_output = tf.transpose(target_time_output)
+    
     max_time = self.get_max_time(target_mark_output)
 
     crossent = self._softmax_cross_entropy_loss(
         logits, decoder_cell_outputs, target_mark_output)
-    if self.decode_time:
-      timeloss = self._time_loss(
-          time_pred, target_time_output)
+    timeloss = self._time_loss(time_pred, target_time_output)
 
     target_weights = tf.sequence_mask(
         self.iterator.target_sequence_length, max_time, dtype=self.dtype)
+
     if self.time_major:
       target_weights = tf.transpose(target_weights)
 
-    if self.decode_mark:
-      mark_loss = tf.reduce_sum(
-          crossent * target_weights) / tf.to_float(self.batch_size)
-    else: mark_loss = None
-    if self.decode_time:
-      time_loss = tf.reduce_sum(
-          timeloss * target_weights) / tf.to_float(self.batch_size)
-    else: time_loss = None
+    mark_loss = tf.reduce_sum(crossent * target_weights) / tf.to_float(self.batch_size)
+    print('Mark Loss', mark_loss)
+    time_loss = tf.reduce_sum(timeloss * target_weights) / tf.to_float(self.batch_size)
+    # time_loss = tf.sqrt(time_loss)
+    print('Time Loss', time_loss)
 
     return mark_loss, time_loss

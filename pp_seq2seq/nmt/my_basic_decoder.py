@@ -37,7 +37,8 @@ class MyBasicDecoder(decoder.Decoder):
 
   def __init__(self, cell, initial_state,
                mark_helper=None, time_helper=None,
-               output_mark_layer=None, output_time_layer=None, consider_time=True):
+               output_mark_layer=None, output_time_layer=None,
+               consider_time=True, consider_mark=True):
     """Initialize MyBasicDecoder.
 
     Args:
@@ -87,6 +88,7 @@ class MyBasicDecoder(decoder.Decoder):
     self._output_mark_layer = output_mark_layer
     self._output_time_layer = output_time_layer
     self._consider_time = consider_time
+    self._consider_mark = consider_mark
 
   @property
   def batch_size(self):
@@ -169,11 +171,11 @@ class MyBasicDecoder(decoder.Decoder):
         (time_finished, time_inputs) = self._time_helper.initialize()
     
     #print(mark_inputs.get_shape().ndims, time_inputs.get_shape().ndims)
-    if self._mark_helper is not None and self._time_helper is not None and self._consider_time:
+    if self._mark_helper is not None and self._time_helper is not None and self._consider_time and self._consider_mark:
         finished = tf.logical_and(mark_finished, time_finished)
         #print(mark_inputs.get_shape().ndims, time_inputs.get_shape().ndims)
         inputs = tf.concat([mark_inputs, time_inputs], axis=-1)
-    elif self._mark_helper is not None:
+    elif self._mark_helper is not None and self._consider_mark:
         finished, inputs = mark_finished, mark_inputs
     elif self._time_helper is not None and self._consider_time:
         finished, inputs = time_finished, time_inputs
@@ -230,16 +232,17 @@ class MyBasicDecoder(decoder.Decoder):
       if self._time_helper is None:
         time_sample_ids = tf.zeros_like(mark_sample_ids)
 
-      if self._mark_helper is not None and self._time_helper is not None:
+      if self._mark_helper is not None and self._time_helper is not None and self._consider_time and self._consider_mark:
         finished = tf.logical_and(mark_finished, time_finished)
         next_inputs = tf.concat([mark_next_inputs, time_next_inputs], axis=-1)
         assert mark_next_state == time_next_state #TODO make sure this works
         next_state = mark_next_state
-      elif self._mark_helper is not None:
+      elif self._mark_helper is not None and self._consider_mark:
         finished, next_inputs, next_state = mark_finished, mark_next_inputs, mark_next_state
-      elif self._time_helper is not None:
+      elif self._time_helper is not None and self._consider_time:
         finished, next_inputs, next_state = time_finished, time_next_inputs, time_next_state
 
+    #TODO: time_out should be computed using cell_output which makes it compitable with --decode_time=False
 
     outputs = BasicDecoderOutput(cell_outputs, cell_mark_outputs, cell_time_outputs,
                                  mark_sample_ids, time_sample_ids)
