@@ -121,8 +121,21 @@ class VAEmodel(model.Model):
       ## Decoder
       logits, decoder_cell_outputs, time_pred, \
       mark_sample_id, time_sample_val, \
-      final_context_state, self.decoder_outputs = (
+      final_context_state, self.decoder_outputs, self.decoder_outputs_d = (
           self._build_decoder(self.encoder_outputs, decoder_initial_state_input, hparams))
+
+
+      #################### Create new function for this block ################
+      # if self.mode != tf.contrib.learn.ModeKeys.INFER:
+      #   neg_ln_joint_distribution, _ = self.f_star(self.encoder_outputs, self.decoder_outputs)
+
+      # else:
+      #   if not self.decode_time:
+      #     neg_ln_joint_distribution, time_pred = self.f_star()
+      #     neg_ln_joint_distribution = tf.reduce_sum(neg_ln_joint_distribution, axis=0 if self.time_major else 1)
+      #     self.time_optimizer = tf.train.AdamOptimizer(self.infer_learning_rate).minimize(neg_ln_joint_distribution)
+      #################### Create new function for this block ################
+
 
       self.mu_d, self.sigma_d, self.latent_vector_q_dot = self.sampling(self.decoder_outputs, name='decoder_q')
 
@@ -139,31 +152,22 @@ class VAEmodel(model.Model):
       KL_divergence = tf.reduce_sum(KL_divergence, 1)
       self.KL_divergence = tf.reduce_mean(KL_divergence)
 
-      #################### Create new function for this block ################
-      # if self.mode != tf.contrib.learn.ModeKeys.INFER:
-      #   neg_ln_joint_distribution, _ = self.f_star(self.encoder_outputs, self.decoder_outputs)
-
-      # else:
-      #   if not self.decode_time:
-      #     neg_ln_joint_distribution, time_pred = self.f_star()
-      #     neg_ln_joint_distribution = tf.reduce_sum(neg_ln_joint_distribution, axis=0 if self.time_major else 1)
-      #     self.time_optimizer = tf.train.AdamOptimizer(self.infer_learning_rate).minimize(neg_ln_joint_distribution)
-      #################### Create new function for this block ################
-
-
       ## Loss
       if self.mode != tf.contrib.learn.ModeKeys.INFER:
+
+
         with tf.device(model_helper.get_device_str(self.num_encoder_layers - 1,
                                                    self.num_gpus)):
           mark_loss, time_loss = self._compute_loss(logits, decoder_cell_outputs, time_pred)
+
+          mark_loss = mark_loss + self.KL_divergence
+
       else:
         mark_loss, time_loss = tf.constant(0.0), tf.constant(0.0)
 
       #Based on --decode_time and --decode_mark
       # self.ELBO = mark_loss + time_loss - self.KL_divergence
       # self.loss = -self.ELBO
-
-      mark_loss = mark_loss + self.KL_divergence
 
       return logits, mark_loss, time_loss, final_context_state, mark_sample_id, time_sample_val
 
@@ -329,25 +333,24 @@ class VAEmodel(model.Model):
           hparams, encoder_outputs, encoder_state,
           iterator.source_sequence_length)
 
-      # encoder_state_d = encoder_state
-      # iterator_d = iterator
-      # hparams_d = hparams
-
       # cell_d, decoder_initial_state_d = self._build_decoder_cell(
-      #     hparams_d, encoder_outputs, encoder_state_d,
-      #     iterator_d.source_sequence_length)
+      #     hparams, encoder_outputs, encoder_state,
+      #     iterator.source_sequence_length)
 
       #TODO: decoder_initial_state should be 128/129 depending on consider_time value
       # consider_time = True if self.decode_time else False
       # consider_mark = True if self.decode_mark else False
       
-      consider_time = False
+      consider_time = True
       consider_mark = True
+      # consider_time_d = True
+      # consider_mark_d = True
 
       # Optional ops depends on which mode we are in and which loss function we
       # are using.
       logits = tf.no_op()
       decoder_cell_outputs = None
+      latent_vector_out_q = None
 
       ## Train or eval
       if self.mode != tf.contrib.learn.ModeKeys.INFER:
@@ -374,6 +377,19 @@ class VAEmodel(model.Model):
                 target_time_input, iterator.target_sequence_length,
                 time_major=self.time_major)
         else: time_helper = None
+        
+        # if consider_mark_d:
+        #     mark_helper_d = tf.contrib.seq2seq.TrainingHelper(
+        #         decoder_emb_inp, iterator.target_sequence_length,
+        #         time_major=self.time_major)
+        # else: mark_helper_d = None
+
+        # if consider_time_d:
+        #     time_helper_d = my_helper.TimeTrainingHelper(
+        #         target_time_input, iterator.target_sequence_length,
+        #         time_major=self.time_major)
+        # else: time_helper_d = None
+
         print(decoder_emb_inp.get_shape(), target_time_input.get_shape())
 
         # print('mark_helper', tf.shape(mark_helper))
@@ -395,14 +411,13 @@ class VAEmodel(model.Model):
             swap_memory=True,
             scope=decoder_scope)
 
-        # mark_helper_d = mark_helper
-        # time_helper_d = time_helper
-
         # # d_Decoder
         # my_decoder_d = my_basic_decoder.MyBasicDecoder(
         #     cell_d,
         #     decoder_initial_state_d,
-        #     mark_helper_d, time_helper_d)
+        #     mark_helper_d, time_helper_d, 
+        #     consider_time=consider_time_d,
+        #     consider_mark=consider_mark_d)
 
         # # d_Dynamic decoding
         # outputs_d, final_context_state_d, _ = tf.contrib.seq2seq.dynamic_decode(
@@ -410,6 +425,8 @@ class VAEmodel(model.Model):
         #     output_time_major=self.time_major,
         #     swap_memory=True
         #     )
+
+        # latent_vector_out_q = outputs_d.cell_output
 
         #TODO: do check this
         mark_sample_id = outputs.mark_sample_id# if self.decode_mark else outputs.time_sample_val
@@ -441,10 +458,17 @@ class VAEmodel(model.Model):
       ## Inference
       else:
         infer_mode = hparams.infer_mode
-        mark_start_tokens = tf.fill([self.batch_size], tgt_sos_id)
-        #mark_start_tokens = iterator.source_mark[-1] #TODO Does this work?
-        time_start_tokens = tf.fill([self.batch_size], 0.0)
-        #time_start_tokens = iterator.source_time[-1] #TODO Does this work?
+        # mark_start_tokens = tf.fill([self.batch_size], tgt_sos_id)
+        mark_start_tokens = iterator.source_mark[:self.batch_size, -1]
+        # time_start_tokens = tf.fill([self.batch_size], 0.0)
+        time_start_tokens = iterator.source_mark[:self.batch_size, -1]
+        # mark_start_tokens = tf.to_float(mark_start_tokens)
+        time_start_tokens = tf.to_float(time_start_tokens)
+
+
+
+        print('Start and End Tokens', mark_start_tokens, time_start_tokens)
+
         if time_start_tokens.get_shape().ndims == 2:
             time_start_tokens= tf.expand_dims(time_start_tokens, axis=2)
         mark_end_token = tgt_eos_id
@@ -481,14 +505,14 @@ class VAEmodel(model.Model):
               softmax_temperature=sampling_temperature,
               seed=self.random_seed)
         elif infer_mode == "greedy":
-          # if self.decode_mark:
-          mark_helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(
-                self.embedding_decoder, mark_start_tokens, mark_end_token)
-          # else: mark_helper = None
-          # if self.decode_time:
-          time_helper = my_helper.TimeGreedyHelper(
-                time_start_tokens, time_end_token)
-          # else: time_helper = None
+          if consider_mark:
+            mark_helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(
+                  self.embedding_decoder, mark_start_tokens, mark_end_token)
+          else: mark_helper = None
+          if consider_time:
+            time_helper = my_helper.TimeGreedyHelper(
+                  time_start_tokens, time_end_token)
+          else: time_helper = None
         else:
           raise ValueError("Unknown infer_mode '%s'", infer_mode)
 
@@ -523,7 +547,7 @@ class VAEmodel(model.Model):
           time_sample_val = outputs.time_sample_val
           # else: time_pred, time_sample_val = tf.no_op(), tf.no_op()
 
-    return logits, decoder_cell_outputs, time_pred, mark_sample_id, time_sample_val, final_context_state, outputs.cell_output
+    return logits, decoder_cell_outputs, time_pred, mark_sample_id, time_sample_val, final_context_state, outputs.cell_output, latent_vector_out_q
 
   def sampling(self, rnn_outputs, name=""):
     #TODO: Need to sort this problem

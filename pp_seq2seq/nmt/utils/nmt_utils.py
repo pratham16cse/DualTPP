@@ -80,8 +80,8 @@ def decode_and_evaluate(name,
                   sent_id,
                   tgt_eos=tgt_eos,
                   subword_option=subword_option)
-              if decode_mark: trans_mark_f.write((mark_text + b"\n").decode("utf-8"))
-              if decode_time: trans_time_f.write((time_text + b"\n").decode("utf-8"))
+              trans_mark_f.write((mark_text + b"\n").decode("utf-8"))
+              trans_time_f.write((time_text + b"\n").decode("utf-8"))
         except tf.errors.OutOfRangeError:
           utils.print_time(
               "  done, num sentences %d, num translations per input %d" %
@@ -92,7 +92,7 @@ def decode_and_evaluate(name,
   evaluation_scores = {}
   if ref_mark_file and tf.gfile.Exists(trans_mark_file):
     for metric in metrics:
-      score = evaluation_utils.evaluate(
+      score, mark_score, time_score = evaluation_utils.evaluate(
           ref_mark_file,
           trans_mark_file,
           ref_time_file,
@@ -102,7 +102,9 @@ def decode_and_evaluate(name,
           decode_time,
           subword_option=subword_option)
       evaluation_scores[metric] = score
-      utils.print_out("  %s %s: %.1f" % (metric, name, score))
+      mark_metric, time_metric = metric.split('_')
+      utils.print_out("  %s %s: %.1f = %.1f(%s) + %.1f(%s)" \
+              % (name, metric, score, mark_score, mark_metric, time_score, time_metric))
 
   return evaluation_scores
 
@@ -126,9 +128,7 @@ def get_translation(mark_outputs, time_outputs, sent_id, tgt_eos, subword_option
     mark_text = utils.format_spm_text(mark_output)
     time_text = utils.format_spm_text(time_output)
   else:
-    if mark_outputs is not None: mark_text = utils.format_text(mark_output)
-    else: mark_text = None
-    if time_outputs is not None: time_text = utils.format_float(time_output)
-    else: time_text = None
+    mark_text = utils.format_text(mark_output)
+    time_text = utils.format_float(time_output)
 
   return mark_text, time_text

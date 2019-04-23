@@ -232,7 +232,7 @@ def create_infer_model(model_creator, hparams, scope=None, extra_args=None):
         src_mark_dataset,
         src_time_dataset,
         src_vocab_table,
-        batch_size=batch_size_placeholder,
+        batch_size=hparams.batch_size,
         eos=hparams.eos,
         src_max_len=hparams.src_max_len_infer,
         use_char_encode=hparams.use_char_encode)

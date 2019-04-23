@@ -226,7 +226,7 @@ def run_external_eval(infer_model,
 
 
 def run_avg_external_eval(infer_model, infer_sess, model_dir, hparams,
-                          summary_writer, global_step):                #TODO Check this
+                          summary_writer, global_step):
   """Creates an averaged checkpoint and run external eval with it."""
   avg_dev_scores, avg_test_scores = None, None
   if hparams.avg_ckpts:
@@ -739,7 +739,6 @@ def _sample_decode(model, global_step, sess, hparams, iterator,
                    iterator_batch_size_placeholder, summary_writer):
   """Pick a sentence and decode."""
   decode_id = random.randint(0, len(src_mark_data) - 1)
-  utils.print_out("  # %d" % decode_id)
 
   iterator_feed_dict = {
       iterator_src_mark_placeholder: [src_mark_data[decode_id]],
@@ -748,7 +747,7 @@ def _sample_decode(model, global_step, sess, hparams, iterator,
   }
   sess.run(iterator.initializer, feed_dict=iterator_feed_dict)
 
-  mark_outputs, time_outputs, attention_summary = model.decode(sess, iterator_feed_dict)
+  mark_outputs, time_outputs, attention_summary = model.decode(sess)
 
   if hparams.infer_mode == "beam_search":
     # get the top translation.
@@ -765,8 +764,8 @@ def _sample_decode(model, global_step, sess, hparams, iterator,
   utils.print_out("    src_time: %s" % src_time_data[decode_id])
   utils.print_out("    ref_mark: %s" % tgt_mark_data[decode_id])
   utils.print_out("    ref_time: %s" % tgt_time_data[decode_id])
-  if hparams.decode_mark: utils.print_out(b"    model_mark: " + mark_text)
-  if hparams.decode_time: utils.print_out(b"    model_time: " + time_text)
+  utils.print_out(b"    model_mark: " + mark_text)
+  utils.print_out(b"    model_time: " + time_text)
 
   # Summary
   if attention_summary is not None:

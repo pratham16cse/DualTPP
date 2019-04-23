@@ -61,14 +61,14 @@ class MyBasicDecoder(decoder.Decoder):
     rnn_cell_impl.assert_like_rnncell("cell", cell)
     if mark_helper is None and time_helper is None:
       raise Exception("Both mark_helper and time_helper cannot be None")
-    if output_mark_layer is not None:
-      assert mark_helper is not None
-    if output_time_layer is not None:
-      assert time_helper is not None
-    if mark_helper is not None and time_helper is not None:
-      oml = output_mark_layer is not None
-      otl = output_time_layer is not None
-      assert oml == otl
+    # if output_mark_layer is not None:
+    #   assert mark_helper is not None
+    # if output_time_layer is not None:
+    #   assert time_helper is not None
+    # if mark_helper is not None and time_helper is not None:
+    #   oml = output_mark_layer is not None
+    #   otl = output_time_layer is not None
+    #   assert oml == otl
     if mark_helper is not None and not isinstance(mark_helper, helper_py.Helper):
       raise TypeError("mark_helper must be a Helper, received: %s" % type(mark_helper))
     if time_helper is not None and not isinstance(time_helper, helper_py.Helper):

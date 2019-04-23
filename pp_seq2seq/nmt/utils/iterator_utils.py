@@ -247,7 +247,8 @@ def get_iterator(src_event_dataset,
             0.0,  # tgt_t_input
             0.0,  # tgt_t_output
             0,  # src_len -- unused
-            0))  # tgt_len -- unused
+            0),  # tgt_len -- unused
+        drop_remainder=True)
 
   if num_buckets > 1:
 
