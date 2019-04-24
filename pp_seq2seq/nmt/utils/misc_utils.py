@@ -189,3 +189,6 @@ def format_spm_text(symbols):
   """Decode a text in SPM (https://github.com/google/sentencepiece) format."""
   return u"".join(format_text(symbols).decode("utf-8").split()).replace(
       u"\u2581", u" ").strip().encode("utf-8")
+
+def check_nan(tensor):
+  return tf.reduce_any(tf.is_nan(tensor))

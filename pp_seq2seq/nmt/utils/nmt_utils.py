@@ -113,8 +113,8 @@ def get_translation(mark_outputs, time_outputs, sent_id, tgt_eos, subword_option
   """Given batch decoding outputs, select a sentence and turn to text."""
   if tgt_eos: tgt_eos = tgt_eos.encode("utf-8")
   # Select a sentence
-  mark_output = mark_outputs[sent_id, :].tolist() if mark_outputs is not None else None
-  time_output = time_outputs[sent_id, :].tolist() if time_outputs is not None else None
+  mark_output = mark_outputs[sent_id, :].tolist()
+  time_output = time_outputs[sent_id, :].tolist()
 
   # If there is an eos symbol in outputs, cut them at that point.
   if tgt_eos and tgt_eos in mark_output:

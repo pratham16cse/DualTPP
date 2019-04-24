@@ -710,7 +710,8 @@ def compute_combined_loss(model, sess, name):
   mark_loss = utils.safe_exp(total_mark_loss / total_predict_count)
   time_loss = total_time_loss /total_predict_count
   combined_loss = mark_loss + time_loss
-  utils.print_time("  eval %s: combined_loss %.2f" % (name, combined_loss),
+  utils.print_time("  eval %s: combined_loss %.2f = %.2f(mark_loss) + %.2f(time_loss)" \
+          % (name, combined_loss, mark_loss, time_loss),
                    start_time)
   return combined_loss
 

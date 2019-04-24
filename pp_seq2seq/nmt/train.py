@@ -363,9 +363,9 @@ def run_full_eval(model_dir,
     Triple containing results summary, global step Tensorflow Variable and
     metrics in this order.
   """
-  run_sample_decode(infer_model, infer_sess, model_dir, hparams, summary_writer,
-                    sample_src_mark_data, sample_src_time_data,
-                    sample_tgt_mark_data, sample_tgt_time_data)
+  # run_sample_decode(infer_model, infer_sess, model_dir, hparams, summary_writer,
+  #                   sample_src_mark_data, sample_src_time_data,
+  #                   sample_tgt_mark_data, sample_tgt_time_data)
   return run_internal_and_external_eval(model_dir, infer_model, infer_sess,
                                         eval_model, eval_sess, hparams,
                                         summary_writer, avg_ckpts)
@@ -577,10 +577,10 @@ def train(hparams, scope=None, target_session=""):
       utils.print_out(
           "# Finished an epoch, step %d. Perform external evaluation" %
           global_step)
-      run_sample_decode(infer_model, infer_sess, model_dir, hparams,
-                        summary_writer,
-                        sample_src_mark_data, sample_src_time_data,
-                        sample_tgt_mark_data, sample_tgt_time_data)
+      # run_sample_decode(infer_model, infer_sess, model_dir, hparams,
+      #                   summary_writer,
+      #                   sample_src_mark_data, sample_src_time_data,
+      #                   sample_tgt_mark_data, sample_tgt_time_data)
       run_external_eval(infer_model, infer_sess, model_dir, hparams,
                         summary_writer)
 
@@ -623,10 +623,10 @@ def train(hparams, scope=None, target_session=""):
           global_step=global_step)
 
       # Evaluate on dev/test
-      run_sample_decode(infer_model, infer_sess, model_dir, hparams,
-                        summary_writer,
-                        sample_src_mark_data, sample_src_time_data,
-                        sample_tgt_mark_data, sample_tgt_time_data)
+      # run_sample_decode(infer_model, infer_sess, model_dir, hparams,
+      #                   summary_writer,
+      #                   sample_src_mark_data, sample_src_time_data,
+      #                   sample_tgt_mark_data, sample_tgt_time_data)
       run_internal_eval(
           eval_model, eval_sess, model_dir, hparams, summary_writer)
 
@@ -638,10 +638,10 @@ def train(hparams, scope=None, target_session=""):
           train_sess,
           os.path.join(out_dir, "translate.ckpt"),
           global_step=global_step)
-      run_sample_decode(infer_model, infer_sess, model_dir, hparams,
-                        summary_writer,
-                        sample_src_mark_data, sample_src_time_data,
-                        sample_tgt_mark_data, sample_tgt_time_data)
+      # run_sample_decode(infer_model, infer_sess, model_dir, hparams,
+      #                   summary_writer,
+      #                   sample_src_mark_data, sample_src_time_data,
+      #                   sample_tgt_mark_data, sample_tgt_time_data)
       run_external_eval(
           infer_model, infer_sess, model_dir,
           hparams, summary_writer)
@@ -738,16 +738,19 @@ def _sample_decode(model, global_step, sess, hparams, iterator,
                    iterator_src_time_placeholder,
                    iterator_batch_size_placeholder, summary_writer):
   """Pick a sentence and decode."""
-  decode_id = random.randint(0, len(src_mark_data) - 1)
+  #decode_id = random.randint(0, len(src_mark_data) - 1)
 
   iterator_feed_dict = {
-      iterator_src_mark_placeholder: [src_mark_data[decode_id]],
-      iterator_src_time_placeholder: [src_time_data[decode_id]],
-      iterator_batch_size_placeholder: 1,
+      iterator_src_mark_placeholder: src_mark_data,
+      iterator_src_time_placeholder: src_time_data,
+      iterator_batch_size_placeholder: hparams.infer_batch_size,
   }
   sess.run(iterator.initializer, feed_dict=iterator_feed_dict)
 
   mark_outputs, time_outputs, attention_summary = model.decode(sess)
+
+  decode_id = random.randint(0, len(mark_outputs) - 1)
+  utils.print_out("  # %d" % decode_id)
 
   if hparams.infer_mode == "beam_search":
     # get the top translation.
@@ -755,8 +758,8 @@ def _sample_decode(model, global_step, sess, hparams, iterator,
     time_outputs = time_outputs[0]
 
   mark_text, time_text = nmt_utils.get_translation(
-      mark_outputs,
-      time_outputs,
+      mark_outputs[decode_id:decode_id+1],
+      time_outputs[decode_id:decode_id+1],
       sent_id=0,
       tgt_eos=hparams.eos,
       subword_option=hparams.subword_option)

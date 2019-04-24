@@ -91,7 +91,8 @@ def get_infer_iterator(src_mark_dataset,
         padding_values=(
             src_eos_id,  # src_m
             0.0,  # src_t
-            0))  # src_len -- unused
+            0),  # src_len -- unused
+          drop_remainder=True)
 
   batched_dataset = batching_func(src_dataset)
   batched_iter = batched_dataset.make_initializable_iterator()
