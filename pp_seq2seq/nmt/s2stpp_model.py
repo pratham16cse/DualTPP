@@ -322,6 +322,7 @@ class S2stppModel(model.Model):
     gap_pred = tf.get_variable('gap_pred', initializer=tf.random_normal(pred_shape))
     if self.mode != tf.contrib.learn.ModeKeys.INFER:
       target_time_output = self.iterator.target_time_output
+      target_time_output = tf.transpose(target_time_output) if self.time_major else target_time_output
     else:
       target_time_output = tf.zeros_like(gap_pred) #In infer mode, true target is irrelevant
 
@@ -346,9 +347,8 @@ class S2stppModel(model.Model):
     ln_lambda_star = self.lambda_0 + self.w * gap_pred
     neg_ln_joint_distribution_infer = (-1.0) \
                               * (ln_lambda_star \
-                              + (1.0/self.w) * tf.exp(self.lambda_0) \
-                              - (1.0/self.w) * tf.exp(ln_lambda_star))
-
+                              + (1.0/self.w) * tf.exp(tf.minimum(10.0, self.lambda_0)) \
+                              - (1.0/self.w) * tf.exp(tf.minimum(10.0, ln_lambda_star)))
 
     #---- Computing joint likelihood on true outputs ----#
     h_m = encoder_outputs[-1:, :, :] if self.time_major else encoder_outputs[:, -1:, :]
@@ -371,8 +371,9 @@ class S2stppModel(model.Model):
     ln_lambda_star = self.lambda_0 + self.w * target_gap
     neg_ln_joint_distribution_train = (-1.0) \
                               * (ln_lambda_star \
-                              + (1.0/self.w) * tf.exp(self.lambda_0) \
-                              - (1.0/self.w) * tf.exp(ln_lambda_star))
+                              + (1.0/self.w) * tf.exp(tf.minimum(10.0, self.lambda_0))
+                              - (1.0/self.w) * tf.exp(tf.minimum(10.0, ln_lambda_star)))
+    neg_ln_joint_distribution_train = tf.maximum(neg_ln_joint_distribution_train, -100.0)
 
     #---- Obtain predicted time from gaps ----#
     gap_pred_pos = tf.nn.softplus(gap_pred)
@@ -455,3 +456,72 @@ class S2stppModel(model.Model):
       sample_words = sample_words.transpose([2, 0, 1])
     return sample_words, sample_times, infer_summary
 
+  def _set_train_or_infer(self, res, reverse_target_vocab_table, hparams):
+    """Set up training and inference."""
+    res_1, res_2 = res[1], res[2]
+    if self.mode == tf.contrib.learn.ModeKeys.TRAIN:
+      self.train_mark_loss, self.train_time_loss = res_1, res_2
+      self.train_loss = res_1 + res_2
+      self.word_count = tf.reduce_sum(
+          self.iterator.source_sequence_length) + tf.reduce_sum(
+              self.iterator.target_sequence_length)
+    elif self.mode == tf.contrib.learn.ModeKeys.EVAL:
+      self.eval_mark_loss, self.eval_time_loss = res_1, res_2
+      self.eval_loss = res_1 + res_2
+    elif self.mode == tf.contrib.learn.ModeKeys.INFER:
+      self.infer_logits, _, _, self.final_context_state, \
+      self.mark_sample_id, self.infer_time = res
+      self.sample_words = reverse_target_vocab_table.lookup(
+          tf.to_int64(self.mark_sample_id))
+      self.time_sample_val = self.infer_time   # These variables are used to ensure
+      self.sample_times = self.time_sample_val # analogy between mark and time
+
+    if self.mode != tf.contrib.learn.ModeKeys.INFER:
+      ## Count the number of predicted words for compute ppl.
+      self.predict_count = tf.reduce_sum(
+          self.iterator.target_sequence_length)
+
+    params = tf.trainable_variables()
+
+    # Gradients and SGD update operation for training the model.
+    # Arrange for the embedding vars to appear at the beginning.
+    if self.mode == tf.contrib.learn.ModeKeys.TRAIN:
+      self.learning_rate = tf.constant(hparams.learning_rate)
+      # warm-up
+      self.learning_rate = self._get_learning_rate_warmup(hparams)
+      # decay
+      self.learning_rate = self._get_learning_rate_decay(hparams)
+
+      # Optimizer
+      if hparams.optimizer == "sgd":
+        opt = tf.train.GradientDescentOptimizer(self.learning_rate)
+      elif hparams.optimizer == "adam":
+        opt = tf.train.AdamOptimizer(self.learning_rate)
+      else:
+        raise ValueError("Unknown optimizer type %s" % hparams.optimizer)
+
+      # Gradients
+      gradients = tf.gradients(
+          self.train_loss,
+          params,
+          colocate_gradients_with_ops=hparams.colocate_gradients_with_ops)
+
+      clipped_grads, grad_norm_summary, grad_norm = model_helper.gradient_clip(
+          gradients, max_gradient_norm=hparams.max_gradient_norm)
+      self.grad_norm_summary = grad_norm_summary
+      self.grad_norm = grad_norm
+
+      self.update = opt.apply_gradients(
+          zip(clipped_grads, params), global_step=self.global_step)
+
+      # Summary
+      self.train_summary = self._get_train_summary()
+    elif self.mode == tf.contrib.learn.ModeKeys.INFER:
+      self.infer_summary = self._get_infer_summary(hparams)
+
+    # Print trainable variables
+    utils.print_out("# Trainable variables")
+    utils.print_out("Format: <name>, <shape>, <(soft) device placement>")
+    for param in params:
+      utils.print_out("  %s, %s, %s" % (param.name, str(param.get_shape()),
+                                        param.op.device))
