@@ -165,7 +165,7 @@ def format_float(times):
   if (not hasattr(times, "__len__") and  # for numpy array
       not isinstance(times, collections.Iterable)):
     times = [times]
-  times = ["%.4f" % time for time in times]
+  times = [b"%.4f" % time for time in times]
   return b" ".join(times)
 
 def format_bpe_text(symbols, delimiter=b"@@"):

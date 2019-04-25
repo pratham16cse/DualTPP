@@ -23,6 +23,7 @@ import time
 import tensorflow as tf
 
 from . import s2stpp_model
+from . import vae_model
 from . import attention_model
 from . import gnmt_model
 from . import inference
@@ -467,14 +468,22 @@ def before_train(loaded_train_model, train_model, train_sess, global_step,
 
 def get_model_creator(hparams):
   """Get the right model class depending on configuration."""
+  print(hparams.encoder_type, ": Encoder Type")
   if (hparams.encoder_type == "gnmt" or
       hparams.attention_architecture in ["gnmt", "gnmt_v2"]):
+    print('GNMT Model')
     model_creator = gnmt_model.GNMTModel
   elif hparams.attention and hparams.attention_architecture == "standard":
+    print('Attention Model')
     model_creator = attention_model.AttentionModel
+  elif hparams.decoder_type == 'vae_joint_time':
+    print('VAE Model')
+    model_creator = vae_model.VAEmodel
   elif hparams.decoder_type == 'joint_time':
+    print('S2S Model')
     model_creator = s2stpp_model.S2stppModel
   elif not hparams.attention:
+    print('NMT Model')
     model_creator = nmt_model.Model
   else:
     raise ValueError("Unknown attention architecture %s" %

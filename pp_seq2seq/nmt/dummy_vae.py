@@ -938,9 +938,6 @@ class Model(BaseModel):
                           source_sequence_length, base_gpu=0):
     """Build an RNN cell that can be used by decoder."""
     # We only make use of encoder_outputs in attention-based models
-
-    #TODO: Pass encoder_output and make it Initial satate for Decoder.
-
     if hparams.attention:
       raise ValueError("BasicModel doesn't support attention.")
 
