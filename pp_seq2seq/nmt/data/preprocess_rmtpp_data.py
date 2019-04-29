@@ -87,21 +87,21 @@ def preprocess(dataset_name,
 
     if not os.path.isdir(dataset_name):
         os.mkdir(dataset_name)
-    with open(os.path.join(dataset_name, 'train_event.in'), 'w') as f:
+    with open(os.path.join(dataset_name, 'train.event.in'), 'w') as f:
         write_to_file(f, pp_train_event_in_seq)
-    with open(os.path.join(dataset_name, 'train_event.out'), 'w') as f:
+    with open(os.path.join(dataset_name, 'train.event.out'), 'w') as f:
         write_to_file(f, pp_train_event_out_seq)
-    with open(os.path.join(dataset_name, 'test_event.in'), 'w') as f:
+    with open(os.path.join(dataset_name, 'test.event.in'), 'w') as f:
         write_to_file(f, pp_test_event_in_seq)
-    with open(os.path.join(dataset_name, 'test_event.out'), 'w') as f:
+    with open(os.path.join(dataset_name, 'test.event.out'), 'w') as f:
         write_to_file(f, pp_test_event_out_seq)
-    with open(os.path.join(dataset_name, 'train_time.in'), 'w') as f:
+    with open(os.path.join(dataset_name, 'train.time.in'), 'w') as f:
         write_to_file(f, pp_train_time_in_seq)
-    with open(os.path.join(dataset_name, 'train_time.out'), 'w') as f:
+    with open(os.path.join(dataset_name, 'train.time.out'), 'w') as f:
         write_to_file(f, pp_train_time_out_seq)
-    with open(os.path.join(dataset_name, 'test_time.in'), 'w') as f:
+    with open(os.path.join(dataset_name, 'test.time.in'), 'w') as f:
         write_to_file(f, pp_test_time_in_seq)
-    with open(os.path.join(dataset_name, 'test_time.out'), 'w') as f:
+    with open(os.path.join(dataset_name, 'test.time.out'), 'w') as f:
         write_to_file(f, pp_test_time_out_seq)
 
     with open(os.path.join(dataset_name, 'labels.in'), 'w') as f:
