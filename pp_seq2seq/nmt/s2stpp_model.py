@@ -344,11 +344,13 @@ class S2stppModel(model.Model):
     self.gamma = tf.squeeze(gamma_layer(inputs), axis=-1)
 
 
+    #lambda_star = tf.exp(tf.minimum(10.0, self.lambda_0 + self.w * gap_pred))
     ln_lambda_star = self.lambda_0 + self.w * gap_pred
+    lambda_star = tf.exp(tf.minimum(10.0, ln_lambda_star))
     neg_ln_joint_distribution_infer = (-1.0) \
                               * (ln_lambda_star \
                               + (1.0/self.w) * tf.exp(tf.minimum(10.0, self.lambda_0)) \
-                              - (1.0/self.w) * tf.exp(tf.minimum(10.0, ln_lambda_star)))
+                              - (1.0/self.w) * lambda_star)
 
     #---- Computing joint likelihood on true outputs ----#
     h_m = encoder_outputs[-1:, :, :] if self.time_major else encoder_outputs[:, -1:, :]
@@ -369,11 +371,12 @@ class S2stppModel(model.Model):
     #target_gap = tf.Print(target_gap, [target_gap], message='Printing target_gap')
 
     ln_lambda_star = self.lambda_0 + self.w * target_gap
+    lambda_star = tf.exp(tf.minimum(10.0, ln_lambda_star))
     neg_ln_joint_distribution_train = (-1.0) \
                               * (ln_lambda_star \
                               + (1.0/self.w) * tf.exp(tf.minimum(10.0, self.lambda_0))
-                              - (1.0/self.w) * tf.exp(tf.minimum(10.0, ln_lambda_star)))
-    neg_ln_joint_distribution_train = tf.maximum(neg_ln_joint_distribution_train, -100.0)
+                              - (1.0/self.w) * lambda_star)
+    neg_ln_joint_distribution_train = tf.maximum(neg_ln_joint_distribution_train, tf.log(-1e-6))
 
     #---- Obtain predicted time from gaps ----#
     gap_pred_pos = tf.nn.softplus(gap_pred)
