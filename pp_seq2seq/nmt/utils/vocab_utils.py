@@ -120,11 +120,11 @@ def check_vocab(vocab_file, out_dir, check_special_token=True, sos=None,
       if not unk: unk = UNK
       if not sos: sos = SOS
       if not eos: eos = EOS
-      assert len(vocab) >= 3
-      if vocab[0] != unk or vocab[1] != sos or vocab[2] != eos:
-        utils.print_out("The first 3 vocab words [%s, %s, %s]"
-                        " are not [%s, %s, %s]" %
-                        (vocab[0], vocab[1], vocab[2], unk, sos, eos))
+      assert len(vocab) >= 2
+      if vocab[0] != sos or vocab[1] != eos:
+        utils.print_out("The first 2 vocab words [%s, %s]"
+                        " are not [%s, %s]" %
+                        (vocab[0], vocab[1], sos, eos))
         vocab = [unk, sos, eos] + vocab
         vocab_size += 3
         new_vocab_file = os.path.join(out_dir, os.path.basename(vocab_file))
