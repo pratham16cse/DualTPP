@@ -120,19 +120,39 @@ def check_vocab(vocab_file, out_dir, check_special_token=True, sos=None,
       if not unk: unk = UNK
       if not sos: sos = SOS
       if not eos: eos = EOS
-      assert len(vocab) >= 2
+      assert len(vocab) >= 1
       if vocab[0] != sos or vocab[1] != eos:
         utils.print_out("The first 2 vocab words [%s, %s]"
                         " are not [%s, %s]" %
                         (vocab[0], vocab[1], sos, eos))
-        vocab = [unk, sos, eos] + vocab
-        vocab_size += 3
+        vocab = [sos, eos] + vocab
+        vocab_size += 2
         new_vocab_file = os.path.join(out_dir, os.path.basename(vocab_file))
         with codecs.getwriter("utf-8")(
             tf.gfile.GFile(new_vocab_file, "wb")) as f:
           for word in vocab:
             f.write("%s\n" % word)
         vocab_file = new_vocab_file
+  else:
+    raise ValueError("vocab_file '%s' does not exist." % vocab_file)
+
+  vocab_size = len(vocab)
+  return vocab_size, vocab_file
+
+def check_vocab_pp(vocab_file, out_dir, check_special_token=True, sos=None,
+                   eos=None, unk=None):
+  """Check if vocab_file doesn't exist, create from corpus_file."""
+  if tf.gfile.Exists(vocab_file):
+    utils.print_out("# Vocab file %s exists" % vocab_file)
+    vocab, vocab_size = load_vocab(vocab_file)
+    if check_special_token:
+      assert len(vocab) >= 1
+      new_vocab_file = os.path.join(out_dir, os.path.basename(vocab_file))
+      with codecs.getwriter("utf-8")(
+          tf.gfile.GFile(new_vocab_file, "wb")) as f:
+        for word in vocab:
+          f.write("%s\n" % word)
+      vocab_file = new_vocab_file
   else:
     raise ValueError("vocab_file '%s' does not exist." % vocab_file)
 
