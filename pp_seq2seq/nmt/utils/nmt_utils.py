@@ -103,7 +103,7 @@ def decode_and_evaluate(name,
           subword_option=subword_option)
       evaluation_scores[metric] = score
       mark_metric, time_metric = metric.split('_')
-      utils.print_out("  %s %s: %.1f = %.1f(%s) + %.1f(%s)" \
+      utils.print_out("  %s %s: %f = %f(%s) + %f(%s)" \
               % (name, metric, score, mark_score, mark_metric, time_score, time_metric))
 
   return evaluation_scores

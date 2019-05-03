@@ -132,18 +132,19 @@ def _rouge(ref_file, summarization_file, subword_option=None):
 
 
 def _accuracy(label_file, pred_file):
-  """Compute accuracy, each line contains a label."""
+  """Compute accuracy, each line contains a label sequence.
+     Lengths of label sequence and predicted sequence must be same.
+  """
 
   with codecs.getreader("utf-8")(tf.gfile.GFile(label_file, "rb")) as label_fh:
     with codecs.getreader("utf-8")(tf.gfile.GFile(pred_file, "rb")) as pred_fh:
       count = 0.0
       match = 0.0
       for pred in pred_fh:
-        label = label_fh.readline().strip()
-        pred = pred.strip()
-        if label == pred:
-          match += 1
-        count += 1
+        label_seq = label_fh.readline().strip()
+        pred_seq = pred.strip()
+        match += sum([label==pred for label, pred in zip(label_seq, pred_seq)])
+        count += len(pred_seq)
   return 100 * match / count
 
 def _percenterror(label_file, pred_file):

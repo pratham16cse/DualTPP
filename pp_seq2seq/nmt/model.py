@@ -575,10 +575,10 @@ class BaseModel(object):
       ## Inference
       else:
         infer_mode = hparams.infer_mode
-        mark_start_tokens = tf.fill([self.batch_size], tgt_sos_id)
-        #mark_start_tokens = iterator.source_mark[-1] #TODO Does this work?
-        time_start_tokens = tf.fill([self.batch_size], 0.0)
-        #time_start_tokens = iterator.source_time[-1] #TODO Does this work?
+        #mark_start_tokens = tf.fill([self.batch_size], tgt_sos_id)
+        mark_start_tokens = iterator.source_mark[:self.batch_size, -1]
+        #time_start_tokens = tf.fill([self.batch_size], 0.0)
+        time_start_tokens = iterator.source_time[:self.batch_size, -1]
         if time_start_tokens.get_shape().ndims == 2:
             time_start_tokens= tf.expand_dims(time_start_tokens, axis=2)
         mark_end_token = tgt_eos_id
