@@ -23,6 +23,7 @@ from tensorflow.python.ops import tensor_array_ops
 from tensorflow.python.ops.distributions import bernoulli
 from tensorflow.python.ops.distributions import categorical
 from tensorflow.python.util import nest
+import tensorflow_probability as tfp
 
 from tensorflow.contrib.seq2seq import Helper
 
@@ -31,6 +32,7 @@ import tensorflow as tf
 __all__ = [
     "TimeTrainingHelper",
     "TimeGreedyHelper",
+    "TimeGreedyPointProcessHelper"
     #"SampleEmbeddingHelper",
     #"CustomHelper",
     #"ScheduledEmbeddingTrainingHelper",
@@ -179,7 +181,7 @@ class TimeGreedyHelper(Helper):
     finished = array_ops.tile([False], [self._batch_size])
     return (finished, self._start_inputs)
 
-  def sample(self, time, outputs, state, name=None):
+  def sample(self, time, outputs, state, sample_id_prev=None, name=None):
     """sample for TimeGreedyHelper."""
     del time, state  # unused by sample_fn
     # Outputs are logits, use argmax to get the most probable id
@@ -203,3 +205,42 @@ class TimeGreedyHelper(Helper):
     print(next_inputs.get_shape())
     return (finished, next_inputs, state)
 
+
+class TimeGreedyPointProcessHelper(TimeGreedyHelper):
+  """A helper for use during inference.
+
+  Uses the real-valued output (of last layer) to get the next input.
+  The next input is obtained as an expectation over a distribution function
+  defined below.
+  """
+
+  def __init__(self, start_tokens, end_token):
+    super(TimeGreedyPointProcessHelper, self).__init__(
+        start_tokens, end_token)
+
+
+  def sample(self, time, outputs, state, sample_id_prev=None, name=None):
+    del time, state # unused by sample_fn
+    if not isinstance(outputs, ops.Tensor):
+      raise TypeError("Expected outputs to be a single Tensor, got: %s" %
+                      type(outputs))
+    lambda_0, w, gamma = tf.split(outputs, 3, axis=-1)
+    sample_id_prev_tiled = tf.tile(tf.expand_dims(sample_id_prev, axis=-1), [1, 50])
+    #ln_lambda_star = lambda t: lambda_0 + w * (t - sample_id_prev) + gamma * sample_id_prev
+    #lambda_star = lambda t: tf.exp(tf.minimum(10.0, ln_lambda_star))
+    f_star = lambda t: tf.exp(
+                              tf.minimum(
+                                         10.0,
+                                         lambda_0 + w * (t - sample_id_prev_tiled) + gamma * sample_id_prev_tiled \
+                                         + 1.0/w * tf.exp(tf.minimum(10.0, lambda_0)) \
+                                         + 1.0/w * (tf.exp(tf.minimum(10.0, lambda_0 + w * (t - sample_id_prev_tiled) + gamma * sample_id_prev_tiled)))
+                                        )
+                             )
+
+    #sample_distribution = tfp.distributions.Uniform(low=sample_id_prev, high=sample_id_prev*2.0)
+    #samples = sample_distribution.sample(sample_shape=(50))
+    #samples = tf.transpose(samples)
+    #sample_ids = tfp.monte_carlo.expectation(f_star, samples, axis=1)
+    samples = tf.expand_dims(sample_id_prev, axis=1) * tf.expand_dims(tf.linspace(1.0, 2.0, 50), axis=0)
+    sample_ids = tf.reduce_sum(samples * f_star(samples), axis=1) / tf.reduce_sum(f_star(samples), axis=1)
+    return sample_ids

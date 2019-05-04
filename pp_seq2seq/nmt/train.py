@@ -24,6 +24,7 @@ import tensorflow as tf
 
 from . import s2stpp_model
 from . import vae_model
+from . import greedytpp_model
 from . import attention_model
 from . import gnmt_model
 from . import inference
@@ -482,6 +483,9 @@ def get_model_creator(hparams):
   elif hparams.decoder_type == 'joint_time':
     print('S2S Model')
     model_creator = s2stpp_model.S2stppModel
+  elif hparams.decoder_type == 'greedytpp':
+    print('GreedyTpp Model')
+    model_creator = greedytpp_model.GreedyTppModel
   elif not hparams.attention:
     print('NMT Model')
     model_creator = nmt_model.Model
