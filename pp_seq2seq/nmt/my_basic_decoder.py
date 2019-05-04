@@ -220,7 +220,8 @@ class MyBasicDecoder(decoder.Decoder):
         time_sample_ids = self._time_helper.sample(
             time=time,
             outputs=cell_time_outputs,
-            state=cell_state)
+            state=cell_state,
+            sample_id_prev=inputs[:,-1])
         (time_finished, time_next_inputs, time_next_state) = self._time_helper.next_inputs(
             time=time,
             outputs=cell_time_outputs,
