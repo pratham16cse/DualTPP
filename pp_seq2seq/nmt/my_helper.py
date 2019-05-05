@@ -23,7 +23,7 @@ from tensorflow.python.ops import tensor_array_ops
 from tensorflow.python.ops.distributions import bernoulli
 from tensorflow.python.ops.distributions import categorical
 from tensorflow.python.util import nest
-import tensorflow_probability as tfp
+# import tensorflow_probability as tfp
 
 from tensorflow.contrib.seq2seq import Helper
 

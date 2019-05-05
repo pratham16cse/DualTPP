@@ -102,6 +102,7 @@ class VAEmodel(model.Model):
 
       self.mu, self.sigma, self.latent_vector_q_min = self.sampling(self.encoder_outputs, name='encoder_q')
 
+      distribution_a = tf.distributions.Normal(loc=self.mu, scale=self.sigma)
       # print(type(encoder_state), encoder_state)
       # print(type(self.latent_vector_q_min), self.latent_vector_q_min)
       # print('-----------------------------------')
@@ -126,36 +127,42 @@ class VAEmodel(model.Model):
 
       #---- Computing negative log joint distribution (train and infer) ----#
       neg_ln_joint_distribution_train, neg_ln_joint_distribution_infer, gap_pred, time_pred \
-              = self.f_star(self.encoder_outputs, self.decoder_outputs)
+              = self.f_star(self.encoder_outputs, self.decoder_outputs, self.latent_vector_q_min)
 
       neg_ln_joint_distribution_infer = tf.reduce_sum(neg_ln_joint_distribution_infer, axis=0 if self.time_major else 1)
       self.time_optimizer = tf.train.AdamOptimizer(self.infer_learning_rate).minimize(neg_ln_joint_distribution_infer, var_list=[gap_pred])
       self.gap_pred = gap_pred
 
-      self.mu_d, self.sigma_d, self.latent_vector_q_dot = self.sampling(self.decoder_outputs, name='decoder_q')
-
-      distribution_a = tf.distributions.Normal(loc=self.mu, scale=self.sigma)
-      # distribution_b = tf.distributions.Normal(tf.zeros_like(self.mu), tf.ones_like(self.sigma))
-
-      distribution_b = tf.distributions.Normal(loc=self.mu_d, scale=self.sigma_d)
-
-      # self.decoder_outputs = tf.clip_by_value(self.decoder_outputs, 1e-8, 1 - 1e-8)
-      # KL_divergence = 0.5 * tf.reduce_sum(tf.square(self.mu) + tf.square(self.sigma) - tf.log(1e-8 + tf.square(self.sigma)) - 1, 1)
-      # KL_divergence = 0.5 * tf.reduce_sum(tf.square(self.mu) + self.sigma - tf.log(1e-8 + self.sigma) - 1, 1)
-
-      KL_divergence = tf.distributions.kl_divergence(distribution_a, distribution_b)
-      KL_divergence = tf.reduce_sum(KL_divergence, 1)
-      self.KL_divergence = tf.reduce_mean(KL_divergence)
-
       ## Loss
       if self.mode != tf.contrib.learn.ModeKeys.INFER:
+
+        self.mu_d, self.sigma_d, self.latent_vector_q_dot = self.sampling(self.decoder_outputs_d, name='decoder_q')
+
+        # distribution_b = tf.distributions.Normal(tf.zeros_like(self.mu), tf.ones_like(self.sigma))
+
+        distribution_b = tf.distributions.Normal(loc=self.mu_d, scale=self.sigma_d)
+
+        # self.decoder_outputs = tf.clip_by_value(self.decoder_outputs, 1e-8, 1 - 1e-8)
+        # KL_divergence = 0.5 * tf.reduce_sum(tf.square(self.mu) + tf.square(self.sigma) - tf.log(1e-8 + tf.square(self.sigma)) - 1, 1)
+        # KL_divergence = 0.5 * tf.reduce_sum(tf.square(self.mu) + self.sigma - tf.log(1e-8 + self.sigma) - 1, 1)
+
+        KL_divergence = tf.distributions.kl_divergence(distribution_a, distribution_b)
+        KL_divergence = tf.reduce_sum(KL_divergence, 1)
+        self.KL_divergence = tf.reduce_mean(KL_divergence)
+
+        
         with tf.device(model_helper.get_device_str(self.num_encoder_layers - 1,
                                                    self.num_gpus)):
           mark_loss, time_loss = self._compute_loss(logits, decoder_cell_outputs, time_pred, neg_ln_joint_distribution_train)
           mark_loss = mark_loss + self.KL_divergence
 
       else:
+        
+        self.mu_d, self.sigma_d, self.latent_vector_q_dot = self.sampling(self.decoder_outputs, name='decoder_q')        
+
         mark_loss, time_loss = tf.constant(0.0), tf.constant(0.0)
+
+      #TODO: KL Divergence should be returned
 
       #Based on --decode_time and --decode_mark
       # self.ELBO = mark_loss + time_loss - self.KL_divergence
@@ -325,18 +332,18 @@ class VAEmodel(model.Model):
           hparams, encoder_outputs, encoder_state,
           iterator.source_sequence_length)
 
-      # cell_d, decoder_initial_state_d = self._build_decoder_cell(
-      #     hparams, encoder_outputs, encoder_state,
-      #     iterator.source_sequence_length)
+      cell_d, decoder_initial_state_d = self._build_decoder_cell(
+          hparams, encoder_outputs, encoder_state,
+          iterator.source_sequence_length)
 
       #TODO: decoder_initial_state should be 128/129 depending on consider_time value
       # consider_time = True if self.decode_time else False
       # consider_mark = True if self.decode_mark else False
       
-      consider_time = True
+      consider_time = False
       consider_mark = True
-      # consider_time_d = True
-      # consider_mark_d = True
+      consider_time_d = True
+      consider_mark_d = True
 
       # Optional ops depends on which mode we are in and which loss function we
       # are using.
@@ -370,17 +377,17 @@ class VAEmodel(model.Model):
                 time_major=self.time_major)
         else: time_helper = None
         
-        # if consider_mark_d:
-        #     mark_helper_d = tf.contrib.seq2seq.TrainingHelper(
-        #         decoder_emb_inp, iterator.target_sequence_length,
-        #         time_major=self.time_major)
-        # else: mark_helper_d = None
+        if consider_mark_d:
+            mark_helper_d = tf.contrib.seq2seq.TrainingHelper(
+                decoder_emb_inp, iterator.target_sequence_length,
+                time_major=self.time_major)
+        else: mark_helper_d = None
 
-        # if consider_time_d:
-        #     time_helper_d = my_helper.TimeTrainingHelper(
-        #         target_time_input, iterator.target_sequence_length,
-        #         time_major=self.time_major)
-        # else: time_helper_d = None
+        if consider_time_d:
+            time_helper_d = my_helper.TimeTrainingHelper(
+                target_time_input, iterator.target_sequence_length,
+                time_major=self.time_major)
+        else: time_helper_d = None
 
         print(decoder_emb_inp.get_shape(), target_time_input.get_shape())
 
@@ -403,22 +410,22 @@ class VAEmodel(model.Model):
             swap_memory=True,
             scope=decoder_scope)
 
-        # # d_Decoder
-        # my_decoder_d = my_basic_decoder.MyBasicDecoder(
-        #     cell_d,
-        #     decoder_initial_state_d,
-        #     mark_helper_d, time_helper_d, 
-        #     consider_time=consider_time_d,
-        #     consider_mark=consider_mark_d)
+        # d_Decoder
+        my_decoder_d = my_basic_decoder.MyBasicDecoder(
+            cell_d,
+            decoder_initial_state_d,
+            mark_helper_d, time_helper_d, 
+            consider_time=consider_time_d,
+            consider_mark=consider_mark_d)
 
-        # # d_Dynamic decoding
-        # outputs_d, final_context_state_d, _ = tf.contrib.seq2seq.dynamic_decode(
-        #     my_decoder_d,
-        #     output_time_major=self.time_major,
-        #     swap_memory=True
-        #     )
+        # d_Dynamic decoding
+        outputs_d, final_context_state_d, _ = tf.contrib.seq2seq.dynamic_decode(
+            my_decoder_d,
+            output_time_major=self.time_major,
+            swap_memory=True
+            )
 
-        # latent_vector_out_q = outputs_d.cell_output
+        latent_vector_out_q = outputs_d.cell_output
 
         #TODO: do check this
         mark_sample_id = outputs.mark_sample_id# if self.decode_mark else outputs.time_sample_val
@@ -505,6 +512,17 @@ class VAEmodel(model.Model):
             time_helper = my_helper.TimeGreedyHelper(
                   time_start_tokens, time_end_token)
           else: time_helper = None
+
+          if consider_mark:
+            mark_helper_d = tf.contrib.seq2seq.GreedyEmbeddingHelper(
+                  self.embedding_decoder, mark_start_tokens, mark_end_token)
+          else: mark_helper_d = None
+
+          if consider_time:
+            time_helper_d = my_helper.TimeGreedyHelper(
+                  time_start_tokens, time_end_token)
+          else: time_helper_d = None
+
         else:
           raise ValueError("Unknown infer_mode '%s'", infer_mode)
 
@@ -519,6 +537,14 @@ class VAEmodel(model.Model):
               consider_mark=consider_mark
           )
 
+          # d_Decoder
+          my_decoder_d = my_basic_decoder.MyBasicDecoder(
+              cell_d,
+              decoder_initial_state_d,
+              mark_helper_d, time_helper_d,
+              consider_time=consider_time,
+              consider_mark=consider_mark)
+
         # Dynamic decoding
         outputs, final_context_state, _ = tf.contrib.seq2seq.dynamic_decode(
             my_decoder,
@@ -526,6 +552,14 @@ class VAEmodel(model.Model):
             output_time_major=self.time_major,
             swap_memory=True,
             scope=decoder_scope)
+
+        # d_Dynamic decoding
+        outputs_d, final_context_state_d, _ = tf.contrib.seq2seq.dynamic_decode(
+            my_decoder_d,
+            maximum_iterations=maximum_iterations,
+            output_time_major=self.time_major,
+            swap_memory=True
+            )
 
         if infer_mode == "beam_search":
           sample_id = outputs.predicted_ids
@@ -542,10 +576,10 @@ class VAEmodel(model.Model):
     return logits, decoder_cell_outputs, time_pred, mark_sample_id, time_sample_val, final_context_state, outputs.cell_output, latent_vector_out_q
 
   def sampling(self, rnn_outputs, name=""):
-    #TODO: Need to sort this problem
+    #TODO: Need Help for dimension
+
     # latent_vector_out = rnn_outputs[-1]
     latent_vector_out = rnn_outputs[-1, :, :] if self.time_major else rnn_outputs[:, -1, :]
-    # print("latent_vector_shape", latent_vector_out)
 
     # print(latent_vector_out)
     # print(tf.shape(latent_vector_out))
@@ -578,7 +612,7 @@ class VAEmodel(model.Model):
 
     return mean, stddev, latent_vector
 
-  def f_star(self, encoder_outputs=None, decoder_outputs=None):
+  def f_star(self, encoder_outputs=None, decoder_outputs=None, latent_z_hat=None):
     print('Inside f_star.........', self.mode, self.batch_size)
     if self.time_major:
       pred_shape = (self.tgt_max_len_infer, self.batch_size)
@@ -598,11 +632,14 @@ class VAEmodel(model.Model):
     w_layer = tf.layers.Dense(1, name='w_layer')
     gamma_layer = tf.layers.Dense(1, name='gamma_layer')
 
+    latent_z_hat = tf.expand_dims(latent_z_hat, 0 if self.time_major else 1)
 
     #---- Computing joint likelihood for inference ----#
     h_m = encoder_outputs_ph[-1:, :, :] if self.time_major else encoder_outputs_ph[:, -1:, :]
     dec_len = tf.shape(decoder_outputs_ph)[0] if self.time_major else tf.shape(decoder_outputs_ph)[1]
     h_m = tf.tile(h_m, [dec_len, 1, 1] if self.time_major else [1, dec_len, 1])
+    # z_hat = tf.tile(latent_z_hat, [dec_len, 1, 1] if self.time_major else [1, dec_len, 1])
+    # inputs = tf.concat([h_m, decoder_outputs_ph, z_hat], axis=-1)
     inputs = tf.concat([h_m, decoder_outputs_ph], axis=-1)
     self.lambda_0 = tf.squeeze(lambda_0_layer(inputs), axis=-1)
     self.w = tf.squeeze(w_layer(inputs), axis=-1)
@@ -621,6 +658,9 @@ class VAEmodel(model.Model):
     h_m = encoder_outputs[-1:, :, :] if self.time_major else encoder_outputs[:, -1:, :]
     dec_len = tf.shape(decoder_outputs)[0] if self.time_major else tf.shape(decoder_outputs)[1]
     h_m = tf.tile(h_m, [dec_len, 1, 1] if self.time_major else [1, dec_len, 1])
+    # z_hat = tf.tile(latent_z_hat, [dec_len, 1, 1] if self.time_major else [1, dec_len, 1])
+    # inputs = tf.concat([h_m, decoder_outputs, z_hat], axis=-1)
+    # print('inputs', inputs)
     inputs = tf.concat([h_m, decoder_outputs], axis=-1)
     self.lambda_0 = tf.squeeze(lambda_0_layer(inputs), axis=-1)
     self.w = tf.squeeze(w_layer(inputs), axis=-1)
