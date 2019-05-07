@@ -19,6 +19,7 @@ from .utils import vocab_utils
 
 from . import my_basic_decoder
 from . import my_helper
+from scipy.integrate import quad
 
 __all__ = ["VAEmodel"]
 
@@ -638,9 +639,9 @@ class VAEmodel(model.Model):
     h_m = encoder_outputs_ph[-1:, :, :] if self.time_major else encoder_outputs_ph[:, -1:, :]
     dec_len = tf.shape(decoder_outputs_ph)[0] if self.time_major else tf.shape(decoder_outputs_ph)[1]
     h_m = tf.tile(h_m, [dec_len, 1, 1] if self.time_major else [1, dec_len, 1])
-    # z_hat = tf.tile(latent_z_hat, [dec_len, 1, 1] if self.time_major else [1, dec_len, 1])
-    # inputs = tf.concat([h_m, decoder_outputs_ph, z_hat], axis=-1)
-    inputs = tf.concat([h_m, decoder_outputs_ph], axis=-1)
+    z_hat = tf.tile(latent_z_hat, [dec_len, 1, 1] if self.time_major else [1, dec_len, 1])
+    inputs = tf.concat([h_m, decoder_outputs_ph, z_hat], axis=-1)
+    # inputs = tf.concat([h_m, decoder_outputs_ph], axis=-1)
     self.lambda_0 = tf.squeeze(lambda_0_layer(inputs), axis=-1)
     self.w = tf.squeeze(w_layer(inputs), axis=-1)
     self.gamma = tf.squeeze(gamma_layer(inputs), axis=-1)
@@ -658,10 +659,10 @@ class VAEmodel(model.Model):
     h_m = encoder_outputs[-1:, :, :] if self.time_major else encoder_outputs[:, -1:, :]
     dec_len = tf.shape(decoder_outputs)[0] if self.time_major else tf.shape(decoder_outputs)[1]
     h_m = tf.tile(h_m, [dec_len, 1, 1] if self.time_major else [1, dec_len, 1])
-    # z_hat = tf.tile(latent_z_hat, [dec_len, 1, 1] if self.time_major else [1, dec_len, 1])
-    # inputs = tf.concat([h_m, decoder_outputs, z_hat], axis=-1)
+    z_hat = tf.tile(latent_z_hat, [dec_len, 1, 1] if self.time_major else [1, dec_len, 1])
+    inputs = tf.concat([h_m, decoder_outputs, z_hat], axis=-1)
     # print('inputs', inputs)
-    inputs = tf.concat([h_m, decoder_outputs], axis=-1)
+    # inputs = tf.concat([h_m, decoder_outputs], axis=-1)
     self.lambda_0 = tf.squeeze(lambda_0_layer(inputs), axis=-1)
     self.w = tf.squeeze(w_layer(inputs), axis=-1)
     self.gamma = tf.squeeze(gamma_layer(inputs), axis=-1)
@@ -683,11 +684,18 @@ class VAEmodel(model.Model):
                               - (1.0/self.w) * lambda_star)
     neg_ln_joint_distribution_train = tf.maximum(neg_ln_joint_distribution_train, tf.log(-1e-6))
 
+    # f_star_val = tf.exp(tf.minimum(10.0, (-1.0) * neg_ln_joint_distribution_infer))
+
     #---- Obtain predicted time from gaps ----#
     gap_pred_pos = tf.nn.softplus(gap_pred)
     time_pred = last_time_input + tf.cumsum(gap_pred_pos, axis=0 if self.time_major else 1)
 
     return neg_ln_joint_distribution_train, neg_ln_joint_distribution_infer, gap_pred, time_pred
+
+  def quad_func(self, t, f_star_time):
+    """This is the t * f(t) function calculating the mean time to next event,
+    given c, w."""
+    return t * f_star_time
 
   def infer(self, sess):
     assert self.mode == tf.contrib.learn.ModeKeys.INFER
@@ -698,19 +706,46 @@ class VAEmodel(model.Model):
                                     time_sample_val=self.time_sample_val,
                                     sample_words=self.sample_words,
                                     sample_times=self.sample_times)
+
     output_tuple_ret, encoder_outputs_ret, decoder_outputs_ret = sess.run([output_tuple,
                                                                            self.encoder_outputs,
                                                                            self.decoder_outputs])
-    sess.run(tf.initialize_variables([self.gap_pred]))
-    for i in range(10):
-        try:
-          sess.run(self.time_optimizer, feed_dict={self.encoder_outputs_ph:encoder_outputs_ret,
-                                                 self.decoder_outputs_ph:decoder_outputs_ret})
-        except:
-          print('An exception occured')
-    #print(output_tuple_ret.sample_words.shape, output_tuple_ret.sample_times.shape)
+    
+
+    # encoder_outputs_ret, decoder_outputs_ret = sess.run([self.encoder_outputs,
+    #                                                     self.decoder_outputs])
+
+    # output_tuple_ret = sess.run(output_tuple,
+    #                            feed_dict={self.encoder_outputs_ph:encoder_outputs_ret,
+    #                            self.decoder_outputs_ph:decoder_outputs_ret})
+
     output_tuple_ret = output_tuple_ret._replace(infer_time=self.infer_time)
+
+    # sess.run(tf.initialize_variables([self.gap_pred]))
+    # for i in range(10):
+    #     try:
+    #       sess.run(self.time_optimizer, feed_dict={self.encoder_outputs_ph:encoder_outputs_ret,
+    #                                              self.decoder_outputs_ph:decoder_outputs_ret})
+    #     except:
+    #       print('An exception occured')
+    #print(output_tuple_ret.sample_words.shape, output_tuple_ret.sample_times.shape)
+
+
+
+    # ans = []
+    # for time_f_star in output_tuple_ret[6]:
+    #   lst = []
+    #   for f_star_time in time_f_star:
+    #     args = (f_star_time)
+    #     val, _err = quad(self.quad_func, 0, np.inf, args=args)
+    #     lst.append(val)
+    #   ans.append(lst)
+
+    # output_tuple_ret = output_tuple_ret._replace(time_sample_val=np.array(ans))
+    # output_tuple_ret = output_tuple_ret._replace(sample_times=np.array(ans))
+
     return output_tuple_ret
+  
 
   def _softmax_cross_entropy_loss(
       self, logits, decoder_cell_outputs, labels):
@@ -797,3 +832,73 @@ class VAEmodel(model.Model):
       # beam search output in [batch_size, time, beam_width] shape.
       sample_words = sample_words.transpose([2, 0, 1])
     return sample_words, sample_times, infer_summary
+
+  def _set_train_or_infer(self, res, reverse_target_vocab_table, hparams):
+    """Set up training and inference."""
+    res_1, res_2 = res[1], res[2]
+    if self.mode == tf.contrib.learn.ModeKeys.TRAIN:
+      self.train_mark_loss, self.train_time_loss = res_1, res_2
+      self.train_loss = res_1 + res_2
+      self.word_count = tf.reduce_sum(
+          self.iterator.source_sequence_length) + tf.reduce_sum(
+              self.iterator.target_sequence_length)
+    elif self.mode == tf.contrib.learn.ModeKeys.EVAL:
+      self.eval_mark_loss, self.eval_time_loss = res_1, res_2
+      self.eval_loss = res_1 + res_2
+    elif self.mode == tf.contrib.learn.ModeKeys.INFER:
+      self.infer_logits, _, _, self.final_context_state, \
+      self.mark_sample_id, self.infer_time = res
+      self.sample_words = reverse_target_vocab_table.lookup(
+          tf.to_int64(self.mark_sample_id))
+      self.time_sample_val = self.infer_time   # These variables are used to ensure
+      self.sample_times = self.time_sample_val # analogy between mark and time
+
+    if self.mode != tf.contrib.learn.ModeKeys.INFER:
+      ## Count the number of predicted words for compute ppl.
+      self.predict_count = tf.reduce_sum(
+          self.iterator.target_sequence_length)
+
+    params = tf.trainable_variables()
+
+    # Gradients and SGD update operation for training the model.
+    # Arrange for the embedding vars to appear at the beginning.
+    if self.mode == tf.contrib.learn.ModeKeys.TRAIN:
+      self.learning_rate = tf.constant(hparams.learning_rate)
+      # warm-up
+      self.learning_rate = self._get_learning_rate_warmup(hparams)
+      # decay
+      self.learning_rate = self._get_learning_rate_decay(hparams)
+
+      # Optimizer
+      if hparams.optimizer == "sgd":
+        opt = tf.train.GradientDescentOptimizer(self.learning_rate)
+      elif hparams.optimizer == "adam":
+        opt = tf.train.AdamOptimizer(self.learning_rate)
+      else:
+        raise ValueError("Unknown optimizer type %s" % hparams.optimizer)
+
+      # Gradients
+      gradients = tf.gradients(
+          self.train_loss,
+          params,
+          colocate_gradients_with_ops=hparams.colocate_gradients_with_ops)
+
+      clipped_grads, grad_norm_summary, grad_norm = model_helper.gradient_clip(
+          gradients, max_gradient_norm=hparams.max_gradient_norm)
+      self.grad_norm_summary = grad_norm_summary
+      self.grad_norm = grad_norm
+
+      self.update = opt.apply_gradients(
+          zip(clipped_grads, params), global_step=self.global_step)
+
+      # Summary
+      self.train_summary = self._get_train_summary()
+    elif self.mode == tf.contrib.learn.ModeKeys.INFER:
+      self.infer_summary = self._get_infer_summary(hparams)
+
+    # Print trainable variables
+    utils.print_out("# Trainable variables")
+    utils.print_out("Format: <name>, <shape>, <(soft) device placement>")
+    for param in params:
+      utils.print_out(" %s, %s, %s" % (param.name, str(param.get_shape()),
+                                        param.op.device))
