@@ -134,6 +134,18 @@ class VAEmodel(model.Model):
       self.time_optimizer = tf.train.AdamOptimizer(self.infer_learning_rate).minimize(neg_ln_joint_distribution_infer, var_list=[gap_pred])
       self.gap_pred = gap_pred
 
+      #TODO: Need to complete
+
+      # h_m = tf.slice(self.encoder_outputs, [-1,0,0], [-1,-1,-1])
+
+      # h_m = tf.slice(self.encoder_outputs, [-1,0,0], [-1,-1,-1]) if self.time_major \
+      #                           else tf.slice(self.encoder_outputs, [-1,0,0], [-1,-1,-1])
+      # d_n = tf.slice(self.decoder_outputs_d, [-1,0,0], [-1,-1,-1]) if self.time_major \
+      #                           else tf.slice(self.decoder_outputs_d, [-1,0,0], [-1,-1,-1])
+      # d_n = self.decoder_outputs_d[-1:, :, :] if self.time_major else decoder_outputs_d[:, -1:, :]
+      # print([h_m, d_n])
+      # decod_encod_out = tf.concat([d_n, h_m], axis=-1)
+
       ## Loss
       if self.mode != tf.contrib.learn.ModeKeys.INFER:
 
@@ -690,12 +702,21 @@ class VAEmodel(model.Model):
     gap_pred_pos = tf.nn.softplus(gap_pred)
     time_pred = last_time_input + tf.cumsum(gap_pred_pos, axis=0 if self.time_major else 1)
 
-    return neg_ln_joint_distribution_train, neg_ln_joint_distribution_infer, gap_pred, time_pred
+    lam_w_time = (self.lambda_0, self.w, self.gamma, last_time_input)
 
-  def quad_func(self, t, f_star_time):
+    return neg_ln_joint_distribution_train, neg_ln_joint_distribution_infer, gap_pred, lam_w_time
+
+  def quad_func(self, t, c, w, t_j, g):
     """This is the t * f(t) function calculating the mean time to next event,
     given c, w."""
-    return t * f_star_time
+    # return c * t * np.exp(-w * t + (c / w) * (np.exp(-w * t) - 1))
+    # return t * np.exp(c + w * (t - t_j) + g * t_j + (np.exp(c + g * t_j)/w) - (np.exp(c + g * t_j + w * (t - t_j))/w))
+    return t * np.exp(c + w * (t - t_j) + (np.exp(c)/w) - (np.exp(c + w * (t - t_j))/w))
+
+  def quad_func_norm(self, t, c, w, t_j, g):
+    """This is the t * f(t) function calculating the mean time to next event,
+    given c, w."""
+    return np.exp(c + w * (t - t_j) + (np.exp(c)/w) - (np.exp(c + w * (t - t_j))/w))
 
   def infer(self, sess):
     assert self.mode == tf.contrib.learn.ModeKeys.INFER
@@ -731,18 +752,37 @@ class VAEmodel(model.Model):
     #print(output_tuple_ret.sample_words.shape, output_tuple_ret.sample_times.shape)
 
 
+    lambdas, ws, gammas, last_time_input = output_tuple_ret[6]
+    last_time_input = last_time_input[0]
 
-    # ans = []
-    # for time_f_star in output_tuple_ret[6]:
-    #   lst = []
-    #   for f_star_time in time_f_star:
-    #     args = (f_star_time)
-    #     val, _err = quad(self.quad_func, 0, np.inf, args=args)
-    #     lst.append(val)
-    #   ans.append(lst)
+    ans = []
+    for lambda1, w1, gamma1 in zip(lambdas, ws, gammas):
+      lst = []
+      ind = 0
+      for lambda2, w2, last_time2, gamma2 in zip(lambda1, w1, last_time_input, gamma1):
+        args = (lambda2, w2, last_time2, gamma2)
+        val, _err = quad(self.quad_func, last_time2, np.inf, args=args)
+        norm_val, _norm_err = quad(self.quad_func_norm, last_time2, np.inf, args=args)
+        # if ind == 0:
+          # print('--------------')
+          # print(lambda2)
+          # print(w2)
+          # print(val)
+          # print(norm_val)
+          # print(last_time_input[ind])
+        if norm_val>0:
+          val /= norm_val
+        if norm_val<0:
+          print('Warning norm_val -ve')
+        last_time_input[ind] = val
+        ind += 1
+        lst.append(val)
+      ans.append(lst)
 
-    # output_tuple_ret = output_tuple_ret._replace(time_sample_val=np.array(ans))
-    # output_tuple_ret = output_tuple_ret._replace(sample_times=np.array(ans))
+    ans = np.array(ans)
+
+    output_tuple_ret = output_tuple_ret._replace(time_sample_val=ans)
+    output_tuple_ret = output_tuple_ret._replace(sample_times=ans)
 
     return output_tuple_ret
   
