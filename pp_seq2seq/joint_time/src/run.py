@@ -67,15 +67,23 @@ def cmd(event_train_file, time_train_file, event_test_file, time_test_file,
     if train_eval:
         print('\nEvaluation on training data:')
         train_time_preds, train_event_preds = joint_time_mdl.predict_train(data=data)
-        joint_time_mdl.eval(train_time_preds, data['train_time_out_seq'],
+        # Renormalizing the time
+        minTime, maxTime = data['minTime'], data['maxTime']
+        gold_train_time_out_seq = data['train_time_out_seq'] * (maxTime-minTime) + minTime
+        gold_time_preds = train_time_preds * (maxTime-minTime) + minTime
+        joint_time_mdl.eval(train_time_preds, gold_train_time_out_seq,
                        train_event_preds, data['train_event_out_seq'])
         print()
 
     if test_eval:
         print('\nEvaluation on testing data:')
         test_time_preds, test_event_preds = joint_time_mdl.predict_test(data=data)
+        # Renormalizing the time
+        minTime, maxTime = data['minTime'], data['maxTime']
+        gold_test_time_out_seq = data['test_time_out_seq'] * (maxTime-minTime) + minTime
+        gold_time_preds = test_time_preds * (maxTime-minTime) + minTime
         print('Decoding Done ------------------------')
-        joint_time_mdl.eval(test_time_preds, data['test_time_out_seq'],
+        joint_time_mdl.eval(test_time_preds, gold_test_time_out_seq,
                        test_event_preds, data['test_event_out_seq'])
 
     print()

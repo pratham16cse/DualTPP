@@ -63,9 +63,9 @@ def read_seq2seq_data(event_train_file, event_test_file, time_train_file, time_t
         unique_samples = unique_samples.union(x)
 
 
-    #maxTime = max(itertools.chain((max(x) for x in timeTrainIn), (max(x) for x in timeTestIn)))
-    #minTime = min(itertools.chain((min(x) for x in timeTrainIn), (min(x) for x in timeTestIn)))
-    minTime, maxTime = 0, 1
+    maxTime = max(itertools.chain((max(x) for x in timeTrainIn), (max(x) for x in timeTestIn)))
+    minTime = min(itertools.chain((min(x) for x in timeTrainIn), (min(x) for x in timeTestIn)))
+    #minTime, maxTime = 0, 1
 
     timeTrainIn = [[(y - minTime) / (maxTime - minTime) for y in x] for x in timeTrainIn]
     timeTrainOut = [[(y - minTime) / (maxTime - minTime) for y in x] for x in timeTrainOut]
@@ -112,6 +112,8 @@ def read_seq2seq_data(event_train_file, event_test_file, time_train_file, time_t
         'num_categories': len(unique_samples),
         'encoder_length': len(eventTrainIn[0]),
         'decoder_length': len(eventTrainOut[0]),
+        'minTime': minTime,
+        'maxTime': maxTime,
     }
 
 

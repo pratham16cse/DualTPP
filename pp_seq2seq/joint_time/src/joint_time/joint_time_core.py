@@ -168,9 +168,9 @@ class JOINT_TIME:
                                               initializer=tf.constant_initializer(bk(num_categories)))
 
                     # TODO(pd) revisit this - initializer
-                    self.time_preds = tf.get_variable(name='time_preds', shape=(self.BATCH_SIZE, self.DEC_LEN),
-                                                      dtype=self.FLOAT_TYPE,
-                                                      initializer=tf.random_normal_initializer)
+                    self.gap_preds = tf.get_variable(name='gap_preds', shape=(self.BATCH_SIZE, self.DEC_LEN),
+                                                     dtype=self.FLOAT_TYPE,
+                                                     initializer=tf.random_normal_initializer)
 
                 self.all_vars = [self.Wt, self.Wem, self.Wh, self.bh, self.Ws, self.bs, #TODO(PD) Need to add time_preds here?
                                  self.wt, self.Wy, self.Vy, self.Vt, self.bt, self.bk]
@@ -278,7 +278,7 @@ class JOINT_TIME:
                                          lambda: self.events_out[:, i],
                                          #lambda: tf.argmax(events_pred, axis=-1, output_type=tf.int32),
                                          lambda: tf.argmax(events_pred, axis=-1, output_type=tf.int32) + 1)
-                        events = tf.Print(events, [events], message='events')
+                        #events = tf.Print(events, [events], message='events')
                         mark_LL = tf.expand_dims(
                             tf.log(
                                 tf.maximum(
@@ -315,29 +315,22 @@ class JOINT_TIME:
                     self.decoder_states = tf.stack(self.decoder_states, axis=1)
                     times_out_prev = tf.cond(tf.equal(self.mode, 1.0),
                                              lambda: tf.concat([self.times_in[:, -1:], self.times_out[:, 1:]], axis=1),
-                                             lambda: tf.concat([self.times_in[:, -1:], self.time_preds[:, 1:]], axis=1))
+                                             lambda: tf.zeros((self.BATCH_SIZE, self.DEC_LEN), dtype=tf.float32))
 
-                    # Usage of delta_t_next is analogous to its use in RMTPP.
-                    # RMTPP does not need delta_t_next for the forward pass,
-                    # however in JOINT_TIME, it is computed from the time-variables
-                    # TODO(pd) optimize directly on delta_t_next and then do the cumsum to get time_preds
-                    delta_t_next = tf.cond(tf.equal(self.mode, 1.0),
-                                           lambda: self.times_out,
-                                           lambda: self.time_preds) - times_out_prev
-                    #delta_t_next = self.times_out - times_out_prev
+                    gaps = tf.cond(tf.equal(self.mode, 1.0), lambda: self.times_out-times_out_prev, lambda: self.gap_preds)
 
                     base_intensity = self.bt
                     wt_soft_plus = tf.nn.softplus(self.wt)
 
                     log_lambda_ = (tf.squeeze(tf.tensordot(self.decoder_states, self.Vt, axes=[[2],[0]]), axis=-1) +
-                                   (-delta_t_next * wt_soft_plus) +
+                                   (-gaps * wt_soft_plus) +
                                    base_intensity)
 
                     lambda_ = tf.exp(tf.minimum(50.0, log_lambda_), name='lambda_')
 
                     log_f_star = (log_lambda_ -
                                   (1.0 / wt_soft_plus) * tf.exp(tf.minimum(50.0,
-                                                                tf.squeeze(tf.tensordot(self.decoder_states, self.Vt, axes=[[2],[0]])) +
+                                                                tf.squeeze(tf.tensordot(self.decoder_states, self.Vt, axes=[[2],[0]]), axis=-1) +
                                                                 base_intensity)) +
                                   (1.0 / wt_soft_plus) * lambda_)
                     
@@ -346,7 +339,8 @@ class JOINT_TIME:
                     # TODO(pd) Handle learning rate more carefully, may be have a separate parameter
                     self.time_optimizer = tf.train.AdamOptimizer(learning_rate=self.LEARNING_RATE,
                                                           beta1=self.MOMENTUM).minimize(joint_time_LL,
-                                                                                        var_list=[self.time_preds])
+                                                                                        var_list=[self.gap_preds])
+                    self.time_preds = tf.cumsum(self.gap_preds, axis=1)
 
                     # ------ End time-prediction ------ #
 
@@ -368,7 +362,7 @@ class JOINT_TIME:
                     # TODO(PD) Is the sign of loss correct?
                     self.loss = (-1) * tf.reduce_sum(
                         tf.where(self.events_out > 0,
-                                 tf.squeeze(step_LLs) / self.batch_num_events,
+                                 step_LLs / self.batch_num_events,
                                  tf.zeros(shape=(self.inf_batch_size, self.DEC_LEN)))
                     )
 
