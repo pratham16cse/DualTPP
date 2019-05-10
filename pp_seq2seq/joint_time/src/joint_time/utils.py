@@ -55,27 +55,20 @@ def read_seq2seq_data(event_train_file, event_test_file, time_train_file, time_t
             eventTestOut = change_zero_label(eventTestOut)
             break
 
-    # Combine eventTrainIn and eventTrainOut into one eventTrain
-    eventTrain = [in_seq + out_seq for in_seq, out_seq in zip(eventTrainIn, eventTrainOut)]
-    # Similarly for time ...
-    timeTrain = [in_seq + out_seq for in_seq, out_seq in zip(timeTrainIn, timeTrainOut)]
-
     # nb_samples = len(eventTrain)
     # max_seqlen = max(len(x) for x in eventTrain)
     unique_samples = set()
 
-    for x in eventTrain + eventTestIn:
+    for x in eventTrainIn + eventTrainOut + eventTestIn:
         unique_samples = unique_samples.union(x)
 
 
-    #maxTime = max(itertools.chain((max(x) for x in timeTrain), (max(x) for x in timeTestIn)))
-    #minTime = min(itertools.chain((min(x) for x in timeTrain), (min(x) for x in timeTestIn)))
+    #maxTime = max(itertools.chain((max(x) for x in timeTrainIn), (max(x) for x in timeTestIn)))
+    #minTime = min(itertools.chain((min(x) for x in timeTrainIn), (min(x) for x in timeTestIn)))
     minTime, maxTime = 0, 1
 
-    eventTrainIn = [x[:-1] for x in eventTrain]
-    eventTrainOut = [x[1:] for x in eventTrain]
-    timeTrainIn = [[(y - minTime) / (maxTime - minTime) for y in x[:-1]] for x in timeTrain]
-    timeTrainOut = [[(y - minTime) / (maxTime - minTime) for y in x[1:]] for x in timeTrain]
+    timeTrainIn = [[(y - minTime) / (maxTime - minTime) for y in x] for x in timeTrainIn]
+    timeTrainOut = [[(y - minTime) / (maxTime - minTime) for y in x] for x in timeTrainOut]
 
     if pad:
         train_event_in_seq = pad_sequences(eventTrainIn, padding='post')
@@ -117,8 +110,8 @@ def read_seq2seq_data(event_train_file, event_test_file, time_train_file, time_t
         'test_time_out_seq': test_time_out_seq,
 
         'num_categories': len(unique_samples),
-        'encoder_length': len(eventTestIn[0]),
-        'decoder_length': len(eventTrain[0])-len(eventTestIn[0]),
+        'encoder_length': len(eventTrainIn[0]),
+        'decoder_length': len(eventTrainOut[0]),
     }
 
 
@@ -281,8 +274,11 @@ def MAE(time_preds, time_true, events_out):
     # Predictions may not cover the entire time dimension.
     # This clips time_true to the correct size.
     seq_limit = time_preds.shape[1]
-    clipped_time_true = time_true[:, :seq_limit]
-    clipped_events_out = events_out[:, :seq_limit]
+    batch_limit = time_preds.shape[0]
+    clipped_time_true = time_true[:batch_limit, :seq_limit]
+    clipped_events_out = events_out[:batch_limit, :seq_limit]
+    print(clipped_time_true)
+    print(time_preds)
 
     is_finite = np.isfinite(time_preds) & (clipped_events_out > 0)
 
@@ -305,7 +301,7 @@ def RMSE(time_preds, time_true, events_out):
 
 def ACC(event_preds, event_true):
     """Returns the accuracy of the event prediction, provided the output probability vector."""
-    clipped_event_true = event_true[:, :event_preds.shape[1]]
+    clipped_event_true = event_true[:event_preds.shape[0], :event_preds.shape[1]]
     is_valid = clipped_event_true > 0
 
     # The indexes start from 0 whereare event_preds start from 1.
@@ -313,6 +309,7 @@ def ACC(event_preds, event_true):
     highest_prob_ev = event_preds
     print(clipped_event_true)
     print(highest_prob_ev)
+    print((clipped_event_true==highest_prob_ev).shape)
 
     return np.sum((highest_prob_ev == clipped_event_true)[is_valid]) / np.sum(is_valid)
 
