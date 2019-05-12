@@ -134,25 +134,16 @@ class VAEmodel(model.Model):
       self.time_optimizer = tf.train.AdamOptimizer(self.infer_learning_rate).minimize(neg_ln_joint_distribution_infer, var_list=[gap_pred])
       self.gap_pred = gap_pred
 
-      #TODO: Need to complete
-
-      # h_m = tf.slice(self.encoder_outputs, [-1,0,0], [-1,-1,-1])
-
-      # h_m = tf.slice(self.encoder_outputs, [-1,0,0], [-1,-1,-1]) if self.time_major \
-      #                           else tf.slice(self.encoder_outputs, [-1,0,0], [-1,-1,-1])
-      # d_n = tf.slice(self.decoder_outputs_d, [-1,0,0], [-1,-1,-1]) if self.time_major \
-      #                           else tf.slice(self.decoder_outputs_d, [-1,0,0], [-1,-1,-1])
-      # d_n = self.decoder_outputs_d[-1:, :, :] if self.time_major else decoder_outputs_d[:, -1:, :]
-      # print([h_m, d_n])
-      # decod_encod_out = tf.concat([d_n, h_m], axis=-1)
-
       ## Loss
       if self.mode != tf.contrib.learn.ModeKeys.INFER:
 
-        self.mu_d, self.sigma_d, self.latent_vector_q_dot = self.sampling(self.decoder_outputs_d, name='decoder_q')
+        h_m = self.encoder_outputs[-1:, :, :] if self.time_major else encoder_outputs[:, -1:, :]
+        d_n = self.decoder_outputs_d[-1:, :, :] if self.time_major else decoder_outputs_d[:, -1:, :]
+        decod_encod_out = tf.concat([d_n, h_m], axis=-1)
+
+        self.mu_d, self.sigma_d, self.latent_vector_q_dot = self.sampling(decod_encod_out, name='decoder_q')
 
         # distribution_b = tf.distributions.Normal(tf.zeros_like(self.mu), tf.ones_like(self.sigma))
-
         distribution_b = tf.distributions.Normal(loc=self.mu_d, scale=self.sigma_d)
 
         # self.decoder_outputs = tf.clip_by_value(self.decoder_outputs, 1e-8, 1 - 1e-8)
@@ -170,8 +161,12 @@ class VAEmodel(model.Model):
           mark_loss = mark_loss + self.KL_divergence
 
       else:
-        
-        self.mu_d, self.sigma_d, self.latent_vector_q_dot = self.sampling(self.decoder_outputs, name='decoder_q')        
+
+        h_m = self.encoder_outputs[-1:, :, :] if self.time_major else encoder_outputs[:, -1:, :]
+        d_n = self.decoder_outputs[-1:, :, :] if self.time_major else decoder_outputs[:, -1:, :]
+        decod_encod_out = tf.concat([d_n, h_m], axis=-1)
+
+        self.mu_d, self.sigma_d, self.latent_vector_q_dot = self.sampling(decod_encod_out, name='decoder_q')        
 
         mark_loss, time_loss = tf.constant(0.0), tf.constant(0.0)
 
@@ -709,14 +704,27 @@ class VAEmodel(model.Model):
   def quad_func(self, t, c, w, t_j, g):
     """This is the t * f(t) function calculating the mean time to next event,
     given c, w."""
-    # return c * t * np.exp(-w * t + (c / w) * (np.exp(-w * t) - 1))
-    # return t * np.exp(c + w * (t - t_j) + g * t_j + (np.exp(c + g * t_j)/w) - (np.exp(c + g * t_j + w * (t - t_j))/w))
-    return t * np.exp(c + w * (t - t_j) + (np.exp(c)/w) - (np.exp(c + w * (t - t_j))/w))
+    # return c * t * np.exp(-w * (t-t_j) + (c / w) * (np.exp(-w * (t-t_j)) - 1))
+    # return t * np.exp(c + w * (t - t_j) + (np.exp(c)/w) - (np.exp(c + w * (t - t_j))/w))
+    # return t * np.exp(c + (w * (t - t_j)) + (g * t_j) + (np.exp(c + g * t_j)/w) - (np.exp(c + (g * t_j) + (w * (t - t_j)))/w))
+    # print(np.exp(c + (w * (t - t_j)) + (g * t_j) + (np.exp(c + g * t_j)/w) - (np.exp(c + (g * t_j) + (w * (t - t_j)))/w)))
+    # print(np.exp(c + w * (t - t_j) + (np.exp(c)/w) - (np.exp(c + w * (t - t_j))/w)))
+    # print(np.exp(c + (w * (t - t_j)) + (np.exp(c)/w) - (np.exp(c + (w * (t - t_j)))/w)))
+    # print('at ', t)
+    # print('##################################')
+    # return t * np.exp(c + (w * (t - t_j)) + (np.exp(c)/w) - (np.exp(c + (w * (t - t_j)))/w))
+    return t * np.exp(c) * np.exp(-w * (t-t_j) + (np.exp(c) / w) * (np.exp(-w * (t-t_j)) - 1))
 
   def quad_func_norm(self, t, c, w, t_j, g):
     """This is the t * f(t) function calculating the mean time to next event,
     given c, w."""
-    return np.exp(c + w * (t - t_j) + (np.exp(c)/w) - (np.exp(c + w * (t - t_j))/w))
+    # return c * np.exp(-w * (t-t_j) + (c / w) * (np.exp(-w * (t-t_j)) - 1))
+    # return c * np.exp(-1 * (c/w) * (1-np.exp( -w * (t - t_j))) -w * (t-t_j))
+    # return c * np.exp(-w * t + (c / w) * (np.exp(-w * t) - 1))
+    # return np.exp(c + (w * (t - t_j)) + (g * t_j) + (np.exp(c + g * t_j)/w) - (np.exp(c + (g * t_j) + (w * (t - t_j)))/w))
+    # return np.exp(c + w * (t - t_j) + (np.exp(c)/w) - (np.exp(c + w * (t - t_j))/w))
+    # return np.exp(c + (w * (t - t_j)) + (np.exp(c)/w) - (np.exp(c + (w * (t - t_j)))/w))
+    return np.exp(c) * np.exp(-w * (t-t_j) + (np.exp(c) / w) * (np.exp(-w * (t-t_j)) - 1))
 
   def infer(self, sess):
     assert self.mode == tf.contrib.learn.ModeKeys.INFER
@@ -733,13 +741,6 @@ class VAEmodel(model.Model):
                                                                            self.decoder_outputs])
     
 
-    # encoder_outputs_ret, decoder_outputs_ret = sess.run([self.encoder_outputs,
-    #                                                     self.decoder_outputs])
-
-    # output_tuple_ret = sess.run(output_tuple,
-    #                            feed_dict={self.encoder_outputs_ph:encoder_outputs_ret,
-    #                            self.decoder_outputs_ph:decoder_outputs_ret})
-
     output_tuple_ret = output_tuple_ret._replace(infer_time=self.infer_time)
 
     # sess.run(tf.initialize_variables([self.gap_pred]))
@@ -754,27 +755,29 @@ class VAEmodel(model.Model):
 
     lambdas, ws, gammas, last_time_input = output_tuple_ret[6]
     last_time_input = last_time_input[0]
+    # ws = np.log(1.0 + np.exp(ws))
+    # lambdas = np.exp(lambdas)
+    # lambdas = np.log(1.0 + np.exp(lambdas))
 
     ans = []
     for lambda1, w1, gamma1 in zip(lambdas, ws, gammas):
       lst = []
       ind = 0
-      for lambda2, w2, last_time2, gamma2 in zip(lambda1, w1, last_time_input, gamma1):
-        args = (lambda2, w2, last_time2, gamma2)
-        val, _err = quad(self.quad_func, last_time2, np.inf, args=args)
-        norm_val, _norm_err = quad(self.quad_func_norm, last_time2, np.inf, args=args)
-        # if ind == 0:
-          # print('--------------')
-          # print(lambda2)
-          # print(w2)
-          # print(val)
-          # print(norm_val)
-          # print(last_time_input[ind])
-        if norm_val>0:
-          val /= norm_val
-        if norm_val<0:
-          print('Warning norm_val -ve')
+      for lambda2, w2, gamma2 in zip(lambda1, w1, gamma1):
+        args = (lambda2, w2, last_time_input[ind], gamma2)
+
+        val, _err = quad(self.quad_func, last_time_input[ind], np.inf, args=args)
+        norm_val, _norm_err = quad(self.quad_func_norm, last_time_input[ind], np.inf, args=args)
+
+        # if norm_val>0:
+        #   val /= norm_val
+        # if norm_val<0:
+        #   print('Warning norm_val -ve')
+
         last_time_input[ind] = val
+
+        val = last_time_input[ind]
+
         ind += 1
         lst.append(val)
       ans.append(lst)
