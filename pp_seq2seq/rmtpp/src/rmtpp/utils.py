@@ -18,14 +18,21 @@ def create_dir(dirname):
 def change_zero_label(sequences):
     return [[lbl+1 for lbl in sequence] for sequence in sequences]
 
-def read_seq2seq_data(event_train_file, event_test_file, time_train_file, time_test_file,
-              pad=True):
+def read_seq2seq_data(event_train_file, event_dev_file, event_test_file,
+                      time_train_file, time_dev_file, time_test_file,
+                      normalization=None,
+                      pad=True):
     """Read data from given files and return it as a dictionary."""
 
     with open(event_train_file+'.in', 'r') as in_file:
         eventTrainIn = [[int(y) for y in x.strip().split()] for x in in_file]
     with open(event_train_file+'.out', 'r') as in_file:
         eventTrainOut = [[int(y) for y in x.strip().split()] for x in in_file]
+
+    with open(event_dev_file+'.in', 'r') as in_file:
+        eventDevIn = [[int(y) for y in x.strip().split()] for x in in_file]
+    with open(event_dev_file+'.out', 'r') as in_file:
+        eventDevOut = [[int(y) for y in x.strip().split()] for x in in_file]
 
     with open(event_test_file+'.in', 'r') as in_file:
         eventTestIn = [[int(y) for y in x.strip().split()] for x in in_file]
@@ -37,20 +44,29 @@ def read_seq2seq_data(event_train_file, event_test_file, time_train_file, time_t
     with open(time_train_file+'.out', 'r') as in_file:
         timeTrainOut = [[float(y) for y in x.strip().split()] for x in in_file]
 
+    with open(time_dev_file+'.in', 'r') as in_file:
+        timeDevIn = [[float(y) for y in x.strip().split()] for x in in_file]
+    with open(time_dev_file+'.out', 'r') as in_file:
+        timeDevOut = [[float(y) for y in x.strip().split()] for x in in_file]
+
     with open(time_test_file+'.in', 'r') as in_file:
         timeTestIn = [[float(y) for y in x.strip().split()] for x in in_file]
     with open(time_test_file+'.out', 'r') as in_file:
         timeTestOut = [[float(y) for y in x.strip().split()] for x in in_file]
 
     assert len(timeTrainIn) == len(eventTrainIn)
+    assert len(timeDevIn) == len(eventDevIn)
     assert len(timeTestIn) == len(eventTestIn)
     assert len(timeTrainOut) == len(eventTrainOut)
+    assert len(timeDevOut) == len(eventDevOut)
     assert len(timeTestOut) == len(eventTestOut)
     # 0 label is not allowed, if present increment all label values
-    for sequence in itertools.chain(eventTrainIn, eventTrainOut, eventTestIn, eventTestOut):
+    for sequence in itertools.chain(eventTrainIn, eventTrainOut, eventDevIn, eventDevOut, eventTestIn, eventTestOut):
         if 0 in sequence:
             eventTrainIn = change_zero_label(eventTrainIn)
             eventTrainOut = change_zero_label(eventTrainOut)
+            eventDevIn = change_zero_label(eventDevIn)
+            eventDevOut = change_zero_label(eventDevOut)
             eventTestIn = change_zero_label(eventTestIn)
             eventTestOut = change_zero_label(eventTestOut)
             break
@@ -64,13 +80,15 @@ def read_seq2seq_data(event_train_file, event_test_file, time_train_file, time_t
     # max_seqlen = max(len(x) for x in eventTrain)
     unique_samples = set()
 
-    for x in eventTrain + eventTestIn:
+    for x in eventTrain + eventDevIn + eventTestIn:
         unique_samples = unique_samples.union(x)
 
 
-    #maxTime = max(itertools.chain((max(x) for x in timeTrain), (max(x) for x in timeTestIn)))
-    #minTime = min(itertools.chain((min(x) for x in timeTrain), (min(x) for x in timeTestIn)))
-    minTime, maxTime = 0, 1
+    if normalization:
+        maxTime = max(itertools.chain((max(x) for x in timeTrain), (max(x) for x in timeDevIn), (max(x) for x in timeTestIn)))
+        minTime = min(itertools.chain((min(x) for x in timeTrain), (min(x) for x in timeDevIn), (min(x) for x in timeTestIn)))
+    else:
+        minTime, maxTime = 0, 1
 
     eventTrainIn = [x[:-1] for x in eventTrain]
     eventTrainOut = [x[1:] for x in eventTrain]
@@ -88,6 +106,19 @@ def read_seq2seq_data(event_train_file, event_test_file, time_train_file, time_t
         train_time_in_seq = timeTrainIn
         train_time_out_seq = timeTrainOut
 
+    timeDevIn = [[(y - minTime) / (maxTime - minTime) for y in x] for x in timeDevIn]
+    timeDevOut = [[(y - minTime) / (maxTime - minTime) for y in x] for x in timeDevOut]
+
+    if pad:
+        dev_event_in_seq = pad_sequences(eventDevIn, padding='post')
+        dev_event_out_seq = pad_sequences(eventDevOut, padding='post')
+        dev_time_in_seq = pad_sequences(timeDevIn, dtype=float, padding='post')
+        dev_time_out_seq = pad_sequences(timeDevOut, dtype=float, padding='post')
+    else:
+        dev_event_in_seq = eventDevIn
+        dev_event_out_seq = eventDevOut
+        dev_time_in_seq = timeDevIn
+        dev_time_out_seq = timeDevOut
 
     timeTestIn = [[(y - minTime) / (maxTime - minTime) for y in x] for x in timeTestIn]
     timeTestOut = [[(y - minTime) / (maxTime - minTime) for y in x] for x in timeTestOut]
@@ -110,6 +141,12 @@ def read_seq2seq_data(event_train_file, event_test_file, time_train_file, time_t
         'train_time_in_seq': train_time_in_seq,
         'train_time_out_seq': train_time_out_seq,
 
+        'dev_event_in_seq': dev_event_in_seq,
+        'dev_event_out_seq': dev_event_out_seq,
+
+        'dev_time_in_seq': dev_time_in_seq,
+        'dev_time_out_seq': dev_time_out_seq,
+
         'test_event_in_seq': test_event_in_seq,
         'test_event_out_seq': test_event_out_seq,
 
@@ -119,6 +156,8 @@ def read_seq2seq_data(event_train_file, event_test_file, time_train_file, time_t
         'num_categories': len(unique_samples),
         'encoder_length': len(eventTestIn[0]),
         'decoder_length': len(eventTrain[0])-len(eventTestIn[0]),
+        'minTime': minTime,
+        'maxTime': maxTime,
     }
 
 
@@ -283,6 +322,8 @@ def MAE(time_preds, time_true, events_out):
     seq_limit = time_preds.shape[1]
     clipped_time_true = time_true[:, :seq_limit]
     clipped_events_out = events_out[:, :seq_limit]
+    #print(clipped_time_true)
+    #print(time_preds)
 
     is_finite = np.isfinite(time_preds) & (clipped_events_out > 0)
 
@@ -297,6 +338,8 @@ def RMSE(time_preds, time_true, events_out):
     seq_limit = time_preds.shape[1]
     clipped_time_true = time_true[:, :seq_limit]
     clipped_events_out = events_out[:, :seq_limit]
+    #print(clipped_time_true)
+    #print(time_preds)
 
     is_finite = np.isfinite(time_preds) & (clipped_events_out > 0)
 
@@ -311,8 +354,8 @@ def ACC(event_preds, event_true):
     # The indexes start from 0 whereare event_preds start from 1.
     # highest_prob_ev = event_preds.argmax(axis=-1) + 1
     highest_prob_ev = event_preds
-    print(clipped_event_true)
-    print(highest_prob_ev)
+    #print(clipped_event_true)
+    #print(highest_prob_ev)
 
     return np.sum((highest_prob_ev == clipped_event_true)[is_valid]) / np.sum(is_valid)
 

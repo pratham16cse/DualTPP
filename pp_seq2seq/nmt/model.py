@@ -835,6 +835,8 @@ class Model(BaseModel):
     with tf.variable_scope("encoder") as scope:
       dtype = scope.dtype
 
+      sequence_time = sequence_time - tf.concat([tf.zeros((1, self.batch_size)), sequence_time[:-1, :]], axis=0)
+
       self.encoder_emb_inp = self.encoder_emb_lookup_fn(
           self.embedding_encoder, sequence_mark)
 

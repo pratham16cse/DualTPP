@@ -213,6 +213,6 @@ def _rmse(ref_file, trans_file):
         ref = [float(r) for r in ref_fh.readline().strip().split()]
         trans = [float(t) for t in trans.strip().split()]
         err += np.sum((np.array(ref)-np.array(trans))**2*1.0)
-        count += 1
+        count += len(trans)
   err = np.sqrt(err/count)
   return err
