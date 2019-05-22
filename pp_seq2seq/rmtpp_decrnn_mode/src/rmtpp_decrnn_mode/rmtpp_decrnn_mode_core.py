@@ -139,16 +139,6 @@ class RMTPP_DECRNN:
                                               dtype=self.FLOAT_TYPE,
                                               initializer=tf.constant_initializer(Wt(self.HIDDEN_LAYER_SIZE)))
 
-                    # TODO: Generalize to multiple marks (need to be predicted
-                    # for future events) and context for the present event
-                    # (which need not be predicted).
-                    # self.Wem will be converted to a list of embedding
-                    # matrices depending on the number of marks or contexts
-                    # each event has.
-                    # A similar self.Wctx will also be needed to embed
-                    # contextual data.
-                    # The marks can then be independently constructed from the
-                    # hidden state by a similar list of matrices from self.Wy.
                     self.Wem = tf.get_variable(name='Wem', shape=(self.NUM_CATEGORIES, self.EMBED_SIZE),
                                                dtype=self.FLOAT_TYPE,
                                                initializer=tf.constant_initializer(Wem(self.NUM_CATEGORIES)))
@@ -252,22 +242,6 @@ class RMTPP_DECRNN:
                         type_delta_t = True
 
                         with tf.name_scope('state_recursion'):
-                            # new_state = tf.clip_by_value(
-                            #     tf.matmul(state, self.Wh) +
-                            #     tf.matmul(events_embedded, self.Wy) +
-                            #     # Two ways of interpretting this term
-                            #     (tf.matmul(delta_t, self.Wt) if type_delta_t else tf.matmul(time_2d, self.Wt)) +
-                            #     tf.matmul(ones_2d, self.bh),
-                            #     0.0, 1e9, name='h_t'
-                            # )
-                            # new_state = tf.minimum(1e9, tf.nn.softplus(
-                            #     tf.matmul(state, self.Wh) +
-                            #     tf.matmul(events_embedded, self.Wy) +
-                            #     # Two ways of interpretting this term
-                            #     (tf.matmul(delta_t_prev, self.Wt) if type_delta_t else tf.matmul(time_2d, self.Wt)) +
-                            #     tf.matmul(ones_2d, self.bh),
-                            #     name='h_t'
-                            # ))
                             new_state = tf.tanh(
                                 tf.matmul(state, self.Wh) +
                                 tf.matmul(events_embedded, self.Wy) +
@@ -283,7 +257,6 @@ class RMTPP_DECRNN:
 
 
                 #----------- Decoder Begin ----------#
-                # TODO make sure 'i' is not incorrectly used
                 # TODO Does affine transformations (Wy) need to be different? Wt is not \
                   # required in the decoder
 
@@ -293,6 +266,7 @@ class RMTPP_DECRNN:
                 with tf.name_scope('Decoder'):
                     for i in range(self.DEC_LEN):
 
+                        # self.decoder_states.append(s_state) #TODO(PD) wheter to append s_state now or after state update?
                         events_pred = tf.nn.softmax(
                             tf.minimum(ETH,
                                        tf.matmul(s_state, self.Vy) + ones_2d * self.bk),
@@ -578,15 +552,6 @@ class RMTPP_DECRNN:
             total_loss = 0.0
 
             for batch_idx in range(n_batches):
-                # TODO: This is horribly inefficient. Move this to a separate
-                # thread using FIFOQueues.
-                # However, the previous state from BPTT still needs to be
-                # passed to the next BPTT batch. To make this efficient, we
-                # will need to set and preserve the previous state in a
-                # tf.Variable.
-                #  - Sounds like a job for tf.placeholder_with_default?
-                #  - Or, of a variable with optinal default?
-
                 batch_idxes = idxes[batch_idx * self.BATCH_SIZE:(batch_idx + 1) * self.BATCH_SIZE]
                 batch_event_train_in = train_event_in_seq[batch_idxes, :]
                 batch_event_train_out = train_event_out_seq[batch_idxes, :]

@@ -107,30 +107,6 @@ def cmd(dataset_name, alg_name,
     with open(os.path.join(save_dir)+'/result.json', 'w') as fp:
         json.dump(best_result, fp, indent=4)
 
-#    if train_eval:
-#        print('\nEvaluation on training data:')
-#        train_time_preds, train_event_preds = rmtpp_mdl.predict_train(data=data)
-#        # Renormalizing the time
-#        minTime, maxTime = data['minTime'], data['maxTime']
-#        gold_train_time_out_seq = data['train_time_out_seq'] * (maxTime-minTime) + minTime
-#        train_time_preds = train_time_preds * (maxTime-minTime) + minTime
-#        rmtpp_mdl.eval(train_time_preds, gold_train_time_out_seq,
-#                       train_event_preds, data['train_event_out_seq'])
-#        print()
-#
-#    if test_eval:
-#        print('\nEvaluation on testing data:')
-#        test_time_preds, test_event_preds = rmtpp_mdl.predict_test(data=data)
-#        # Renormalizing the time
-#        minTime, maxTime = data['minTime'], data['maxTime']
-#        gold_test_time_out_seq = data['test_time_out_seq'] * (maxTime-minTime) + minTime
-#        test_time_preds = test_time_preds * (maxTime-minTime) + minTime
-#        print('Decoding Done ------------------------')
-#        rmtpp_mdl.eval(test_time_preds, gold_test_time_out_seq,
-#                       test_event_preds, data['test_event_out_seq'])
-#    print()
-
-
 if __name__ == '__main__':
     cmd()
 
