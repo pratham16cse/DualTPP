@@ -266,7 +266,6 @@ class RMTPP_DECRNN:
                 with tf.name_scope('Decoder'):
                     for i in range(self.DEC_LEN):
 
-                        # self.decoder_states.append(s_state) #TODO(PD) wheter to append s_state now or after state update?
                         events_pred = tf.nn.softmax(
                             tf.minimum(ETH,
                                        tf.matmul(s_state, self.Vy) + ones_2d * self.bk),
@@ -743,31 +742,16 @@ class RMTPP_DECRNN:
             return preds_i
 
         time_pred_last = time_in_seq[:, -1]
-        # all_decoder_states = np.tile(np.expand_dims(cur_state, axis=1), [1,self.DEC_LEN,1]) #TODO(PD) Remove this later
         print(all_decoder_states.shape)
-#        if single_threaded:
-        all_time_preds = [_quad_worker((idx, (state, h_m, t_last))) for idx, (state, h_m, t_last) in enumerate(zip(all_decoder_states, cur_state, time_pred_last))]
-#        else:
-#            with MP.Pool() as pool:
-#                all_time_preds = pool.map(_quad_worker, enumerate(zip(all_decoder_states, cur_state, time_pred_last)))
-
-        #c = np.exp(np.dot(all_decoder_states, Vt) + bt)
-        #for batch_idx in range(10):
-        #    for gap in range(100):
-        #        print(minimize_func(gap, c[batch_idx], wt))
-        #    print('----------------')
+        if single_threaded:
+            all_time_preds = [_quad_worker((idx, (state, h_m, t_last))) for idx, (state, h_m, t_last) in enumerate(zip(all_decoder_states, cur_state, time_pred_last))]
+        else:
+            with MP.Pool() as pool:
+                all_time_preds = pool.map(_quad_worker, enumerate(zip(all_decoder_states, cur_state, time_pred_last)))
 
         all_time_preds = np.asarray(all_time_preds).T
 
         return np.asarray(all_time_preds).T, np.asarray(all_event_preds).swapaxes(0, 1)
-
-#    def eval(self, time_preds, time_true, event_preds, event_true):
-#        """Prints evaluation of the model on the given dataset."""
-#        # Print test error once every epoch:
-#        #mae, total_valid = MAE(time_preds, time_true, event_true)
-#        rmse, total_valid = RMSE(time_preds, time_true, event_true)
-#        print('** RMSE = {}; valid = {}, %ERROR = {}'.format(
-#            rmse, total_valid, PERCENT_ERROR(event_preds, event_true)))
 
     def eval(self, time_preds, time_true, event_preds, event_true):
         """Prints evaluation of the model on the given dataset."""
