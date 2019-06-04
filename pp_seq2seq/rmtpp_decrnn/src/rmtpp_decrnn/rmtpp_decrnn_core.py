@@ -289,7 +289,7 @@ class RMTPP_DECRNN:
 
                     # ------ Begin time-prediction ------ #
                     self.decoder_states = tf.stack(self.decoder_states, axis=1)
-                    times_out_prev = tf.concat([self.times_in[:, -1:], self.times_out[:, 1:]], axis=1)
+                    times_out_prev = tf.concat([self.times_in[:, -1:], self.times_out[:, :-1]], axis=1)
 
                     gaps = self.times_out-times_out_prev
 
