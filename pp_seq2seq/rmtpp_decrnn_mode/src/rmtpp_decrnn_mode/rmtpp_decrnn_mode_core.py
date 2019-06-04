@@ -64,18 +64,18 @@ def softplus(x):
 def minimize_func(g, D, wt, gap_th):
     """This function calculates the mode of the function f(t),
     given c, w."""
-    log_lambda_greater_ = (D + wt*(g - gap_th))
+    log_lambda_greater_ = (D + -wt*(g - gap_th))
     lambda_greater_ = np.exp(log_lambda_greater_)
     log_f_star_greater = (log_lambda_greater_ 
-                          + (2/wt) * np.exp(D)
-                          - (1/wt) * np.exp(D+wt*gap_th)
-                          - (1/wt) * lambda_greater_)
+                          + (2/-wt) * np.exp(D)
+                          - (1/-wt) * np.exp(D+ -wt*gap_th)
+                          - (1/-wt) * lambda_greater_)
 
-    log_lambda_less_ = (D + wt*(gap_th - g))
+    log_lambda_less_ = (D + -wt*(gap_th - g))
     lambda_less_ = np.exp(log_lambda_less_)
     log_f_star_less = (log_lambda_less_
-                       - (1/wt) * np.exp(D+wt*gap_th)
-                       + (1/wt) * lambda_less_)
+                       - (1/-wt) * np.exp(D+ -wt*gap_th)
+                       + (1/-wt) * lambda_less_)
 
     log_f_star = (g > gap_th)*log_f_star_greater + (g <= gap_th)*log_f_star_less
     #print(log_f_star.shape)
@@ -331,12 +331,12 @@ class RMTPP_DECRNN:
                     #D = tf.where(D>tf.constant(1.0, dtype=tf.float32), D, tf.ones_like(D, dtype=tf.float32)*1.0)
                     # ----- Computing lambda for both cases ----- #
                     # When t-t_j > gap_thresholds
-                    log_lambda_greater_ = (D + (gaps - gap_thresholds) * wt_soft_plus)
+                    log_lambda_greater_ = (D + (gaps - gap_thresholds) * -wt_soft_plus)
                                           #(times_prev * gamma) +
                     lambda_greater_ = tf.exp(tf.minimum(ETH, log_lambda_greater_), name='lambda_greater_')
 
                     # When t-t_j < gap_thresholds #
-                    log_lambda_less_ = (D + (gap_thresholds - gaps) * wt_soft_plus)
+                    log_lambda_less_ = (D + (gap_thresholds - gaps) * -wt_soft_plus)
                                        #(times_prev * gamma) + 
                                        
                     lambda_less_ = tf.exp(tf.minimum(ETH, log_lambda_less_), name='lambda_less_')
@@ -346,13 +346,13 @@ class RMTPP_DECRNN:
 
 
                     log_f_star_greater = (log_lambda_greater_ 
-                                          + (2/wt_soft_plus) * tf.exp(tf.minimum(ETH, D))
-                                          - (1/wt_soft_plus) * tf.exp(tf.minimum(ETH, D+wt_soft_plus*gap_thresholds))
-                                          - (1/wt_soft_plus) * lambda_greater_)
+                                          + (2/-wt_soft_plus) * tf.exp(tf.minimum(ETH, D))
+                                          - (1/-wt_soft_plus) * tf.exp(tf.minimum(ETH, D+ -wt_soft_plus*gap_thresholds))
+                                          - (1/-wt_soft_plus) * lambda_greater_)
 
                     log_f_star_less = (log_lambda_less_
-                                       - (1/wt_soft_plus) * tf.exp(tf.minimum(ETH, D+wt_soft_plus*gap_thresholds))
-                                       + (1/wt_soft_plus) * lambda_less_)
+                                       - (1/-wt_soft_plus) * tf.exp(tf.minimum(ETH, D+ -wt_soft_plus*gap_thresholds))
+                                       + (1/-wt_soft_plus) * lambda_less_)
 
                     log_f_star = tf.where(gaps>gap_thresholds, log_f_star_greater, log_f_star_less)
 
