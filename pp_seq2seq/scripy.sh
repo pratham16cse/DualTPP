@@ -69,7 +69,7 @@ python3.6 \
 	$dataset_path"/dev.time" \
 	$dataset_path"/test.event" \
 	$dataset_path"/test.time" \
-	--normalization "min-max" \
+	# --normalization "min-max" \
 	--save $save_dir \
 	--cpu-only \
 	--epochs 50 \
