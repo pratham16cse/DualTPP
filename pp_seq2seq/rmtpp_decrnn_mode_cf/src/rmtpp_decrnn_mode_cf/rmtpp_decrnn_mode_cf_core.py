@@ -339,7 +339,7 @@ class RMTPP_DECRNN:
                 with tf.name_scope('loss_calc'):
 
                     self.mark_LLs = tf.squeeze(tf.stack(self.mark_LLs, axis=1), axis=-1)
-                    self.time_LLs = -log_f_star
+                    self.time_LLs = log_f_star
                     step_LLs = self.time_LLs + self.mark_LLs
                     #step_LLs = self.mark_LLs
                     #step_LLs = self.time_LLs
