@@ -319,7 +319,7 @@ class RMTPP_DECRNN:
                     times_prev = tf.cumsum(tf.concat([self.times_in[:, -1:], gaps[:, :-1]], axis=1), axis=1)
 
                     base_intensity = self.bt
-                    wt_soft_plus = tf.maximum(tf.nn.softplus(self.wt), 1.0)
+                    wt_soft_plus = tf.maximum(tf.nn.softplus(self.wt), tf.ones_like(self.wt))
                     gamma_soft_plus = tf.nn.softplus(self.gamma)
 
                     states_concat = tf.concat([tf.tile(tf.expand_dims(self.final_state, axis=1), [1, self.DEC_LEN, 1]), self.decoder_states], axis=2)
@@ -697,7 +697,7 @@ class RMTPP_DECRNN:
         # TODO: This calculation is completely ignoring the clipping which
         # happens during the inference step.
         [Vt, bt, wt, Wg]  = self.sess.run([self.Vt, self.bt, self.wt, self.Wg])
-        wt = max(softplus(wt), 1.0)
+        wt = np.maximum(softplus(wt), np.ones_like(wt))
 
         global _quad_worker
         def _quad_worker(params):
@@ -713,9 +713,6 @@ class RMTPP_DECRNN:
                 gap_th = softplus(np.dot(states_concat, Wg).reshape(-1))
                 #gap_th = 20*np.ones_like(gap_th)
                 val = (np.log(wt) - D)/wt
-                print('wt', wt.shape),
-                print('D', D.shape),
-                print('val', val.shape)
                 val = val.reshape(-1)[0]
                 #print(val, time_pred_last)
                 preds_i.append(t_last + val)
