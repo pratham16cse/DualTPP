@@ -713,7 +713,9 @@ class RMTPP_DECRNN:
                 gap_th = softplus(np.dot(states_concat, Wg).reshape(-1))
                 #gap_th = 20*np.ones_like(gap_th)
                 val = (np.log(wt) - D)/wt
-                print(wt.shape, D.shape, val.shape)
+                print(wt.shape),
+                print(D.shape),
+                print(val.shape)
                 val = val.reshape(-1)[0]
                 #print(val, time_pred_last)
                 preds_i.append(t_last + val)
