@@ -328,7 +328,7 @@ class RMTPP_DECRNN:
                     #gap_thresholds = 20*tf.ones_like(gap_thresholds)
 
                     D = tf.squeeze(tf.tensordot(self.decoder_states, self.Vt, axes=[[2],[0]]), axis=-1) + base_intensity
-                    D = tf.where(D < 0.0, D, tf.zeros_like(D))
+                    D = -tf.maximum(-D, tf.zeros_like(D))
                     log_lambda_ = (D + gaps * wt_soft_plus)
                     lambda_ = tf.exp(tf.minimum(ETH, log_lambda_), name='lambda_')
                     log_f_star = (log_lambda_
@@ -707,7 +707,7 @@ class RMTPP_DECRNN:
             for pred_idx, s_i in enumerate(all_decoder_states):
                 t_last = time_pred_last if pred_idx==0 else preds_i[-1]
                 D = (np.dot(s_i, Vt) + bt).reshape(-1)
-                D = np.where(D<0.0, D, np.zeros_like(0.0))
+                D = -np.maximum(D, np.zeros_like(0.0))
                 #D = np.where(D>1.0, D, np.ones_like(D)*1.0)
                 states_concat = np.concatenate([h_m, s_i], axis=-1)
                 gap_th = softplus(np.dot(states_concat, Wg).reshape(-1))
