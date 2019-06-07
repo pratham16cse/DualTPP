@@ -319,7 +319,7 @@ class RMTPP_DECRNN:
                     times_prev = tf.cumsum(tf.concat([self.times_in[:, -1:], gaps[:, :-1]], axis=1), axis=1)
 
                     base_intensity = self.bt
-                    wt_soft_plus = tf.maximum(tf.nn.softplus(self.wt), tf.ones_like(self.wt))
+                    wt_soft_plus = tf.nn.softplus(self.wt) + tf.ones_like(self.wt)
                     gamma_soft_plus = tf.nn.softplus(self.gamma)
 
                     states_concat = tf.concat([tf.tile(tf.expand_dims(self.final_state, axis=1), [1, self.DEC_LEN, 1]), self.decoder_states], axis=2)
@@ -328,7 +328,7 @@ class RMTPP_DECRNN:
                     #gap_thresholds = 20*tf.ones_like(gap_thresholds)
 
                     D = tf.squeeze(tf.tensordot(self.decoder_states, self.Vt, axes=[[2],[0]]), axis=-1) + base_intensity
-                    D = -tf.maximum(-D, tf.zeros_like(D))
+                    D = -tf.nn.softplus(-D)
                     log_lambda_ = (D + gaps * wt_soft_plus)
                     lambda_ = tf.exp(tf.minimum(ETH, log_lambda_), name='lambda_')
                     log_f_star = (log_lambda_
@@ -339,7 +339,7 @@ class RMTPP_DECRNN:
                 with tf.name_scope('loss_calc'):
 
                     self.mark_LLs = tf.squeeze(tf.stack(self.mark_LLs, axis=1), axis=-1)
-                    self.time_LLs = -log_f_star
+                    self.time_LLs = log_f_star
                     step_LLs = self.time_LLs + self.mark_LLs
                     #step_LLs = self.mark_LLs
                     #step_LLs = self.time_LLs
@@ -697,7 +697,7 @@ class RMTPP_DECRNN:
         # TODO: This calculation is completely ignoring the clipping which
         # happens during the inference step.
         [Vt, bt, wt, Wg]  = self.sess.run([self.Vt, self.bt, self.wt, self.Wg])
-        wt = np.maximum(softplus(wt), np.ones_like(wt))
+        wt = softplus(wt) + np.ones_like(wt)
 
         global _quad_worker
         def _quad_worker(params):
@@ -707,7 +707,7 @@ class RMTPP_DECRNN:
             for pred_idx, s_i in enumerate(all_decoder_states):
                 t_last = time_pred_last if pred_idx==0 else preds_i[-1]
                 D = (np.dot(s_i, Vt) + bt).reshape(-1)
-                D = -np.maximum(D, np.zeros_like(0.0))
+                D = -softplus(-D)
                 #D = np.where(D>1.0, D, np.ones_like(D)*1.0)
                 states_concat = np.concatenate([h_m, s_i], axis=-1)
                 gap_th = softplus(np.dot(states_concat, Wg).reshape(-1))
