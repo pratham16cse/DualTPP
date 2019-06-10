@@ -40,18 +40,18 @@ def_opts = Deco.Options(
     embed_size=__EMBED_SIZE,
     Wem=lambda num_categories: np.random.RandomState(42).randn(num_categories, __EMBED_SIZE) * 0.01,
 
-    Wt=lambda hidden_layer_size: np.ones((1, hidden_layer_size)) * 1e-3,
-    Wh=lambda hidden_layer_size: np.eye(hidden_layer_size),
-    bh=lambda hidden_layer_size: np.ones((1, hidden_layer_size)),
-    Ws=lambda hidden_layer_size: np.eye(hidden_layer_size),
-    bs=lambda hidden_layer_size: np.ones((1, hidden_layer_size)),
-    wt=1.0,
-    Wy=lambda hidden_layer_size: np.ones((__EMBED_SIZE, hidden_layer_size)) * 0.0,
-    Vy=lambda hidden_layer_size, num_categories: np.ones((hidden_layer_size, num_categories)) * 0.001,
-    Vt=lambda hidden_layer_size: np.ones((hidden_layer_size, 1)) * 0.001,
+    Wt=lambda hidden_layer_size: np.random.randn(1, hidden_layer_size),
+    Wh=lambda hidden_layer_size: np.random.randn(hidden_layer_size) * np.sqrt(1.0/hidden_layer_size),
+    bh=lambda hidden_layer_size: np.random.randn(1, hidden_layer_size) * np.sqrt(1.0/hidden_layer_size),
+    Ws=lambda hidden_layer_size: np.random.randn(hidden_layer_size) * np.sqrt(1.0/hidden_layer_size),
+    bs=lambda hidden_layer_size: np.random.randn(1, hidden_layer_size) * np.sqrt(1.0/hidden_layer_size),
+    wt=3.0,
+    Wy=lambda hidden_layer_size: np.random.randn(__EMBED_SIZE, hidden_layer_size) * np.sqrt(1.0/__EMBED_SIZE),
+    Vy=lambda hidden_layer_size, num_categories: np.random.randn(hidden_layer_size, num_categories) * np.sqrt(1.0/hidden_layer_size),
+    Vt=lambda hidden_layer_size: np.random.randn(hidden_layer_size, 1) * np.sqrt(1.0/hidden_layer_size),
     bt=np.log(1.0), # bt is provided by the base_rate
-    bk=lambda num_categories: np.ones((1, num_categories)) * 0.0,
-    Wg=lambda hidden_layer_size: np.ones((2*hidden_layer_size, 1)) *0.001,
+    bk=lambda hidden_layer_size, num_categories: np.random.randn(1, num_categories) * np.sqrt(1.0/hidden_layer_size),
+    Wg=lambda hidden_layer_size: np.random.randn(2*hidden_layer_size, 1) * np.sqrt(0.5/hidden_layer_size),
     gamma=1.0,
 )
 
@@ -116,6 +116,7 @@ class RMTPP_DECRNN:
         self.last_epoch = 0
 
         self.rs = np.random.RandomState(seed + 42)
+        np.random.seed(42)
 
         with tf.variable_scope(scope):
             with tf.device(device_gpu if not cpu_only else device_cpu):
@@ -182,7 +183,7 @@ class RMTPP_DECRNN:
                                               initializer=tf.constant_initializer(bt))
                     self.bk = tf.get_variable(name='bk', shape=(1, self.NUM_CATEGORIES),
                                               dtype=self.FLOAT_TYPE,
-                                              initializer=tf.constant_initializer(bk(num_categories)))
+                                              initializer=tf.constant_initializer(bk(self.HIDDEN_LAYER_SIZE, num_categories)))
 
                     self.gamma = tf.get_variable(name='gamma', shape=(1, 1),
                                                  dtype=self.FLOAT_TYPE,
@@ -687,8 +688,8 @@ class RMTPP_DECRNN:
             self.mode: 0.0 #Test Mode
         }
 
-        all_decoder_states, all_event_preds, cur_state = self.sess.run(
-            [self.decoder_states, self.event_preds, self.final_state],
+        all_encoder_states, all_decoder_states, all_event_preds, cur_state = self.sess.run(
+            [self.hidden_states, self.decoder_states, self.event_preds, self.final_state],
             feed_dict=feed_dict
         )
         all_event_preds = np.argmax(all_event_preds, axis=-1) + 1

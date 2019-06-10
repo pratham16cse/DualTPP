@@ -99,13 +99,14 @@ def cmd(dataset_name, alg_name,
     best_result_idx, _ = min(enumerate([result['best_dev_mae'] for result in results]), key=itemgetter(1))
     best_result = results[best_result_idx]
     print('best test mae:', best_result['best_test_mae'])
-    np.savetxt(os.path.join(save_dir)+'/pred.events.out.csv', best_result['best_test_event_preds'], delimiter=',')
-    np.savetxt(os.path.join(save_dir)+'/pred.times.out.csv', best_result['best_test_time_preds'], delimiter=',')
-    np.savetxt(os.path.join(save_dir)+'/gt.events.out.csv', data['test_event_out_seq'], delimiter=',')
-    np.savetxt(os.path.join(save_dir)+'/gt.times.out.csv', data['test_time_out_seq'], delimiter=',')
+    if save_dir:
+        np.savetxt(os.path.join(save_dir)+'/pred.events.out.csv', best_result['best_test_event_preds'], delimiter=',')
+        np.savetxt(os.path.join(save_dir)+'/pred.times.out.csv', best_result['best_test_time_preds'], delimiter=',')
+        np.savetxt(os.path.join(save_dir)+'/gt.events.out.csv', data['test_event_out_seq'], delimiter=',')
+        np.savetxt(os.path.join(save_dir)+'/gt.times.out.csv', data['test_time_out_seq'], delimiter=',')
 
-    with open(os.path.join(save_dir)+'/result.json', 'w') as fp:
-        json.dump(best_result, fp, indent=4)
+        with open(os.path.join(save_dir)+'/result.json', 'w') as fp:
+            json.dump(best_result, fp, indent=4)
 
 if __name__ == '__main__':
     cmd()

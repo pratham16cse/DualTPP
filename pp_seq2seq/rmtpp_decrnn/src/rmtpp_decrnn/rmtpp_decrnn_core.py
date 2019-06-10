@@ -6,7 +6,7 @@ from .utils import create_dir, variable_summaries, MAE, RMSE, ACC, PERCENT_ERROR
 from scipy.integrate import quad
 import multiprocessing as MP
 
-ETH = 50.0
+ETH = 10.0
 __EMBED_SIZE = 4
 __HIDDEN_LAYER_SIZE = 16  # 64, 128, 256, 512, 1024
 
@@ -39,17 +39,17 @@ def_opts = Deco.Options(
     embed_size=__EMBED_SIZE,
     Wem=lambda num_categories: np.random.RandomState(42).randn(num_categories, __EMBED_SIZE) * 0.01,
 
-    Wt=lambda hidden_layer_size: np.ones((1, hidden_layer_size)) * 1e-3,
-    Wh=lambda hidden_layer_size: np.eye(hidden_layer_size),
-    bh=lambda hidden_layer_size: np.ones((1, hidden_layer_size)),
-    Ws=lambda hidden_layer_size: np.eye(hidden_layer_size),
-    bs=lambda hidden_layer_size: np.ones((1, hidden_layer_size)),
-    wt=1.0,
-    Wy=lambda hidden_layer_size: np.ones((__EMBED_SIZE, hidden_layer_size)) * 0.0,
-    Vy=lambda hidden_layer_size, num_categories: np.ones((hidden_layer_size, num_categories)) * 0.001,
-    Vt=lambda hidden_layer_size: np.ones((hidden_layer_size, 1)) * 0.001,
+    Wt=lambda hidden_layer_size: np.random.randn(1, hidden_layer_size),
+    Wh=lambda hidden_layer_size: np.random.randn(hidden_layer_size) * np.sqrt(1.0/hidden_layer_size),
+    bh=lambda hidden_layer_size: np.random.randn(1, hidden_layer_size) * np.sqrt(1.0/hidden_layer_size),
+    Ws=lambda hidden_layer_size: np.random.randn(hidden_layer_size) * np.sqrt(1.0/hidden_layer_size),
+    bs=lambda hidden_layer_size: np.random.randn(1, hidden_layer_size) * np.sqrt(1.0/hidden_layer_size),
+    wt=3.0,
+    Wy=lambda hidden_layer_size: np.random.randn(__EMBED_SIZE, hidden_layer_size) * np.sqrt(1.0/__EMBED_SIZE),
+    Vy=lambda hidden_layer_size, num_categories: np.random.randn(hidden_layer_size, num_categories) * np.sqrt(1.0/hidden_layer_size),
+    Vt=lambda hidden_layer_size: np.random.randn(hidden_layer_size, 1) * np.sqrt(1.0/hidden_layer_size),
     bt=np.log(1.0), # bt is provided by the base_rate
-    bk=lambda num_categories: np.ones((1, num_categories)) * 0.0,
+    bk=lambda hidden_layer_size, num_categories: np.random.randn(1, num_categories) * np.sqrt(1.0/hidden_layer_size),
     gamma=1.0,
 )
 
@@ -62,7 +62,7 @@ def softplus(x):
 def quad_func(t, c, w):
     """This is the t * f(t) function calculating the mean time to next event,
     given c, w."""
-    return c * t * np.exp(-w * t + (c / w) * (np.exp(-w * t) - 1))
+    return c * t * np.exp(w * t - (c / w) * (np.exp(w * t) - 1))
 
 
 class RMTPP_DECRNN:
@@ -96,6 +96,7 @@ class RMTPP_DECRNN:
         self.last_epoch = 0
 
         self.rs = np.random.RandomState(seed + 42)
+        np.random.seed(42)
 
         with tf.variable_scope(scope):
             with tf.device(device_gpu if not cpu_only else device_cpu):
@@ -158,7 +159,7 @@ class RMTPP_DECRNN:
                                               initializer=tf.constant_initializer(bt))
                     self.bk = tf.get_variable(name='bk', shape=(1, self.NUM_CATEGORIES),
                                               dtype=self.FLOAT_TYPE,
-                                              initializer=tf.constant_initializer(bk(num_categories)))
+                                              initializer=tf.constant_initializer(bk(self.HIDDEN_LAYER_SIZE, num_categories)))
 
                     self.gamma = tf.get_variable(name='gamma', shape=(1, 1),
                                                  dtype=self.FLOAT_TYPE,
@@ -296,21 +297,16 @@ class RMTPP_DECRNN:
                     times_prev = tf.cumsum(tf.concat([self.times_in[:, -1:], gaps[:, :-1]], axis=1), axis=1)
 
                     base_intensity = self.bt
-                    wt_soft_plus = tf.nn.softplus(self.wt)
+                    wt_soft_plus = tf.nn.softplus(self.wt) + tf.ones_like(self.wt)
                     gamma_soft_plus = tf.nn.softplus(self.gamma)
 
-                    log_lambda_ = (tf.squeeze(tf.tensordot(self.decoder_states, self.Vt, axes=[[2],[0]]), axis=-1) +
-                                   (-gaps * wt_soft_plus) +
-                                   #(-times_prev * gamma) + 
-                                   base_intensity)
-
+                    D = tf.squeeze(tf.tensordot(self.decoder_states, self.Vt, axes=[[2],[0]]), axis=-1) + base_intensity
+                    D = -tf.nn.softplus(-D)
+                    log_lambda_ = (D + gaps * wt_soft_plus)
                     lambda_ = tf.exp(tf.minimum(ETH, log_lambda_), name='lambda_')
-
-                    log_f_star = (log_lambda_ -
-                                  (1.0 / wt_soft_plus) * tf.exp(tf.minimum(ETH,
-                                                                tf.squeeze(tf.tensordot(self.decoder_states, self.Vt, axes=[[2],[0]]), axis=-1) +
-                                                                base_intensity)) +
-                                  (1.0 / wt_soft_plus) * lambda_)
+                    log_f_star = (log_lambda_
+                                  + (1.0 / wt_soft_plus) * tf.exp(tf.minimum(ETH, D))
+                                  - (1.0 / wt_soft_plus) * lambda_)
 
 
                 with tf.name_scope('loss_calc'):
@@ -659,8 +655,8 @@ class RMTPP_DECRNN:
             self.mode: 0.0 #Test Mode
         }
 
-        all_decoder_states, all_event_preds, cur_state = self.sess.run(
-            [self.decoder_states, self.event_preds, self.final_state],
+        all_encoder_states, all_decoder_states, all_event_preds, cur_state = self.sess.run(
+            [self.hidden_states, self.decoder_states, self.event_preds, self.final_state],
             feed_dict=feed_dict
         )
         all_event_preds = np.argmax(all_event_preds, axis=-1) + 1
@@ -669,7 +665,7 @@ class RMTPP_DECRNN:
         # TODO: This calculation is completely ignoring the clipping which
         # happens during the inference step.
         [Vt, bt, wt]  = self.sess.run([self.Vt, self.bt, self.wt])
-        wt = softplus(wt)
+        wt = softplus(wt) + np.ones_like(wt)
 
         global _quad_worker
         def _quad_worker(params):
@@ -678,7 +674,10 @@ class RMTPP_DECRNN:
             #print(np.matmul(all_decoder_states, Vt) + bt)
             for pred_idx, s_i in enumerate(all_decoder_states):
                 t_last = time_pred_last if pred_idx==0 else preds_i[-1]
-                c_ = np.exp(np.dot(s_i, Vt) + bt).reshape(-1)
+                D = (np.dot(s_i, Vt) + bt).reshape(-1)
+                #print(D)
+                D = -softplus(-D)
+                c_ = np.exp(D)
                 args = (c_, wt)
                 val, _err = quad(quad_func, 0, np.inf, args=args)
                 #print(val, c_, t_last)
