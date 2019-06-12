@@ -721,8 +721,9 @@ class RMTPP_DECRNN:
                 D = (np.dot(s_i, Vt) + bt).reshape(-1) - self.wt * gap_th
                 D = D[0]
                 D_before = (np.dot(s_i, Vt) + bt).reshape(-1) - self.wt * gap_th
-                D = softplus(D) if D<0.0 else D - np.log(sigmoid(D))
-                D = -D
+                D = D if D<0.0 else softplus(-D)
+                #D = softplus(D) if D<0.0 else D - np.log(sigmoid(D))
+                #D = -D
                 #print('D_before:', D_before, 'D_after:', D, 'gap_before:', gap_th_before, 'gap_after:', gap_th, 'wt:', self.wt)
                 #D = np.where(D>1.0, D, np.ones_like(D)*1.0)
                 #gap_th = 20*np.ones_like(gap_th)
