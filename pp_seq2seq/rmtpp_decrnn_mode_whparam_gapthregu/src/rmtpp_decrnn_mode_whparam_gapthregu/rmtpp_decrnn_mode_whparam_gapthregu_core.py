@@ -61,7 +61,7 @@ def softplus(x):
     return np.log1p(np.exp(x))
 
 def sigmoid(x):
-    return np.exp(x)/(1+np.exp(x))
+    return 1/(1+np.exp(-x))
 
 
 def minimize_func(g, D, wt, gap_th):

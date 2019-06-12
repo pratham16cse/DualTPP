@@ -61,7 +61,7 @@ def softplus(x):
     return np.log1p(np.exp(x))
 
 def sigmoid(x):
-    return np.exp(x)/(1+np.exp(x))
+    return 1/(1+np.exp(-x))
 
 
 def minimize_func(g, D, wt, gap_th):
@@ -706,7 +706,8 @@ class RMTPP_DECRNN:
                 t_last = time_pred_last if pred_idx==0 else preds_i[-1]
                 states_concat = np.concatenate([h_m, s_i], axis=-1)
                 gap_th_before = np.dot(states_concat, Wg).reshape(-1)
-                gap_th = softplus(np.dot(states_concat, Wg).reshape(-1))
+                gap_th = np.dot(states_concat, Wg).reshape(-1)
+                gap_th = softplus(gap_th) if gap_th<0 else gap_th - np.log(sigmoid(gap_th))
                 D = (np.dot(s_i, Vt) + bt).reshape(-1) - self.wt * gap_th
                 D = D[0]
                 D_before = (np.dot(s_i, Vt) + bt).reshape(-1) - self.wt * gap_th
@@ -724,11 +725,11 @@ class RMTPP_DECRNN:
 
         time_pred_last = time_in_seq[:, -1]
         print(all_decoder_states.shape)
-#        if single_threaded:
-        all_time_preds = [_quad_worker((idx, (state, h_m, t_last))) for idx, (state, h_m, t_last) in enumerate(zip(all_decoder_states, cur_state, time_pred_last))]
-#        else:
-#            with MP.Pool() as pool:
-#                all_time_preds = pool.map(_quad_worker, enumerate(zip(all_decoder_states, cur_state, time_pred_last)))
+        if single_threaded:
+            all_time_preds = [_quad_worker((idx, (state, h_m, t_last))) for idx, (state, h_m, t_last) in enumerate(zip(all_decoder_states, cur_state, time_pred_last))]
+        else:
+            with MP.Pool() as pool:
+                all_time_preds = pool.map(_quad_worker, enumerate(zip(all_decoder_states, cur_state, time_pred_last)))
 
         all_time_preds = np.asarray(all_time_preds).T
 
