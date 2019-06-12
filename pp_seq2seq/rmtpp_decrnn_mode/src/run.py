@@ -69,6 +69,7 @@ def cmd(dataset_name, alg_name,
             sess=sess,
             num_categories=data['num_categories'],
             hidden_layer_size=hidden_layer_size, # A hyperparameter
+            save_dir=save_dir,
             summary_dir=summary_dir if summary_dir is not None else tempfile.mkdtemp(),
             batch_size=batch_size,
             bptt=data['encoder_length'],
