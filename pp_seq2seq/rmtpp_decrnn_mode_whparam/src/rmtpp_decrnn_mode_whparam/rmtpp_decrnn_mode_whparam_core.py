@@ -64,25 +64,15 @@ def softplus(x):
 def minimize_func(g, D, wt, gap_th):
     """This function calculates the mode of the function f(t),
     given c, w."""
-    log_lambda_greater_ = (D + -wt*(g - gap_th))
-    lambda_greater_ = np.exp(log_lambda_greater_)
-    log_f_star_greater = (log_lambda_greater_ 
-                          + (2/-wt) * np.exp(D)
-                          - (1/-wt) * np.exp(D+ -wt*gap_th)
-                          - (1/-wt) * lambda_greater_)
-
-    log_lambda_less_ = (D + -wt*(gap_th - g))
-    lambda_less_ = np.exp(log_lambda_less_)
-    log_f_star_less = (log_lambda_less_
-                       - (1/-wt) * np.exp(D+ -wt*gap_th)
-                       + (1/-wt) * lambda_less_)
-
-    log_f_star = (g > gap_th)*log_f_star_greater + (g <= gap_th)*log_f_star_less
-    #print(log_f_star.shape)
+    log_lambda_ = (D + wt*g)
+    lambda_ = np.exp(log_lambda_)
+    log_f_star = (log_lambda_
+                  + (1/-wt) * np.exp(D)
+                  - (1/-wt) * lambda_)
 
     f_star = np.exp(log_f_star)
 
-    return -1 * f_star
+    return f_star
 
 
 class RMTPP_DECRNN:
@@ -702,7 +692,9 @@ class RMTPP_DECRNN:
             for pred_idx, s_i in enumerate(all_decoder_states):
                 t_last = time_pred_last if pred_idx==0 else preds_i[-1]
                 D = (np.dot(s_i, Vt) + bt).reshape(-1)
+                D_before = (np.dot(s_i, Vt) + bt).reshape(-1)
                 D = -softplus(-D)
+                print('D_before:', D_before, 'D_after:', D, 'wt:', self.wt)
                 #D = np.where(D>1.0, D, np.ones_like(D)*1.0)
                 states_concat = np.concatenate([h_m, s_i], axis=-1)
                 gap_th = softplus(np.dot(states_concat, Wg).reshape(-1))

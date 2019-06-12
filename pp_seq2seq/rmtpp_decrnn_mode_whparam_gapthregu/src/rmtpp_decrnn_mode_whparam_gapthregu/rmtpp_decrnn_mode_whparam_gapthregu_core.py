@@ -60,6 +60,9 @@ def softplus(x):
     """Numpy counterpart to tf.nn.softplus"""
     return np.log1p(np.exp(x))
 
+def sigmoid(x):
+    return np.exp(x)/(1+np.exp(x))
+
 
 def minimize_func(g, D, wt, gap_th):
     """This function calculates the mode of the function f(t),
@@ -712,9 +715,15 @@ class RMTPP_DECRNN:
             for pred_idx, s_i in enumerate(all_decoder_states):
                 t_last = time_pred_last if pred_idx==0 else preds_i[-1]
                 states_concat = np.concatenate([h_m, s_i], axis=-1)
-                gap_th = softplus(np.dot(states_concat, Wg).reshape(-1))
+                gap_th_before = np.dot(states_concat, Wg).reshape(-1)
+                gap_th = np.dot(states_concat, Wg).reshape(-1)
+                gap_th = softplus(gap_th) if gap_th<0 else gap_th - np.log(sigmoid(gap_th))
                 D = (np.dot(s_i, Vt) + bt).reshape(-1) - self.wt * gap_th
-                D = -softplus(-D)
+                D = D[0]
+                D_before = (np.dot(s_i, Vt) + bt).reshape(-1) - self.wt * gap_th
+                D = softplus(D) if D<0.0 else D - np.log(sigmoid(D))
+                D = -D
+                #print('D_before:', D_before, 'D_after:', D, 'gap_before:', gap_th_before, 'gap_after:', gap_th, 'wt:', self.wt)
                 #D = np.where(D>1.0, D, np.ones_like(D)*1.0)
                 #gap_th = 20*np.ones_like(gap_th)
                 val = (np.log(self.wt) - D)/self.wt
