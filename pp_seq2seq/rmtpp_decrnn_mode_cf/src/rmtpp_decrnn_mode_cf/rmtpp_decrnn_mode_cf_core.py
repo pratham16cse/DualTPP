@@ -709,7 +709,8 @@ class RMTPP_DECRNN:
             for pred_idx, s_i in enumerate(all_decoder_states):
                 t_last = time_pred_last if pred_idx==0 else preds_i[-1]
                 D = (np.dot(s_i, Vt) + bt).reshape(-1)
-                D = -softplus(-D)
+                D = D[0]
+                D = D if D<0.0 else softplus(-D)
                 #D = np.where(D>1.0, D, np.ones_like(D)*1.0)
                 states_concat = np.concatenate([h_m, s_i], axis=-1)
                 gap_th = softplus(np.dot(states_concat, Wg).reshape(-1))
