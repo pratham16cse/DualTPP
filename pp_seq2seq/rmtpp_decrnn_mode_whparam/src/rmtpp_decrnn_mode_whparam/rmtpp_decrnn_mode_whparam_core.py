@@ -694,7 +694,7 @@ class RMTPP_DECRNN:
                 D = (np.dot(s_i, Vt) + bt).reshape(-1)
                 D_before = (np.dot(s_i, Vt) + bt).reshape(-1)
                 D = -softplus(-D)
-                print('D_before:', D_before, 'D_after:', D, 'wt:', self.wt)
+                #print('D_before:', D_before, 'D_after:', D, 'wt:', self.wt)
                 #D = np.where(D>1.0, D, np.ones_like(D)*1.0)
                 states_concat = np.concatenate([h_m, s_i], axis=-1)
                 gap_th = softplus(np.dot(states_concat, Wg).reshape(-1))
