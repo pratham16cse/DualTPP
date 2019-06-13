@@ -693,7 +693,7 @@ class RMTPP_DECRNN:
                 t_last = time_pred_last if pred_idx==0 else preds_i[-1]
                 D = (np.dot(s_i, Vt) + bt).reshape(-1)
                 D_before = (np.dot(s_i, Vt) + bt).reshape(-1)
-                D = -softplus(-D)
+                D = D if D<0.0 else softplus(-D)
                 #print('D_before:', D_before, 'D_after:', D, 'wt:', self.wt)
                 #D = np.where(D>1.0, D, np.ones_like(D)*1.0)
                 states_concat = np.concatenate([h_m, s_i], axis=-1)
