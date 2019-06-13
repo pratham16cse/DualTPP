@@ -596,6 +596,7 @@ class RMTPP_DECRNN:
 
 
             if with_evals:
+                print('w:', self.sess.run(self.wt).tolist())
                 if isinstance(with_evals, int):
                     batch_size = with_evals
                 else:
