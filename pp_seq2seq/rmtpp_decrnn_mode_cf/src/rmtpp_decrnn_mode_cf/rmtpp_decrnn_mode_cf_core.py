@@ -637,7 +637,7 @@ class RMTPP_DECRNN:
                     best_dev_acc, best_test_acc = dev_acc, test_acc
                     best_dev_event_preds, best_dev_time_preds  = dev_event_preds, dev_time_preds
                     best_test_event_preds, best_test_time_preds  = test_event_preds, test_time_preds
-                    best_w = self.sess.run(self.wt)
+                    best_w = self.sess.run(self.wt).tolist()
 
                     checkpoint_path = os.path.join(self.SAVE_DIR, 'model.ckpt')
                     saver.save(self.sess, checkpoint_path)# , global_step=step)
