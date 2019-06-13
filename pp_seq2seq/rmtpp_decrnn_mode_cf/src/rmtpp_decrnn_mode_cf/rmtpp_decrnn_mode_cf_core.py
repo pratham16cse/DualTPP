@@ -340,7 +340,7 @@ class RMTPP_DECRNN:
                 with tf.name_scope('loss_calc'):
 
                     self.mark_LLs = tf.squeeze(tf.stack(self.mark_LLs, axis=1), axis=-1)
-                    self.time_LLs = log_f_star
+                    self.time_LLs = -log_f_star
                     step_LLs = self.time_LLs + self.mark_LLs
                     #step_LLs = self.mark_LLs
                     #step_LLs = self.time_LLs
@@ -637,15 +637,15 @@ class RMTPP_DECRNN:
                     best_dev_acc, best_test_acc = dev_acc, test_acc
                     best_dev_event_preds, best_dev_time_preds  = dev_event_preds, dev_time_preds
                     best_test_event_preds, best_test_time_preds  = test_event_preds, test_time_preds
+                    best_w = sess.run(self.w)
+
+                    checkpoint_path = os.path.join(self.SAVE_DIR, 'model.ckpt')
+                    saver.save(self.sess, checkpoint_path)# , global_step=step)
+                    print('Model saved at {}'.format(checkpoint_path))
 
         print('Best Epoch:{}, Best Dev MAE:{:.5f}, Best Test MAE:{:.5f}'.format(
             best_epoch, best_dev_mae, best_test_mae))
 
-
-
-        checkpoint_path = os.path.join(self.SAVE_DIR, 'model.ckpt')
-        saver.save(self.sess, checkpoint_path, global_step=self.global_step)
-        print('Model saved at {}'.format(checkpoint_path))
 
         # Remember how many epochs we have trained.
         self.last_epoch += num_epochs
@@ -660,6 +660,7 @@ class RMTPP_DECRNN:
                 'best_dev_time_preds': best_dev_time_preds.tolist(),
                 'best_test_event_preds': best_test_event_preds.tolist(),
                 'best_test_time_preds': best_test_time_preds.tolist(),
+                'best_w': best_w,
                }
 
 
