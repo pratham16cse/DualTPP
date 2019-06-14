@@ -96,11 +96,11 @@ def cmd(dataset_name, alg_name,
     # TODO(PD) Run hyperparameter tuning in parallel
     #results  = pp.ProcessPool().map(hyperparameter_worker, hidden_layer_size_list)
     if dataset_name == 'data_bookorder':
-        w_list = [0.5, 0.7, 0.9, 1.0]
+        w_list = [1.5, 1.7, 1.9, 1.0]
     elif dataset_name == 'data_so':
-        w_list = [3.5, 3.8, 4.1, 4.3]
+        w_list = [4.5, 4.8, 5.1, 5.3]
     elif dataset_name == 'data_retweet':
-        w_list = [2.1, 2.3, 2.5, 2.7]
+        w_list = [3.1, 3.3, 3.5, 3.7]
     results = []
     for hidden_layer_size in hidden_layer_size_list:
         for w in w_list:
