@@ -639,14 +639,45 @@ class RMTPP_DECRNN:
                     best_dev_event_preds, best_dev_time_preds  = dev_event_preds, dev_time_preds
                     best_test_event_preds, best_test_time_preds  = test_event_preds, test_time_preds
                     best_w = self.sess.run(self.wt).tolist()
+                    best_hidden_layer_size = self.HIDDEN_LAYER_SIZE
 
                     checkpoint_path = os.path.join(self.SAVE_DIR, 'model.ckpt')
                     saver.save(self.sess, checkpoint_path)# , global_step=step)
                     print('Model saved at {}'.format(checkpoint_path))
 
+
+        if ckpt:
+            self.restore()
+        minTime, maxTime = training_data['minTime'], training_data['maxTime']
+        best_dev_time_preds, best_dev_event_preds = self.predict(training_data['dev_event_in_seq'],
+                                                       training_data['dev_time_in_seq'],
+                                                       training_data['decoder_length'])
+        best_dev_time_preds = best_dev_time_preds * (maxTime - minTime) + minTime
+        dev_time_out_seq = training_data['dev_time_out_seq'] * (maxTime - minTime) + minTime
+        best_dev_mae, dev_total_valid, best_dev_acc = self.eval(best_dev_time_preds, dev_time_out_seq,
+                                                      best_dev_event_preds, training_data['dev_event_out_seq'])
+
+        print('DEV: MAE = {:.5f}; valid = {}, ACC = {:.5f}'.format(
+            best_dev_mae, dev_total_valid, best_dev_acc))
+
+        best_test_time_preds, best_test_event_preds = self.predict(training_data['test_event_in_seq'],
+                                                         training_data['test_time_in_seq'],
+                                                         training_data['decoder_length'])
+        best_test_time_preds = best_test_time_preds * (maxTime - minTime) + minTime
+        test_time_out_seq = training_data['test_time_out_seq'] * (maxTime - minTime) + minTime
+        gaps = best_test_time_preds - training_data['test_time_in_seq'][:, -1:]
+        print('Predicted gaps')
+        print(gaps)
+        print(test_time_out_seq)
+        print(best_test_time_preds)
+        best_test_mae, test_total_valid, best_test_acc = self.eval(best_test_time_preds, test_time_out_seq,
+                                                         best_test_event_preds, training_data['test_event_out_seq'])
+
         print('Best Epoch:{}, Best Dev MAE:{:.5f}, Best Test MAE:{:.5f}'.format(
             best_epoch, best_dev_mae, best_test_mae))
 
+        best_w = self.sess.run(self.wt).tolist()
+        best_hidden_layer_size = self.HIDDEN_LAYER_SIZE
 
         # Remember how many epochs we have trained.
         self.last_epoch += num_epochs
@@ -662,6 +693,7 @@ class RMTPP_DECRNN:
                 'best_test_event_preds': best_test_event_preds.tolist(),
                 'best_test_time_preds': best_test_time_preds.tolist(),
                 'best_w': best_w,
+                'best_hidden_layer_size': best_hidden_layer_size,
                }
 
 
