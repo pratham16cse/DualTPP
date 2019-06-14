@@ -27,11 +27,11 @@ if [ -d "Outputs/Experiment_"$last_commit_id ]; then
     if [ -d "Outputs/Experiment_"$last_commit_id"/"$dataset_name ]; then
         if [ -d "Outputs/Experiment_"$last_commit_id"/"$dataset_name"/"$alg_name ]; then
             echo "Outputs/Experiment_"$last_commit_id"/"$dataset_name"/"$alg_name "already exists." 1>&2
-            echo "Exiting . . ." 1>&2
-	    if [ $stashed==1 ]; then
-                git stash pop
-            fi
-            exit 1
+#            echo "Exiting . . ." 1>&2
+#	    if [ $stashed==1 ]; then
+#                git stash pop
+#            fi
+#            exit 1
         else
             mkdir "Outputs/Experiment_"$last_commit_id"/"$dataset_name"/"$alg_name
         fi
