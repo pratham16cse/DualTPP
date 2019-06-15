@@ -1,0 +1,6 @@
+{
+    "rmtpp_decrnn_mode_cf":
+    {
+        "hidden_layer_size": [16, 32, 64, 128]
+    }
+}

@@ -501,7 +501,6 @@ class RMTPP_DECRNN:
         will be tested.
         """
         create_dir(self.SAVE_DIR)
-        print(self.SAVE_DIR)
         ckpt = tf.train.get_checkpoint_state(self.SAVE_DIR)
 
         # TODO: Why does this create new nodes in the graph? Possibly memory leak?
@@ -649,9 +648,8 @@ class RMTPP_DECRNN:
                     best_dev_event_preds, best_dev_time_preds  = dev_event_preds, dev_time_preds
                     best_test_event_preds, best_test_time_preds  = test_event_preds, test_time_preds
                     best_w = self.sess.run(self.wt).tolist()
-                    best_hidden_layer_size = self.HIDDEN_LAYER_SIZE
 
-                    checkpoint_dir = os.path.join(self.SAVE_DIR, 'hls_'+str(best_hidden_layer_size))
+                    checkpoint_dir = os.path.join(self.SAVE_DIR, 'hls_'+str(self.HIDDEN_LAYER_SIZE))
                     checkpoint_path = os.path.join(checkpoint_dir, 'model.ckpt')
                     saver.save(self.sess, checkpoint_path)# , global_step=step)
                     print('Model saved at {}'.format(checkpoint_path))
@@ -659,7 +657,6 @@ class RMTPP_DECRNN:
         # Remember how many epochs we have trained.
         self.last_epoch += num_epochs
 
-        print(ckpt)
         if ckpt and num_epochs==0:
             self.restore()
             minTime, maxTime = training_data['minTime'], training_data['maxTime']
@@ -701,7 +698,6 @@ class RMTPP_DECRNN:
                 best_epoch, best_dev_mae, best_test_mae))
     
             best_w = self.sess.run(self.wt).tolist()
-            best_hidden_layer_size = self.HIDDEN_LAYER_SIZE
 
             return None
 
@@ -716,7 +712,7 @@ class RMTPP_DECRNN:
                 'best_test_event_preds': best_test_event_preds.tolist(),
                 'best_test_time_preds': best_test_time_preds.tolist(),
                 'best_w': best_w,
-                'best_hidden_layer_size': best_hidden_layer_size,
+                'hidden_layer_size': self.HIDDEN_LAYER_SIZE,
                 'checkpoint_dir': checkpoint_dir,
                }
 
