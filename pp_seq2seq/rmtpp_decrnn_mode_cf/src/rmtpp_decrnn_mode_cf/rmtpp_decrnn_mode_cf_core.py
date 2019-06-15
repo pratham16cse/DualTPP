@@ -703,6 +703,8 @@ class RMTPP_DECRNN:
             best_w = self.sess.run(self.wt).tolist()
             best_hidden_layer_size = self.HIDDEN_LAYER_SIZE
 
+            return None
+
         return {
                 'best_epoch': best_epoch,
                 'best_dev_mae': best_dev_mae,
