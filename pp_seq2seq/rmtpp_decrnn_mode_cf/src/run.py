@@ -64,7 +64,7 @@ def cmd(dataset_name, alg_name,
 
         #rmtpp_decrnn_mode_cf.utils.data_stats(data) #TODO(PD) Need to support seq2seq models.
 
-        hidden_layer_size, restart, num_epochs = params
+        hidden_layer_size, restart, num_epochs, save_dir = params
         rmtpp_decrnn_mode_cf_mdl = rmtpp_decrnn_mode_cf.rmtpp_decrnn_mode_cf_core.RMTPP_DECRNN(
             sess=sess,
             num_categories=data['num_categories'],
@@ -93,13 +93,14 @@ def cmd(dataset_name, alg_name,
         print('Model already trained, stored, restoring . . .')
         with open(os.path.join(save_dir)+'/result.json', 'r') as fp:
             result = json.loads(fp.read())
-        result = hyperparameter_worker((result['best_hidden_layer_size'], True, 0))
+        print(result['best_hidden_layer_size'])
+        result = hyperparameter_worker((result['best_hidden_layer_size'], True, 0, result['checkpoint_dir']))
     else:
         # TODO(PD) Run hyperparameter tuning in parallel
         #results  = pp.ProcessPool().map(hyperparameter_worker, hidden_layer_size_list)
         results = []
         for hidden_layer_size in hidden_layer_size_list:
-            result = hyperparameter_worker((hidden_layer_size, False, num_epochs))
+            result = hyperparameter_worker((hidden_layer_size, False, num_epochs, save_dir))
             results.append(result)
             # print(result['best_test_mae'], result['best_test_acc'])
 

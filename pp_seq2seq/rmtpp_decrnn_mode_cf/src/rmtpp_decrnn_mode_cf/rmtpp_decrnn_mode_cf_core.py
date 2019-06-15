@@ -501,6 +501,7 @@ class RMTPP_DECRNN:
         will be tested.
         """
         create_dir(self.SAVE_DIR)
+        print(self.SAVE_DIR)
         ckpt = tf.train.get_checkpoint_state(self.SAVE_DIR)
 
         # TODO: Why does this create new nodes in the graph? Possibly memory leak?
@@ -650,65 +651,57 @@ class RMTPP_DECRNN:
                     best_w = self.sess.run(self.wt).tolist()
                     best_hidden_layer_size = self.HIDDEN_LAYER_SIZE
 
-                    dev_time_preds, dev_event_preds = self.predict(training_data['dev_event_in_seq'],
-                                                                   training_data['dev_time_in_seq'],
-                                                                   training_data['decoder_length'],
-                                                                   plt_tru_gaps)
-                    test_time_preds, test_event_preds = self.predict(training_data['test_event_in_seq'],
-                                                                     training_data['test_time_in_seq'],
-                                                                     training_data['decoder_length'],
-                                                                     plt_tru_gaps)
-
-                    checkpoint_path = os.path.join(self.SAVE_DIR, 'model.ckpt')
+                    checkpoint_dir = os.path.join(self.SAVE_DIR, 'hls_'+str(best_hidden_layer_size))
+                    checkpoint_path = os.path.join(checkpoint_dir, 'model.ckpt')
                     saver.save(self.sess, checkpoint_path)# , global_step=step)
                     print('Model saved at {}'.format(checkpoint_path))
 
-
-        if ckpt:
-            self.restore()
-        minTime, maxTime = training_data['minTime'], training_data['maxTime']
-        plt_time_out_seq = training_data['dev_time_out_seq']
-        plt_tru_gaps = plt_time_out_seq - np.concatenate([training_data['dev_time_in_seq'][:, -1:], plt_time_out_seq[:, :-1]], axis=1) 
-        plot_dir = os.path.join(self.SAVE_DIR,'dev')
-        if not os.path.isdir(plot_dir): os.mkdir(plot_dir)
-        best_dev_time_preds, best_dev_event_preds = self.predict(training_data['dev_event_in_seq'],
-                                                       training_data['dev_time_in_seq'],
-                                                       training_data['decoder_length'],
-                                                       plt_tru_gaps, plot_dir=plot_dir)
-        best_dev_time_preds = best_dev_time_preds * (maxTime - minTime) + minTime
-        dev_time_out_seq = training_data['dev_time_out_seq'] * (maxTime - minTime) + minTime
-        best_dev_mae, dev_total_valid, best_dev_acc = self.eval(best_dev_time_preds, dev_time_out_seq,
-                                                      best_dev_event_preds, training_data['dev_event_out_seq'])
-
-        print('DEV: MAE = {:.5f}; valid = {}, ACC = {:.5f}'.format(
-            best_dev_mae, dev_total_valid, best_dev_acc))
-
-        plt_time_out_seq = training_data['test_time_out_seq']
-        plt_tru_gaps = plt_time_out_seq - np.concatenate([training_data['test_time_in_seq'][:, -1:], plt_time_out_seq[:, :-1]], axis=1)
-        plot_dir = os.path.join(self.SAVE_DIR,'test')
-        if not os.path.isdir(plot_dir): os.mkdir(plot_dir)
-        best_test_time_preds, best_test_event_preds = self.predict(training_data['test_event_in_seq'],
-                                                         training_data['test_time_in_seq'],
-                                                         training_data['decoder_length'],
-                                                         plt_tru_gaps, plot_dir=plot_dir)
-        best_test_time_preds = best_test_time_preds * (maxTime - minTime) + minTime
-        test_time_out_seq = training_data['test_time_out_seq'] * (maxTime - minTime) + minTime
-        gaps = best_test_time_preds - training_data['test_time_in_seq'][:, -1:]
-        print('Predicted gaps')
-        print(gaps)
-        print(test_time_out_seq)
-        print(best_test_time_preds)
-        best_test_mae, test_total_valid, best_test_acc = self.eval(best_test_time_preds, test_time_out_seq,
-                                                         best_test_event_preds, training_data['test_event_out_seq'])
-
-        print('Best Epoch:{}, Best Dev MAE:{:.5f}, Best Test MAE:{:.5f}'.format(
-            best_epoch, best_dev_mae, best_test_mae))
-
-        best_w = self.sess.run(self.wt).tolist()
-        best_hidden_layer_size = self.HIDDEN_LAYER_SIZE
-
         # Remember how many epochs we have trained.
         self.last_epoch += num_epochs
+
+        print(ckpt)
+        if ckpt and num_epochs==0:
+            self.restore()
+            minTime, maxTime = training_data['minTime'], training_data['maxTime']
+            plt_time_out_seq = training_data['dev_time_out_seq']
+            plt_tru_gaps = plt_time_out_seq - np.concatenate([training_data['dev_time_in_seq'][:, -1:], plt_time_out_seq[:, :-1]], axis=1) 
+            plot_dir = os.path.join(self.SAVE_DIR,'dev')
+            if not os.path.isdir(plot_dir): os.mkdir(plot_dir)
+            best_dev_time_preds, best_dev_event_preds = self.predict(training_data['dev_event_in_seq'],
+                                                           training_data['dev_time_in_seq'],
+                                                           training_data['decoder_length'],
+                                                           plt_tru_gaps, plot_dir=plot_dir)
+            best_dev_time_preds = best_dev_time_preds * (maxTime - minTime) + minTime
+            dev_time_out_seq = training_data['dev_time_out_seq'] * (maxTime - minTime) + minTime
+            best_dev_mae, dev_total_valid, best_dev_acc = self.eval(best_dev_time_preds, dev_time_out_seq,
+                                                          best_dev_event_preds, training_data['dev_event_out_seq'])
+    
+            print('DEV: MAE = {:.5f}; valid = {}, ACC = {:.5f}'.format(
+                best_dev_mae, dev_total_valid, best_dev_acc))
+    
+            plt_time_out_seq = training_data['test_time_out_seq']
+            plt_tru_gaps = plt_time_out_seq - np.concatenate([training_data['test_time_in_seq'][:, -1:], plt_time_out_seq[:, :-1]], axis=1)
+            plot_dir = os.path.join(self.SAVE_DIR,'test')
+            if not os.path.isdir(plot_dir): os.mkdir(plot_dir)
+            best_test_time_preds, best_test_event_preds = self.predict(training_data['test_event_in_seq'],
+                                                             training_data['test_time_in_seq'],
+                                                             training_data['decoder_length'],
+                                                             plt_tru_gaps, plot_dir=plot_dir)
+            best_test_time_preds = best_test_time_preds * (maxTime - minTime) + minTime
+            test_time_out_seq = training_data['test_time_out_seq'] * (maxTime - minTime) + minTime
+            gaps = best_test_time_preds - training_data['test_time_in_seq'][:, -1:]
+            print('Predicted gaps')
+            print(gaps)
+            print(test_time_out_seq)
+            print(best_test_time_preds)
+            best_test_mae, test_total_valid, best_test_acc = self.eval(best_test_time_preds, test_time_out_seq,
+                                                             best_test_event_preds, training_data['test_event_out_seq'])
+    
+            print('Best Epoch:{}, Best Dev MAE:{:.5f}, Best Test MAE:{:.5f}'.format(
+                best_epoch, best_dev_mae, best_test_mae))
+    
+            best_w = self.sess.run(self.wt).tolist()
+            best_hidden_layer_size = self.HIDDEN_LAYER_SIZE
 
         return {
                 'best_epoch': best_epoch,
@@ -722,6 +715,7 @@ class RMTPP_DECRNN:
                 'best_test_time_preds': best_test_time_preds.tolist(),
                 'best_w': best_w,
                 'best_hidden_layer_size': best_hidden_layer_size,
+                'checkpoint_dir': checkpoint_dir,
                }
 
 
@@ -795,9 +789,8 @@ class RMTPP_DECRNN:
                     plt.legend(loc='best')
                     plt.savefig(os.path.join(plot_dir,'instance_'+str(batch_idx)+'.png'))
                     plt.close()
-
-                    print(D, wt)
-                    #print(batch_idx, mode, mean, density_func(mode, D, wt), density_func(mean, D, wt))
+    
+                    print(batch_idx, D, wt, mode, mean, density_func(mode, D, wt), density_func(mean, D, wt))
 
             return preds_i
 
