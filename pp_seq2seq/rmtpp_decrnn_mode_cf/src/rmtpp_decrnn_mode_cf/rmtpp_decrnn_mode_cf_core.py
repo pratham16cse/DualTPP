@@ -795,8 +795,9 @@ class RMTPP_DECRNN:
                     plt.legend(loc='best')
                     plt.savefig(os.path.join(plot_dir,'instance_'+str(batch_idx)+'.png'))
                     plt.close()
-    
-                    print(batch_idx, mode, mean, density_func(mode, D, wt), density_func(mean, D, wt))
+
+                    print(D, wt)
+                    #print(batch_idx, mode, mean, density_func(mode, D, wt), density_func(mean, D, wt))
 
             return preds_i
 
