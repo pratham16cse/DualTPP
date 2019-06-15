@@ -660,6 +660,22 @@ class RMTPP_DECRNN:
         if ckpt and num_epochs==0:
             self.restore()
             minTime, maxTime = training_data['minTime'], training_data['maxTime']
+
+            plt_time_out_seq = training_data['train_time_out_seq']
+            plt_tru_gaps = plt_time_out_seq - np.concatenate([training_data['train_time_in_seq'][:, -1:], plt_time_out_seq[:, :-1]], axis=1) 
+            plot_dir = os.path.join(self.SAVE_DIR,'train')
+            if not os.path.isdir(plot_dir): os.mkdir(plot_dir)
+            best_train_time_preds, best_train_event_preds = self.predict(training_data['train_event_in_seq'],
+                                                           training_data['train_time_in_seq'],
+                                                           training_data['decoder_length'],
+                                                           plt_tru_gaps, plot_dir=plot_dir)
+            best_train_time_preds = best_train_time_preds * (maxTime - minTime) + minTime
+            train_time_out_seq = training_data['train_time_out_seq'] * (maxTime - minTime) + minTime
+            best_train_mae, train_total_valid, best_train_acc = self.eval(best_train_time_preds, train_time_out_seq,
+                                                          best_train_event_preds, training_data['train_event_out_seq'])
+            print('TRAIN: MAE = {:.5f}; valid = {}, ACC = {:.5f}'.format(
+                best_train_mae, train_total_valid, best_train_acc))
+
             plt_time_out_seq = training_data['dev_time_out_seq']
             plt_tru_gaps = plt_time_out_seq - np.concatenate([training_data['dev_time_in_seq'][:, -1:], plt_time_out_seq[:, :-1]], axis=1) 
             plot_dir = os.path.join(self.SAVE_DIR,'dev')
@@ -672,7 +688,6 @@ class RMTPP_DECRNN:
             dev_time_out_seq = training_data['dev_time_out_seq'] * (maxTime - minTime) + minTime
             best_dev_mae, dev_total_valid, best_dev_acc = self.eval(best_dev_time_preds, dev_time_out_seq,
                                                           best_dev_event_preds, training_data['dev_event_out_seq'])
-    
             print('DEV: MAE = {:.5f}; valid = {}, ACC = {:.5f}'.format(
                 best_dev_mae, dev_total_valid, best_dev_acc))
     
@@ -693,6 +708,8 @@ class RMTPP_DECRNN:
             print(best_test_time_preds)
             best_test_mae, test_total_valid, best_test_acc = self.eval(best_test_time_preds, test_time_out_seq,
                                                              best_test_event_preds, training_data['test_event_out_seq'])
+            print('TEST: MAE = {:.5f}; valid = {}, ACC = {:.5f}'.format(
+                best_test_mae, test_total_valid, best_test_acc))
     
             print('Best Epoch:{}, Best Dev MAE:{:.5f}, Best Test MAE:{:.5f}'.format(
                 best_epoch, best_dev_mae, best_test_mae))
