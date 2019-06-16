@@ -668,7 +668,7 @@ class RMTPP_DECRNN:
             best_train_time_preds, best_train_event_preds = self.predict(training_data['train_event_in_seq'],
                                                            training_data['train_time_in_seq'],
                                                            training_data['decoder_length'],
-                                                           plt_tru_gaps, plot_dir=plot_dir)
+                                                           plt_tru_gaps, plot_dir=plot_dir, single_threaded=True)
             best_train_time_preds = best_train_time_preds * (maxTime - minTime) + minTime
             train_time_out_seq = training_data['train_time_out_seq'] * (maxTime - minTime) + minTime
             best_train_mae, train_total_valid, best_train_acc = self.eval(best_train_time_preds, train_time_out_seq,
@@ -683,7 +683,7 @@ class RMTPP_DECRNN:
             best_dev_time_preds, best_dev_event_preds = self.predict(training_data['dev_event_in_seq'],
                                                            training_data['dev_time_in_seq'],
                                                            training_data['decoder_length'],
-                                                           plt_tru_gaps, plot_dir=plot_dir)
+                                                           plt_tru_gaps, plot_dir=plot_dir, single_threaded=True)
             best_dev_time_preds = best_dev_time_preds * (maxTime - minTime) + minTime
             dev_time_out_seq = training_data['dev_time_out_seq'] * (maxTime - minTime) + minTime
             best_dev_mae, dev_total_valid, best_dev_acc = self.eval(best_dev_time_preds, dev_time_out_seq,
@@ -698,7 +698,7 @@ class RMTPP_DECRNN:
             best_test_time_preds, best_test_event_preds = self.predict(training_data['test_event_in_seq'],
                                                              training_data['test_time_in_seq'],
                                                              training_data['decoder_length'],
-                                                             plt_tru_gaps, plot_dir=plot_dir)
+                                                             plt_tru_gaps, plot_dir=plot_dir, single_threaded=True)
             best_test_time_preds = best_test_time_preds * (maxTime - minTime) + minTime
             test_time_out_seq = training_data['test_time_out_seq'] * (maxTime - minTime) + minTime
             gaps = best_test_time_preds - training_data['test_time_in_seq'][:, -1:]
@@ -811,11 +811,11 @@ class RMTPP_DECRNN:
 
         time_pred_last = time_in_seq[:, -1]
         print(all_decoder_states.shape)
-#        if single_threaded:
-        all_time_preds = [_quad_worker((idx, (state, h_m, t_last, tru_gap))) for idx, (state, h_m, t_last, tru_gap) in enumerate(zip(all_decoder_states, cur_state, time_pred_last, plt_tru_gaps))]
-#        else:
-#            with MP.Pool() as pool:
-#                all_time_preds = pool.map(_quad_worker, enumerate(zip(all_decoder_states, cur_state, time_pred_last)))
+        if single_threaded:
+            all_time_preds = [_quad_worker((idx, (state, h_m, t_last, tru_gap))) for idx, (state, h_m, t_last, tru_gap) in enumerate(zip(all_decoder_states, cur_state, time_pred_last, plt_tru_gaps))]
+        else:
+            with MP.Pool() as pool:
+                all_time_preds = pool.map(_quad_worker, enumerate(zip(all_decoder_states, cur_state, time_pred_last, plt_tru_gaps)))
 
         all_time_preds = np.asarray(all_time_preds).T
 
