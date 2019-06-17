@@ -54,8 +54,6 @@ def_opts = Deco.Options(
     Vt=lambda hidden_layer_size: np.random.randn(hidden_layer_size, 1) * np.sqrt(1.0/hidden_layer_size),
     bt=np.log(1.0), # bt is provided by the base_rate
     bk=lambda hidden_layer_size, num_categories: np.random.randn(1, num_categories) * np.sqrt(1.0/hidden_layer_size),
-    Wg=lambda hidden_layer_size: np.random.randn(2*hidden_layer_size, 1) * np.sqrt(0.5/hidden_layer_size),
-    gamma=1.0,
 )
 
 
@@ -96,7 +94,7 @@ class RMTPP_DECRNN:
                  learning_rate, momentum, l2_penalty, embed_size,
                  float_type, bptt, decoder_length, seed, scope, save_dir, decay_steps, decay_rate,
                  device_gpu, device_cpu, summary_dir, cpu_only,
-                 Wt, Wem, Wh, bh, Ws, bs, wt, Wy, Vy, Vt, bk, bt, Wg, gamma):
+                 Wt, Wem, Wh, bh, Ws, bs, wt, Wy, Vy, Vt, bk, bt):
         self.HIDDEN_LAYER_SIZE = hidden_layer_size
         self.BATCH_SIZE = batch_size
         self.LEARNING_RATE = learning_rate
@@ -160,9 +158,6 @@ class RMTPP_DECRNN:
                     self.bs = tf.get_variable(name='bs', shape=(1, self.HIDDEN_LAYER_SIZE),
                                                   dtype=self.FLOAT_TYPE,
                                                   initializer=tf.constant_initializer(bs(self.HIDDEN_LAYER_SIZE)))
-                    self.Wg = tf.get_variable(name='Wg', shape=(2*self.HIDDEN_LAYER_SIZE, 1),
-                                                  dtype=self.FLOAT_TYPE,
-                                                  initializer=tf.constant_initializer(Wg(self.HIDDEN_LAYER_SIZE)))
 
 
                 with tf.variable_scope('output'):
@@ -188,13 +183,8 @@ class RMTPP_DECRNN:
                                               dtype=self.FLOAT_TYPE,
                                               initializer=tf.constant_initializer(bk(self.HIDDEN_LAYER_SIZE, num_categories)))
 
-                    self.gamma = tf.get_variable(name='gamma', shape=(1, 1),
-                                                 dtype=self.FLOAT_TYPE,
-                                                 initializer=tf.constant_initializer(gamma))
-
-
                 self.all_vars = [self.Wt, self.Wem, self.Wh, self.bh, self.Ws, self.bs,
-                                 self.wt, self.Wy, self.Vy, self.Vt, self.bt, self.bk, self.Wg, self.gamma]
+                                 self.wt, self.Wy, self.Vy, self.Vt, self.bt, self.bk]
 
                 # Add summaries for all (trainable) variables
                 with tf.device(device_cpu):
@@ -324,12 +314,8 @@ class RMTPP_DECRNN:
 
                     base_intensity = self.bt
                     wt_soft_plus = tf.nn.softplus(self.wt) + tf.ones_like(self.wt)
-                    gamma_soft_plus = tf.nn.softplus(self.gamma)
 
                     states_concat = tf.concat([tf.tile(tf.expand_dims(self.final_state, axis=1), [1, self.DEC_LEN, 1]), self.decoder_states], axis=2)
-                    gap_thresholds = tf.squeeze(tf.tensordot(states_concat, self.Wg, axes=[[2], [0]]), axis=-1)
-                    gap_thresholds = tf.nn.softplus(gap_thresholds)
-                    #gap_thresholds = 20*tf.ones_like(gap_thresholds)
 
                     D = tf.squeeze(tf.tensordot(self.decoder_states, self.Vt, axes=[[2],[0]]), axis=-1) + base_intensity
                     D = -tf.nn.softplus(-D)
@@ -768,7 +754,7 @@ class RMTPP_DECRNN:
 
         # TODO: This calculation is completely ignoring the clipping which
         # happens during the inference step.
-        [Vt, bt, wt, Wg]  = self.sess.run([self.Vt, self.bt, self.wt, self.Wg])
+        [Vt, bt, wt]  = self.sess.run([self.Vt, self.bt, self.wt])
         wt = softplus(wt) + np.ones_like(wt)
 
         global _quad_worker
@@ -783,8 +769,6 @@ class RMTPP_DECRNN:
                 D = D if D<0.0 else softplus(-D)
                 #D = np.where(D>1.0, D, np.ones_like(D)*1.0)
                 states_concat = np.concatenate([h_m, s_i], axis=-1)
-                gap_th = softplus(np.dot(states_concat, Wg).reshape(-1))
-                #gap_th = 20*np.ones_like(gap_th)
                 val = (np.log(wt) - D)/wt
                 val = val.reshape(-1)[0]
                 #print(val, time_pred_last)
