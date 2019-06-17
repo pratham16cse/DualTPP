@@ -7,9 +7,11 @@ from operator import itemgetter
 import numpy as np
 import os
 import json
+from itertools import product
 #import pathos.pools as pp
 
 hidden_layer_size_list = [16, 32, 64, 128]
+hparams = json.loads(open('hparams.json', 'r').read())
 
 def_opts = rmtpp_decrnn_mode.rmtpp_decrnn_mode_core.def_opts
 
@@ -64,13 +66,13 @@ def cmd(dataset_name, alg_name,
 
         #rmtpp_decrnn_mode.utils.data_stats(data) #TODO(PD) Need to support seq2seq models.
 
-        hidden_layer_size = params
+        hidden_layer_size, restart, num_epochs, save_dir = params
         rmtpp_decrnn_mode_mdl = rmtpp_decrnn_mode.rmtpp_decrnn_mode_core.RMTPP_DECRNN(
             sess=sess,
             num_categories=data['num_categories'],
             hidden_layer_size=hidden_layer_size, # A hyperparameter
             save_dir=save_dir,
-            summary_dir=summary_dir if summary_dir is not None else tempfile.mkdtemp(),
+            summary_dir=summary_dir,
             batch_size=batch_size,
             bptt=data['encoder_length'],
             decoder_length=data['decoder_length'],
@@ -89,24 +91,36 @@ def cmd(dataset_name, alg_name,
         # del rmtpp_mdl
         return result
 
-    # TODO(PD) Run hyperparameter tuning in parallel
-    #results  = pp.ProcessPool().map(hyperparameter_worker, hidden_layer_size_list)
-    results = []
-    for hidden_layer_size in hidden_layer_size_list:
-        result = hyperparameter_worker((hidden_layer_size))
-        results.append(result)
-        # print(result['best_test_mae'], result['best_test_acc'])
+    if os.path.isfile(save_dir+'/result.json'):
+        print('Model already trained, stored, restoring . . .')
+        with open(os.path.join(save_dir)+'/result.json', 'r') as fp:
+            result = json.loads(fp.read())
+        params = (result[param] for param in hparams[alg_name].keys())
+        result = hyperparameter_worker((result['hidden_layer_size'], True, 0, result['checkpoint_dir']))
+    else:
+        # TODO(PD) Run hyperparameter tuning in parallel
+        #results  = pp.ProcessPool().map(hyperparameter_worker, hidden_layer_size_list)
+        results = []
+        for params in product(*hparams[alg_name].values()):
+            result = hyperparameter_worker(params + (False, num_epochs, save_dir))
+            results.append(result)
+            # print(result['best_test_mae'], result['best_test_acc'])
 
-    best_result_idx, _ = min(enumerate([result['best_dev_mae'] for result in results]), key=itemgetter(1))
-    best_result = results[best_result_idx]
-    print('best test mae:', best_result['best_test_mae'])
-    np.savetxt(os.path.join(save_dir)+'/pred.events.out.csv', best_result['best_test_event_preds'], delimiter=',')
-    np.savetxt(os.path.join(save_dir)+'/pred.times.out.csv', best_result['best_test_time_preds'], delimiter=',')
-    np.savetxt(os.path.join(save_dir)+'/gt.events.out.csv', data['test_event_out_seq'], delimiter=',')
-    np.savetxt(os.path.join(save_dir)+'/gt.times.out.csv', data['test_time_out_seq'], delimiter=',')
+        best_result_idx, _ = min(enumerate([result['best_dev_mae'] for result in results]), key=itemgetter(1))
+        best_result = results[best_result_idx]
+        for param in hparams[alg_name].keys(): assert param in best_result.keys() # Check whether all hyperparameters are stored
+        print('best test mae:', best_result['best_test_mae'])
+        if save_dir:
+            np.savetxt(os.path.join(save_dir)+'/pred.events.out.csv', best_result['best_test_event_preds'], delimiter=',')
+            np.savetxt(os.path.join(save_dir)+'/pred.times.out.csv', best_result['best_test_time_preds'], delimiter=',')
+            np.savetxt(os.path.join(save_dir)+'/gt.events.out.csv', data['test_event_out_seq'], delimiter=',')
+            np.savetxt(os.path.join(save_dir)+'/gt.times.out.csv', data['test_time_out_seq'], delimiter=',')
 
-    with open(os.path.join(save_dir)+'/result.json', 'w') as fp:
-        json.dump(best_result, fp, indent=4)
+            del best_result['best_dev_event_preds'], best_result['best_dev_time_preds'], \
+                    best_result['best_test_event_preds'], best_result['best_test_time_preds']
+            with open(os.path.join(save_dir)+'/result.json', 'w') as fp:
+                best_result_json = json.dumps(best_result, indent=4)
+                fp.write(best_result_json)
 
 if __name__ == '__main__':
     cmd()
