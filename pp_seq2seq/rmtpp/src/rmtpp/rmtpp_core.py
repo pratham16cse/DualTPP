@@ -64,6 +64,11 @@ def quad_func(t, c, w):
     given c, w."""
     return c * t * np.exp(-w * t + (c / w) * (np.exp(-w * t) - 1))
 
+def density_func(t, c, w):
+    """This is the t * f(t) function calculating the mean time to next event,
+    given c, w."""
+    return c * np.exp(-w * t + (c / w) * (np.exp(-w * t) - 1))
+
 
 class RMTPP:
     """Class implementing the Recurrent Marked Temporal Point Process model."""
@@ -589,7 +594,7 @@ class RMTPP:
             self.restore()
             minTime, maxTime = training_data['minTime'], training_data['maxTime']
 
-            plt_time_out_seq = training_data['train_time_out_seq']
+            plt_time_out_seq = training_data['train_time_out_seq'][:, -self.DEC_LEN:]
             plt_tru_gaps = plt_time_out_seq - np.concatenate([training_data['train_time_in_seq'][:, -1:], plt_time_out_seq[:, :-1]], axis=1) 
             plot_dir = os.path.join(self.SAVE_DIR,'train')
             if not os.path.isdir(plot_dir): os.mkdir(plot_dir)
@@ -724,7 +729,7 @@ class RMTPP:
     
             global _quad_worker
             def _quad_worker(params):
-                batch_idx, (h_i, t_last) = params
+                batch_idx, (h_i, t_last, tru_gap) = params
                 preds_i = []
                 D = (np.dot(h_i, Vt) + bt).reshape(-1)
                 C = np.exp(D)
@@ -735,7 +740,7 @@ class RMTPP:
 
                 if plot_dir:
                     plt_x = np.arange(0, 4, 0.05)
-                    plt_y = quad_func(plt_x, D, wt[0, 0])
+                    plt_y = density_func(plt_x, D, wt[0, 0])
                     #mode = val
                     mean = val
                     plt.plot(plt_x, plt_y, label='Density')
@@ -749,18 +754,19 @@ class RMTPP:
                     plt.close()
     
                     #print(batch_idx, D, wt, mode, mean, density_func(mode, D, wt), density_func(mean, D, wt))
-                    print(batch_idx, D, wt, mean, quad_func(mean, D, wt))
+                    print(batch_idx, D, wt, mean, density_func(mean, D, wt))
 
     
                 return preds_i
     
             time_pred_last = time_in_seq[:, -1] if pred_idx==0 else all_time_preds[-1]
             print('cur_state_shape:', cur_state.shape)
+            print(plt_tru_gaps.shape)
             if single_threaded:
-                step_time_preds = [_quad_worker((idx, (state, t_last))) for state, t_last in enumerate(zip(cur_state, time_pred_last))]
+                step_time_preds = [_quad_worker((idx, (state, t_last, tru_gap))) for idx, (state, t_last, tru_gap) in enumerate(zip(cur_state, time_pred_last, plt_tru_gaps))]
             else:
                 with MP.Pool() as pool:
-                    step_time_preds = pool.map(_quad_worker, enumerate(zip(cur_state, time_pred_last)))
+                    step_time_preds = pool.map(_quad_worker, enumerate(zip(cur_state, time_pred_last, plt_tru_gaps)))
 
             all_time_preds.extend(step_time_preds)
 
