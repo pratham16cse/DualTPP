@@ -50,7 +50,6 @@ def_opts = Deco.Options(
     Vt=lambda hidden_layer_size: np.random.randn(hidden_layer_size, 1) * np.sqrt(1.0/hidden_layer_size),
     bt=np.log(1.0), # bt is provided by the base_rate
     bk=lambda hidden_layer_size, num_categories: np.random.randn(1, num_categories) * np.sqrt(1.0/hidden_layer_size),
-    gamma=1.0,
 )
 
 
@@ -73,7 +72,7 @@ class RMTPP_DECRNN:
                  learning_rate, momentum, l2_penalty, embed_size,
                  float_type, bptt, decoder_length, seed, scope, save_dir, decay_steps, decay_rate,
                  device_gpu, device_cpu, summary_dir, cpu_only,
-                 Wt, Wem, Wh, bh, Ws, bs, wt, Wy, Vy, Vt, bk, bt, gamma):
+                 Wt, Wem, Wh, bh, Ws, bs, wt, Wy, Vy, Vt, bk, bt):
         self.HIDDEN_LAYER_SIZE = hidden_layer_size
         self.BATCH_SIZE = batch_size
         self.LEARNING_RATE = learning_rate
@@ -161,13 +160,8 @@ class RMTPP_DECRNN:
                                               dtype=self.FLOAT_TYPE,
                                               initializer=tf.constant_initializer(bk(self.HIDDEN_LAYER_SIZE, num_categories)))
 
-                    self.gamma = tf.get_variable(name='gamma', shape=(1, 1),
-                                                 dtype=self.FLOAT_TYPE,
-                                                 initializer=tf.constant_initializer(gamma))
-
-
                 self.all_vars = [self.Wt, self.Wem, self.Wh, self.bh, self.Ws, self.bs,
-                                 self.wt, self.Wy, self.Vy, self.Vt, self.bt, self.bk, self.gamma]
+                                 self.wt, self.Wy, self.Vy, self.Vt, self.bt, self.bk]
 
                 # Add summaries for all (trainable) variables
                 with tf.device(device_cpu):
@@ -298,7 +292,6 @@ class RMTPP_DECRNN:
 
                     base_intensity = self.bt
                     wt_soft_plus = tf.nn.softplus(self.wt) + tf.ones_like(self.wt)
-                    gamma_soft_plus = tf.nn.softplus(self.gamma)
 
                     D = tf.squeeze(tf.tensordot(self.decoder_states, self.Vt, axes=[[2],[0]]), axis=-1) + base_intensity
                     D = -tf.nn.softplus(-D)
