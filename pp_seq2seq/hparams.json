@@ -14,5 +14,13 @@
     "rmtpp_decrnn_mode_cf":
     {
         "hidden_layer_size": [16, 32, 64, 128]
+    },
+    "zero_pred":
+    {
+        "hidden_layer_size": [16]
+    },
+    "average_gap_pred":
+    {
+        "hidden_layer_size": [16]
     }
 }

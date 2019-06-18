@@ -73,7 +73,6 @@ echo "python3.6 \
 	--cpu-only \
 	--epochs 50 \
 	--init-learning-rate 0.001 \
-	--summary $summary_dir \
 	>>$print_dump"
 
 python3.6 \
@@ -89,7 +88,6 @@ python3.6 \
 	--cpu-only \
 	--epochs 50 \
 	--init-learning-rate 0.001 \
-	--summary $summary_dir \
 	>>$print_dump
 
 if [ $stashed==1 ]; then
