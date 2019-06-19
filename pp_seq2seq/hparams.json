@@ -20,6 +20,12 @@
         "hidden_layer_size": [16, 32, 64, 128],
 	"wt": [10.0, 5.0, 2.0, 1.0]
     },
+    "rmtpp_decrnn_mode_whparam_regu":
+    {
+        "hidden_layer_size": [16, 32, 64, 128],
+	"wt": [10.0, 5.0, 2.0, 1.0],
+	"l2_penalty":[0.1, 0.01, 0.001, 0.0]
+    },
     "zero_pred":
     {
         "hidden_layer_size": [16]

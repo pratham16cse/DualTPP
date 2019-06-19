@@ -7,11 +7,13 @@ from operator import itemgetter
 import numpy as np
 import os
 import json
+from itertools import product
 #import pathos.pools as pp
 
 hidden_layer_size_list = [16, 32, 64, 128]
 w_list = [10.0, 5.0, 2.0, 1.0]
 l2_penalty_list = [0.001, 0.01, 0.1]
+hparams = json.loads(open('hparams.json', 'r').read())
 
 def_opts = rmtpp_decrnn_mode_whparam_regu.rmtpp_decrnn_mode_whparam_regu_core.def_opts
 
@@ -66,7 +68,7 @@ def cmd(dataset_name, alg_name,
 
         #rmtpp_decrnn_mode_whparam_regu.utils.data_stats(data) #TODO(PD) Need to support seq2seq models.
 
-        hidden_layer_size, w, l2_penalty = params
+        hidden_layer_size, w, l2_penalty, restart, num_epochs, save_dir = params
         rmtpp_decrnn_mode_whparam_regu_mdl = rmtpp_decrnn_mode_whparam_regu.rmtpp_decrnn_mode_whparam_regu_core.RMTPP_DECRNN(
             sess=sess,
             num_categories=data['num_categories'],
@@ -74,7 +76,7 @@ def cmd(dataset_name, alg_name,
             wt=w, # A hyperparameter
             l2_penalty=l2_penalty, # A hyperparameter
             save_dir=save_dir,
-            summary_dir=summary_dir if summary_dir is not None else tempfile.mkdtemp(),
+            summary_dir=summary_dir,
             batch_size=batch_size,
             bptt=data['encoder_length'],
             decoder_length=data['decoder_length'],
@@ -93,33 +95,42 @@ def cmd(dataset_name, alg_name,
         # del rmtpp_mdl
         return result
 
-    # TODO(PD) Run hyperparameter tuning in parallel
-    #results  = pp.ProcessPool().map(hyperparameter_worker, hidden_layer_size_list)
-    if dataset_name == 'data_bookorder':
-        w_list = [1.5, 1.7, 1.9, 1.0]
-    elif dataset_name == 'data_so':
-        w_list = [4.5, 4.8, 5.1, 5.3]
-    elif dataset_name == 'data_retweet':
-        w_list = [3.1, 3.3, 3.5, 3.7]
-    results = []
-    for hidden_layer_size in hidden_layer_size_list:
-        for w in w_list:
-            for l2_penalty in l2_penalty_list:
-                result = hyperparameter_worker((hidden_layer_size, w, l2_penalty))
-                results.append(result)
-        # print(result['best_test_mae'], result['best_test_acc'])
+    if os.path.isfile(save_dir+'/result.json'):
+        print('Model already trained, stored, restoring . . .')
+        with open(os.path.join(save_dir)+'/result.json', 'r') as fp:
+            result = json.loads(fp.read())
+        params = (result[param] for param in hparams[alg_name].keys())
+        result = hyperparameter_worker((result['hidden_layer_size'], result['wt'], result['l2_penalty'], True, 0, result['checkpoint_dir']))
+    else:
+        # TODO(PD) Run hyperparameter tuning in parallel
+        #results  = pp.ProcessPool().map(hyperparameter_worker, hidden_layer_size_list)
+        if dataset_name == 'data_bookorder':
+            hparams[alg_name]['wt'] = [6.87, 6.97, 7.07, 7.17]
+        elif dataset_name == 'data_so':
+            hparams[alg_name]['wt'] = [2.26, 2.36, 2.46, 2.56]
+        elif dataset_name == 'data_retweet':
+            hparams[alg_name]['wt'] = [3.1, 3.3, 3.5, 3.7]
+        results = []
+        for params in product(*hparams[alg_name].values()):
+            result = hyperparameter_worker(params + (False, num_epochs, save_dir))
+            results.append(result)
+            # print(result['best_test_mae'], result['best_test_acc'])
 
-    best_result_idx, _ = min(enumerate([result['best_dev_mae'] for result in results]), key=itemgetter(1))
-    best_result = results[best_result_idx]
-    print('best test mae:', best_result['best_test_mae'])
-    if save_dir:
-        np.savetxt(os.path.join(save_dir)+'/pred.events.out.csv', best_result['best_test_event_preds'], delimiter=',')
-        np.savetxt(os.path.join(save_dir)+'/pred.times.out.csv', best_result['best_test_time_preds'], delimiter=',')
-        np.savetxt(os.path.join(save_dir)+'/gt.events.out.csv', data['test_event_out_seq'], delimiter=',')
-        np.savetxt(os.path.join(save_dir)+'/gt.times.out.csv', data['test_time_out_seq'], delimiter=',')
+        best_result_idx, _ = min(enumerate([result['best_dev_mae'] for result in results]), key=itemgetter(1))
+        best_result = results[best_result_idx]
+        for param in hparams[alg_name].keys(): assert param in best_result.keys() # Check whether all hyperparameters are stored
+        print('best test mae:', best_result['best_test_mae'])
+        if save_dir:
+            np.savetxt(os.path.join(save_dir)+'/pred.events.out.csv', best_result['best_test_event_preds'], delimiter=',')
+            np.savetxt(os.path.join(save_dir)+'/pred.times.out.csv', best_result['best_test_time_preds'], delimiter=',')
+            np.savetxt(os.path.join(save_dir)+'/gt.events.out.csv', data['test_event_out_seq'], delimiter=',')
+            np.savetxt(os.path.join(save_dir)+'/gt.times.out.csv', data['test_time_out_seq'], delimiter=',')
 
-        with open(os.path.join(save_dir)+'/result.json', 'w') as fp:
-            json.dump(best_result, fp, indent=4)
+            del best_result['best_dev_event_preds'], best_result['best_dev_time_preds'], \
+                    best_result['best_test_event_preds'], best_result['best_test_time_preds']
+            with open(os.path.join(save_dir)+'/result.json', 'w') as fp:
+                best_result_json = json.dumps(best_result, indent=4)
+                fp.write(best_result_json)
 
 if __name__ == '__main__':
     cmd()

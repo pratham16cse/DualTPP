@@ -6,6 +6,9 @@ from .utils import create_dir, variable_summaries, MAE, RMSE, ACC, PERCENT_ERROR
 from scipy.integrate import quad
 from scipy.optimize import minimize
 import multiprocessing as MP
+import matplotlib
+matplotlib.use('agg')
+import matplotlib.pyplot as plt
 
 ETH = 10.0
 __EMBED_SIZE = 4
@@ -19,7 +22,7 @@ def_opts = Deco.Options(
     decay_steps=100,
     decay_rate=0.001,
 
-    l2_penalty=1.0,
+    l2_penalty=0.001,
 
     float_type=tf.float32,
 
@@ -51,8 +54,6 @@ def_opts = Deco.Options(
     Vt=lambda hidden_layer_size: np.random.randn(hidden_layer_size, 1) * np.sqrt(1.0/hidden_layer_size),
     bt=np.log(1.0), # bt is provided by the base_rate
     bk=lambda hidden_layer_size, num_categories: np.random.randn(1, num_categories) * np.sqrt(1.0/hidden_layer_size),
-    Wg=lambda hidden_layer_size: np.random.randn(2*hidden_layer_size, 1) * np.sqrt(0.5/hidden_layer_size),
-    gamma=1.0,
 )
 
 
@@ -63,29 +64,29 @@ def softplus(x):
 def sigmoid(x):
     return 1/(1+np.exp(-x))
 
-
-def minimize_func(g, D, wt, gap_th):
+def density_func(g, D, wt):
     """This function calculates the mode of the function f(t),
     given c, w."""
-    log_lambda_greater_ = (D + -wt*(g - gap_th))
-    lambda_greater_ = np.exp(log_lambda_greater_)
-    log_f_star_greater = (log_lambda_greater_ 
-                          + (2/-wt) * np.exp(D)
-                          - (1/-wt) * np.exp(D+ -wt*gap_th)
-                          - (1/-wt) * lambda_greater_)
-
-    log_lambda_less_ = (D + -wt*(gap_th - g))
-    lambda_less_ = np.exp(log_lambda_less_)
-    log_f_star_less = (log_lambda_less_
-                       - (1/-wt) * np.exp(D+ -wt*gap_th)
-                       + (1/-wt) * lambda_less_)
-
-    log_f_star = (g > gap_th)*log_f_star_greater + (g <= gap_th)*log_f_star_less
-    #print(log_f_star.shape)
+    log_lambda_ = (D + wt*g)
+    lambda_ = np.exp(log_lambda_)
+    log_f_star = (log_lambda_ 
+                  + (1/wt) * np.exp(D)
+                  - (1/wt) * lambda_)
 
     f_star = np.exp(log_f_star)
 
-    return -1 * f_star
+    return f_star
+
+def quad_func(g, D, wt):
+    log_lambda_ = (D + wt*g)
+    lambda_ = np.exp(log_lambda_)
+    log_f_star = (log_lambda_ 
+                  + (1/wt) * np.exp(D)
+                  - (1/wt) * lambda_)
+
+    f_star = np.exp(log_f_star)
+
+    return g * f_star
 
 
 class RMTPP_DECRNN:
@@ -96,7 +97,7 @@ class RMTPP_DECRNN:
                  learning_rate, momentum, l2_penalty, embed_size,
                  float_type, bptt, decoder_length, seed, scope, save_dir, decay_steps, decay_rate,
                  device_gpu, device_cpu, summary_dir, cpu_only,
-                 Wt, Wem, Wh, bh, Ws, bs, wt, Wy, Vy, Vt, bk, bt, Wg, gamma):
+                 Wt, Wem, Wh, bh, Ws, bs, wt, Wy, Vy, Vt, bk, bt):
         self.HIDDEN_LAYER_SIZE = hidden_layer_size
         self.wt = wt
         self.BATCH_SIZE = batch_size
@@ -161,9 +162,6 @@ class RMTPP_DECRNN:
                     self.bs = tf.get_variable(name='bs', shape=(1, self.HIDDEN_LAYER_SIZE),
                                                   dtype=self.FLOAT_TYPE,
                                                   initializer=tf.constant_initializer(bs(self.HIDDEN_LAYER_SIZE)))
-                    self.Wg = tf.get_variable(name='Wg', shape=(2*self.HIDDEN_LAYER_SIZE, 1),
-                                                  dtype=self.FLOAT_TYPE,
-                                                  initializer=tf.constant_initializer(Wg(self.HIDDEN_LAYER_SIZE)))
 
 
                 with tf.variable_scope('output'):
@@ -185,13 +183,8 @@ class RMTPP_DECRNN:
                                               dtype=self.FLOAT_TYPE,
                                               initializer=tf.constant_initializer(bk(self.HIDDEN_LAYER_SIZE, num_categories)))
 
-                    self.gamma = tf.get_variable(name='gamma', shape=(1, 1),
-                                                 dtype=self.FLOAT_TYPE,
-                                                 initializer=tf.constant_initializer(gamma))
-
-
                 self.all_vars = [self.Wt, self.Wem, self.Wh, self.bh, self.Ws, self.bs,
-                                 self.Wy, self.Vy, self.Vt, self.bt, self.bk, self.Wg, self.gamma]
+                                 self.Wy, self.Vy, self.Vt, self.bt, self.bk]
 
                 # Add summaries for all (trainable) variables
                 with tf.device(device_cpu):
@@ -320,12 +313,6 @@ class RMTPP_DECRNN:
                     times_prev = tf.cumsum(tf.concat([self.times_in[:, -1:], gaps[:, :-1]], axis=1), axis=1)
 
                     base_intensity = self.bt
-                    gamma_soft_plus = tf.nn.softplus(self.gamma)
-
-                    states_concat = tf.concat([tf.tile(tf.expand_dims(self.final_state, axis=1), [1, self.DEC_LEN, 1]), self.decoder_states], axis=2)
-                    gap_thresholds = tf.squeeze(tf.tensordot(states_concat, self.Wg, axes=[[2], [0]]), axis=-1)
-                    gap_thresholds = tf.nn.softplus(gap_thresholds)
-                    #gap_thresholds = 20*tf.ones_like(gap_thresholds)
 
                     D = tf.squeeze(tf.tensordot(self.decoder_states, self.Vt, axes=[[2],[0]]), axis=-1) + base_intensity
                     D = -tf.nn.softplus(-D)
@@ -605,6 +592,7 @@ class RMTPP_DECRNN:
 
 
             if with_evals:
+                print('w:', self.wt)
                 if isinstance(with_evals, int):
                     batch_size = with_evals
                 else:
@@ -613,9 +601,12 @@ class RMTPP_DECRNN:
                 minTime, maxTime = training_data['minTime'], training_data['maxTime']
                 print('Running evaluation on dev data: ...')
 
+                plt_time_out_seq = training_data['dev_time_out_seq']
+                plt_tru_gaps = plt_time_out_seq - np.concatenate([training_data['dev_time_in_seq'][:, -1:], plt_time_out_seq[:, :-1]], axis=1)
                 dev_time_preds, dev_event_preds = self.predict(training_data['dev_event_in_seq'],
                                                                training_data['dev_time_in_seq'],
-                                                               training_data['decoder_length'])
+                                                               training_data['decoder_length'],
+                                                               plt_tru_gaps)
                 dev_time_preds = dev_time_preds * (maxTime - minTime) + minTime
                 dev_time_out_seq = training_data['dev_time_out_seq'] * (maxTime - minTime) + minTime
                 dev_mae, dev_total_valid, dev_acc = self.eval(dev_time_preds, dev_time_out_seq,
@@ -624,9 +615,12 @@ class RMTPP_DECRNN:
                 print('DEV: MAE = {:.5f}; valid = {}, ACC = {:.5f}'.format(
                     dev_mae, dev_total_valid, dev_acc))
 
+                plt_time_out_seq = training_data['test_time_out_seq']
+                plt_tru_gaps = plt_time_out_seq - np.concatenate([training_data['test_time_in_seq'][:, -1:], plt_time_out_seq[:, :-1]], axis=1)
                 test_time_preds, test_event_preds = self.predict(training_data['test_event_in_seq'],
                                                                  training_data['test_time_in_seq'],
-                                                                 training_data['decoder_length'])
+                                                                 training_data['decoder_length'],
+                                                                 plt_tru_gaps)
                 test_time_preds = test_time_preds * (maxTime - minTime) + minTime
                 test_time_out_seq = training_data['test_time_out_seq'] * (maxTime - minTime) + minTime
                 gaps = test_time_preds - training_data['test_time_in_seq'][:, -1:]
@@ -646,18 +640,78 @@ class RMTPP_DECRNN:
                     best_dev_acc, best_test_acc = dev_acc, test_acc
                     best_dev_event_preds, best_dev_time_preds  = dev_event_preds, dev_time_preds
                     best_test_event_preds, best_test_time_preds  = test_event_preds, test_time_preds
+                    best_w = self.wt
+                    best_l2penalty = self.L2_PENALTY
 
-        print('Best Epoch:{}, Best Dev MAE:{:.5f}, Best Test MAE:{:.5f}'.format(
-            best_epoch, best_dev_mae, best_test_mae))
-
-
-
-        checkpoint_path = os.path.join(self.SAVE_DIR, 'model.ckpt')
-        saver.save(self.sess, checkpoint_path, global_step=self.global_step)
-        print('Model saved at {}'.format(checkpoint_path))
+                    checkpoint_dir = os.path.join(self.SAVE_DIR, 'hls_'+str(self.HIDDEN_LAYER_SIZE)+'_wt_'+str(self.wt)+'_l2penalty_'+str(self.L2_PENALTY))
+                    checkpoint_path = os.path.join(checkpoint_dir, 'model.ckpt')
+                    saver.save(self.sess, checkpoint_path)# , global_step=step)
+                    print('Model saved at {}'.format(checkpoint_path))
 
         # Remember how many epochs we have trained.
         self.last_epoch += num_epochs
+
+        if ckpt and num_epochs==0:
+            self.restore()
+            minTime, maxTime = training_data['minTime'], training_data['maxTime']
+
+            plt_time_out_seq = training_data['train_time_out_seq']
+            plt_tru_gaps = plt_time_out_seq - np.concatenate([training_data['train_time_in_seq'][:, -1:], plt_time_out_seq[:, :-1]], axis=1) 
+            plot_dir = os.path.join(self.SAVE_DIR,'train')
+            if not os.path.isdir(plot_dir): os.mkdir(plot_dir)
+            best_train_time_preds, best_train_event_preds = self.predict(training_data['train_event_in_seq'],
+                                                           training_data['train_time_in_seq'],
+                                                           training_data['decoder_length'],
+                                                           plt_tru_gaps, plot_dir=plot_dir, single_threaded=True)
+            best_train_time_preds = best_train_time_preds * (maxTime - minTime) + minTime
+            train_time_out_seq = training_data['train_time_out_seq'] * (maxTime - minTime) + minTime
+            best_train_mae, train_total_valid, best_train_acc = self.eval(best_train_time_preds, train_time_out_seq,
+                                                          best_train_event_preds, training_data['train_event_out_seq'])
+            print('TRAIN: MAE = {:.5f}; valid = {}, ACC = {:.5f}'.format(
+                best_train_mae, train_total_valid, best_train_acc))
+
+            plt_time_out_seq = training_data['dev_time_out_seq']
+            plt_tru_gaps = plt_time_out_seq - np.concatenate([training_data['dev_time_in_seq'][:, -1:], plt_time_out_seq[:, :-1]], axis=1) 
+            plot_dir = os.path.join(self.SAVE_DIR,'dev')
+            if not os.path.isdir(plot_dir): os.mkdir(plot_dir)
+            best_dev_time_preds, best_dev_event_preds = self.predict(training_data['dev_event_in_seq'],
+                                                           training_data['dev_time_in_seq'],
+                                                           training_data['decoder_length'],
+                                                           plt_tru_gaps, plot_dir=plot_dir, single_threaded=True)
+            best_dev_time_preds = best_dev_time_preds * (maxTime - minTime) + minTime
+            dev_time_out_seq = training_data['dev_time_out_seq'] * (maxTime - minTime) + minTime
+            best_dev_mae, dev_total_valid, best_dev_acc = self.eval(best_dev_time_preds, dev_time_out_seq,
+                                                          best_dev_event_preds, training_data['dev_event_out_seq'])
+            print('DEV: MAE = {:.5f}; valid = {}, ACC = {:.5f}'.format(
+                best_dev_mae, dev_total_valid, best_dev_acc))
+    
+            plt_time_out_seq = training_data['test_time_out_seq']
+            plt_tru_gaps = plt_time_out_seq - np.concatenate([training_data['test_time_in_seq'][:, -1:], plt_time_out_seq[:, :-1]], axis=1)
+            plot_dir = os.path.join(self.SAVE_DIR,'test')
+            if not os.path.isdir(plot_dir): os.mkdir(plot_dir)
+            best_test_time_preds, best_test_event_preds = self.predict(training_data['test_event_in_seq'],
+                                                             training_data['test_time_in_seq'],
+                                                             training_data['decoder_length'],
+                                                             plt_tru_gaps, plot_dir=plot_dir, single_threaded=True)
+            best_test_time_preds = best_test_time_preds * (maxTime - minTime) + minTime
+            test_time_out_seq = training_data['test_time_out_seq'] * (maxTime - minTime) + minTime
+            gaps = best_test_time_preds - training_data['test_time_in_seq'][:, -1:]
+            print('Predicted gaps')
+            print(gaps)
+            print(test_time_out_seq)
+            print(best_test_time_preds)
+            best_test_mae, test_total_valid, best_test_acc = self.eval(best_test_time_preds, test_time_out_seq,
+                                                             best_test_event_preds, training_data['test_event_out_seq'])
+            print('TEST: MAE = {:.5f}; valid = {}, ACC = {:.5f}'.format(
+                best_test_mae, test_total_valid, best_test_acc))
+    
+            print('Best Epoch:{}, Best Dev MAE:{:.5f}, Best Test MAE:{:.5f}'.format(
+                best_epoch, best_dev_mae, best_test_mae))
+    
+            best_w = self.wt
+            best_l2penalty = self.L2_PENALTY
+
+            return None
 
         return {
                 'best_epoch': best_epoch,
@@ -669,6 +723,10 @@ class RMTPP_DECRNN:
                 'best_dev_time_preds': best_dev_time_preds.tolist(),
                 'best_test_event_preds': best_test_event_preds.tolist(),
                 'best_test_time_preds': best_test_time_preds.tolist(),
+                'wt': best_w,
+                'l2_penalty': self.L2_PENALTY,
+                'hidden_layer_size': self.HIDDEN_LAYER_SIZE,
+                'checkpoint_dir': checkpoint_dir,
                }
 
 
@@ -679,7 +737,7 @@ class RMTPP_DECRNN:
         print('Loading the model from {}'.format(ckpt.model_checkpoint_path))
         saver.restore(self.sess, ckpt.model_checkpoint_path)
 
-    def predict(self, event_in_seq, time_in_seq, decoder_length, single_threaded=False):
+    def predict(self, event_in_seq, time_in_seq, decoder_length, plt_tru_gaps, single_threaded=False, plot_dir=False):
         """Treats the entire dataset as a single batch and processes it."""
 
         cur_state = np.zeros((len(event_in_seq), self.HIDDEN_LAYER_SIZE))
@@ -706,42 +764,51 @@ class RMTPP_DECRNN:
 
         # TODO: This calculation is completely ignoring the clipping which
         # happens during the inference step.
-        [Vt, bt, Wg]  = self.sess.run([self.Vt, self.bt, self.Wg])
+        [Vt, bt]  = self.sess.run([self.Vt, self.bt])
+        wt = self.wt
 
         global _quad_worker
         def _quad_worker(params):
-            batch_idx, (all_decoder_states, h_m, time_pred_last) = params
+            batch_idx, (all_decoder_states, time_pred_last, tru_gap) = params
             preds_i = []
             #print(np.matmul(all_decoder_states, Vt) + bt)
             for pred_idx, s_i in enumerate(all_decoder_states):
                 t_last = time_pred_last if pred_idx==0 else preds_i[-1]
-                states_concat = np.concatenate([h_m, s_i], axis=-1)
-                gap_th_before = np.dot(states_concat, Wg).reshape(-1)
-                gap_th = np.dot(states_concat, Wg).reshape(-1)
-                gap_th = softplus(gap_th) if gap_th<0 else gap_th - np.log(sigmoid(gap_th))
                 D = (np.dot(s_i, Vt) + bt).reshape(-1)
                 D = D[0]
-                D_before = (np.dot(s_i, Vt) + bt).reshape(-1)
                 D = D if D<0.0 else softplus(-D)
-                #D = softplus(D) if D<0.0 else D - np.log(sigmoid(D))
-                #D = -D
-                #print('D_before:', D_before, 'D_after:', D, 'gap_before:', gap_th_before, 'gap_after:', gap_th, 'wt:', self.wt)
                 #D = np.where(D>1.0, D, np.ones_like(D)*1.0)
-                #gap_th = 20*np.ones_like(gap_th)
-                val = (np.log(self.wt) - D)/self.wt
+                val = (np.log(wt) - D)/wt
                 val = val.reshape(-1)[0]
                 #print(val, time_pred_last)
                 preds_i.append(t_last + val)
+
+                if plot_dir:
+                    plt_x = np.arange(0, 4, 0.05)
+                    plt_y = density_func(plt_x, D, wt)
+                    mode = val
+                    mean, _ = quad(quad_func, 0, np.inf, args=(D, wt))
+                    plt.plot(plt_x, plt_y, label='Density')
+                    plt.plot(mode, 0.0, 'r*', label='mode')
+                    plt.plot(mean, 0.0, 'go', label='mean')
+                    plt.plot(tru_gap, 0.0, 'b^', label='True gap')
+                    plt.xlabel('Gap')
+                    plt.ylabel('Density')
+                    plt.legend(loc='best')
+                    plt.savefig(os.path.join(plot_dir,'instance_'+str(batch_idx)+'.png'))
+                    plt.close()
+    
+                    print(batch_idx, D, wt, mode, mean, density_func(mode, D, wt), density_func(mean, D, wt))
 
             return preds_i
 
         time_pred_last = time_in_seq[:, -1]
         print(all_decoder_states.shape)
         if single_threaded:
-            all_time_preds = [_quad_worker((idx, (state, h_m, t_last))) for idx, (state, h_m, t_last) in enumerate(zip(all_decoder_states, cur_state, time_pred_last))]
+            all_time_preds = [_quad_worker((idx, (state, t_last, tru_gap))) for idx, (state, t_last, tru_gap) in enumerate(zip(all_decoder_states, time_pred_last, plt_tru_gaps))]
         else:
             with MP.Pool() as pool:
-                all_time_preds = pool.map(_quad_worker, enumerate(zip(all_decoder_states, cur_state, time_pred_last)))
+                all_time_preds = pool.map(_quad_worker, enumerate(zip(all_decoder_states, time_pred_last, plt_tru_gaps)))
 
         all_time_preds = np.asarray(all_time_preds).T
 
