@@ -315,8 +315,6 @@ class RMTPP_DECRNN:
                     base_intensity = self.bt
                     wt_soft_plus = tf.nn.softplus(self.wt) + tf.ones_like(self.wt)
 
-                    states_concat = tf.concat([tf.tile(tf.expand_dims(self.final_state, axis=1), [1, self.DEC_LEN, 1]), self.decoder_states], axis=2)
-
                     D = tf.squeeze(tf.tensordot(self.decoder_states, self.Vt, axes=[[2],[0]]), axis=-1) + base_intensity
                     D = -tf.nn.softplus(-D)
                     log_lambda_ = (D + gaps * wt_soft_plus)
@@ -759,7 +757,7 @@ class RMTPP_DECRNN:
 
         global _quad_worker
         def _quad_worker(params):
-            batch_idx, (all_decoder_states, h_m, time_pred_last, tru_gap) = params
+            batch_idx, (all_decoder_states, time_pred_last, tru_gap) = params
             preds_i = []
             #print(np.matmul(all_decoder_states, Vt) + bt)
             for pred_idx, s_i in enumerate(all_decoder_states):
@@ -768,7 +766,6 @@ class RMTPP_DECRNN:
                 D = D[0]
                 D = D if D<0.0 else softplus(-D)
                 #D = np.where(D>1.0, D, np.ones_like(D)*1.0)
-                states_concat = np.concatenate([h_m, s_i], axis=-1)
                 val = (np.log(wt) - D)/wt
                 val = val.reshape(-1)[0]
                 #print(val, time_pred_last)
@@ -796,10 +793,10 @@ class RMTPP_DECRNN:
         time_pred_last = time_in_seq[:, -1]
         print(all_decoder_states.shape)
         if single_threaded:
-            all_time_preds = [_quad_worker((idx, (state, h_m, t_last, tru_gap))) for idx, (state, h_m, t_last, tru_gap) in enumerate(zip(all_decoder_states, cur_state, time_pred_last, plt_tru_gaps))]
+            all_time_preds = [_quad_worker((idx, (state, t_last, tru_gap))) for idx, (state, t_last, tru_gap) in enumerate(zip(all_decoder_states, time_pred_last, plt_tru_gaps))]
         else:
             with MP.Pool() as pool:
-                all_time_preds = pool.map(_quad_worker, enumerate(zip(all_decoder_states, cur_state, time_pred_last, plt_tru_gaps)))
+                all_time_preds = pool.map(_quad_worker, enumerate(zip(all_decoder_states, time_pred_last, plt_tru_gaps)))
 
         all_time_preds = np.asarray(all_time_preds).T
 
