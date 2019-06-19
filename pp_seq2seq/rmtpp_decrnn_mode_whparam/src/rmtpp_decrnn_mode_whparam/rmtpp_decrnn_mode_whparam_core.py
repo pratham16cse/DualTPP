@@ -628,7 +628,7 @@ class RMTPP_DECRNN:
                     best_test_event_preds, best_test_time_preds  = test_event_preds, test_time_preds
                     best_w = self.wt
 
-                    checkpoint_dir = os.path.join(self.SAVE_DIR, 'hls_'+str(self.HIDDEN_LAYER_SIZE))
+                    checkpoint_dir = os.path.join(self.SAVE_DIR, 'hls_'+str(self.HIDDEN_LAYER_SIZE)+'_wt_'+str(self.wt))
                     checkpoint_path = os.path.join(checkpoint_dir, 'model.ckpt')
                     saver.save(self.sess, checkpoint_path)# , global_step=step)
                     print('Model saved at {}'.format(checkpoint_path))
