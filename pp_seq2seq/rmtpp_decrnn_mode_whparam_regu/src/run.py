@@ -131,6 +131,10 @@ def cmd(dataset_name, alg_name,
             with open(os.path.join(save_dir)+'/result.json', 'w') as fp:
                 best_result_json = json.dumps(best_result, indent=4)
                 fp.write(best_result_json)
+            with open(os.path.join(save_dir)+'/all_results.json', 'w') as fp:
+                all_results_json = json.dumps(results, indent=4)
+                fp.write(all_results_json)
+
 
 if __name__ == '__main__':
     cmd()

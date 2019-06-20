@@ -11,6 +11,7 @@ import json
 
 hidden_layer_size_list = [16, 32, 64, 128]
 w_list = [10.0, 5.0, 2.0, 1.0]
+l2_penalty_list = [0.001, 0.01, 0.1, 1.0, 10.0]
 
 def_opts = rmtpp_decrnn_mode_whparam_gapthregu.rmtpp_decrnn_mode_whparam_gapthregu_core.def_opts
 
