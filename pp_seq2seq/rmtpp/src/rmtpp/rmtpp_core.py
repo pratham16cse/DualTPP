@@ -45,6 +45,8 @@ def_opts = Deco.Options(
     Wt=lambda hidden_layer_size: np.random.randn(1, hidden_layer_size),
     Wh=lambda hidden_layer_size: np.random.randn(hidden_layer_size) * np.sqrt(1.0/hidden_layer_size),
     bh=lambda hidden_layer_size: np.random.randn(1, hidden_layer_size) * np.sqrt(1.0/hidden_layer_size),
+    Ws=lambda hidden_layer_size: np.random.randn(hidden_layer_size) * np.sqrt(1.0/hidden_layer_size),
+    bs=lambda hidden_layer_size: np.random.randn(1, hidden_layer_size) * np.sqrt(1.0/hidden_layer_size),
     wt=3.0,
     Wy=lambda hidden_layer_size: np.random.randn(__EMBED_SIZE, hidden_layer_size) * np.sqrt(1.0/__EMBED_SIZE),
     Vy=lambda hidden_layer_size, num_categories: np.random.randn(hidden_layer_size, num_categories) * np.sqrt(1.0/hidden_layer_size),
@@ -78,7 +80,7 @@ class RMTPP:
                  learning_rate, momentum, l2_penalty, embed_size,
                  float_type, bptt, decoder_length, seed, scope, save_dir, decay_steps, decay_rate,
                  device_gpu, device_cpu, summary_dir, cpu_only,
-                 Wt, Wem, Wh, bh, wt, Wy, Vy, Vt, bk, bt):
+                 Wt, Wem, Wh, bh, Ws, bs, wt, Wy, Vy, Vt, bk, bt):
         self.HIDDEN_LAYER_SIZE = hidden_layer_size
         self.BATCH_SIZE = batch_size
         self.LEARNING_RATE = learning_rate
@@ -135,6 +137,15 @@ class RMTPP:
                                               dtype=self.FLOAT_TYPE,
                                               initializer=tf.constant_initializer(bh(self.HIDDEN_LAYER_SIZE)))
 
+                with tf.variable_scope('decoder_state'):
+                    self.Ws = tf.get_variable(name='Ws', shape=(self.HIDDEN_LAYER_SIZE, self.HIDDEN_LAYER_SIZE),
+                                                  dtype=self.FLOAT_TYPE,
+                                                  initializer=tf.constant_initializer(Ws(self.HIDDEN_LAYER_SIZE)))
+                    self.bs = tf.get_variable(name='bs', shape=(1, self.HIDDEN_LAYER_SIZE),
+                                                  dtype=self.FLOAT_TYPE,
+                                                  initializer=tf.constant_initializer(bs(self.HIDDEN_LAYER_SIZE)))
+
+
                 with tf.variable_scope('output'):
                     self.wt = tf.get_variable(name='wt', shape=(1, 1),
                                               dtype=self.FLOAT_TYPE,
@@ -158,7 +169,7 @@ class RMTPP:
                                               dtype=self.FLOAT_TYPE,
                                               initializer=tf.constant_initializer(bk(self.HIDDEN_LAYER_SIZE, num_categories)))
 
-                self.all_vars = [self.Wt, self.Wem, self.Wh, self.bh,
+                self.all_vars = [self.Wt, self.Wem, self.Wh, self.bh, self.Ws, self.bs,
                                  self.wt, self.Wy, self.Vy, self.Vt, self.bt, self.bk]
 
                 # Add summaries for all (trainable) variables
