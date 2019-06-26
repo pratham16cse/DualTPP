@@ -4,7 +4,6 @@ import os
 import decorated_options as Deco
 from .utils import create_dir, variable_summaries, MAE, RMSE, ACC, PERCENT_ERROR
 from scipy.integrate import quad
-from scipy.optimize import minimize
 import multiprocessing as MP
 import matplotlib
 matplotlib.use('agg')
@@ -61,29 +60,16 @@ def softplus(x):
     """Numpy counterpart to tf.nn.softplus"""
     return np.log1p(np.exp(x))
 
-def density_func(g, D, wt):
-    """This function calculates the mode of the function f(t),
+
+def quad_func(t, c, w):
+    """This is the t * f(t) function calculating the mean time to next event,
     given c, w."""
-    log_lambda_ = (D + wt*g)
-    lambda_ = np.exp(log_lambda_)
-    log_f_star = (log_lambda_ 
-                  + (1/wt) * np.exp(D)
-                  - (1/wt) * lambda_)
+    return c * t * np.exp(w * t - (c / w) * (np.exp(w * t) - 1))
 
-    f_star = np.exp(log_f_star)
-
-    return f_star
-
-def quad_func(g, D, wt):
-    log_lambda_ = (D + wt*g)
-    lambda_ = np.exp(log_lambda_)
-    log_f_star = (log_lambda_ 
-                  + (1/wt) * np.exp(D)
-                  - (1/wt) * lambda_)
-
-    f_star = np.exp(log_f_star)
-
-    return g * f_star
+def density_func(t, c, w):
+    """This is the t * f(t) function calculating the mean time to next event,
+    given c, w."""
+    return c * np.exp(w * t - (c / w) * (np.exp(w * t) - 1))
 
 
 class RMTPP_DECRNN:
@@ -313,10 +299,9 @@ class RMTPP_DECRNN:
                     times_prev = tf.cumsum(tf.concat([self.times_in[:, -1:], gaps[:, :-1]], axis=1), axis=1)
 
                     base_intensity = self.bt
-                    wt_soft_plus = tf.nn.softplus(self.wt) + tf.ones_like(self.wt)
+                    wt_soft_plus = tf.nn.softplus(self.wt)
 
                     D = tf.squeeze(tf.tensordot(self.decoder_states, self.Vt, axes=[[2],[0]]), axis=-1) + base_intensity
-                    D = -tf.nn.softplus(-D)
                     log_lambda_ = (D + gaps * wt_soft_plus)
                     lambda_ = tf.exp(tf.minimum(ETH, log_lambda_), name='lambda_')
                     log_f_star = (log_lambda_
@@ -387,7 +372,7 @@ class RMTPP_DECRNN:
                 # update = optimizer.minimize(loss)
 
                 # Performing manual gradient clipping.
-                self.gvs = self.optimizer.compute_gradients(self.loss, var_list=self.all_vars)
+                self.gvs = self.optimizer.compute_gradients(self.loss)
                 # update = optimizer.apply_gradients(gvs)
 
                 # capped_gvs = [(tf.clip_by_norm(grad, 100.0), var) for grad, var in gvs]
@@ -753,7 +738,7 @@ class RMTPP_DECRNN:
         # TODO: This calculation is completely ignoring the clipping which
         # happens during the inference step.
         [Vt, bt, wt]  = self.sess.run([self.Vt, self.bt, self.wt])
-        wt = softplus(wt) + np.ones_like(wt)
+        wt = softplus(wt)
 
         global _quad_worker
         def _quad_worker(params):
@@ -764,9 +749,9 @@ class RMTPP_DECRNN:
                 t_last = time_pred_last if pred_idx==0 else preds_i[-1]
                 D = (np.dot(s_i, Vt) + bt).reshape(-1)
                 D = D[0]
-                D = D if D<0.0 else softplus(-D)
                 #D = np.where(D>1.0, D, np.ones_like(D)*1.0)
                 val = (np.log(wt) - D)/wt
+                val = 0.0 if val < 0.0 else val
                 val = val.reshape(-1)[0]
                 #print(val, time_pred_last)
                 preds_i.append(t_last + val)

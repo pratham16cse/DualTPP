@@ -64,12 +64,12 @@ def softplus(x):
 def quad_func(t, c, w):
     """This is the t * f(t) function calculating the mean time to next event,
     given c, w."""
-    return c * t * np.exp(-w * t + (c / w) * (np.exp(-w * t) - 1))
+    return c * t * np.exp(w * t - (c / w) * (np.exp(w * t) - 1))
 
 def density_func(t, c, w):
     """This is the t * f(t) function calculating the mean time to next event,
     given c, w."""
-    return c * np.exp(-w * t + (c / w) * (np.exp(-w * t) - 1))
+    return c * np.exp(w * t - (c / w) * (np.exp(w * t) - 1))
 
 
 class RMTPP_DECRNN:
@@ -302,11 +302,11 @@ class RMTPP_DECRNN:
                     wt_soft_plus = tf.nn.softplus(self.wt)
 
                     D = tf.squeeze(tf.tensordot(self.decoder_states, self.Vt, axes=[[2],[0]]), axis=-1) + base_intensity
-                    log_lambda_ = (D + (-gaps * wt_soft_plus))
+                    log_lambda_ = (D + gaps * wt_soft_plus)
                     lambda_ = tf.exp(tf.minimum(ETH, log_lambda_), name='lambda_')
                     log_f_star = (log_lambda_
-                                  - (1.0 / wt_soft_plus) * tf.exp(tf.minimum(ETH, D))
-                                  + (1.0 / wt_soft_plus) * lambda_)
+                                  + (1.0 / wt_soft_plus) * tf.exp(tf.minimum(ETH, D))
+                                  - (1.0 / wt_soft_plus) * lambda_)
 
 
                 with tf.name_scope('loss_calc'):

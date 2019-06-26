@@ -64,12 +64,12 @@ def softplus(x):
 def quad_func(t, c, w):
     """This is the t * f(t) function calculating the mean time to next event,
     given c, w."""
-    return c * t * np.exp(-w * t + (c / w) * (np.exp(-w * t) - 1))
+    return c * t * np.exp(w * t - (c / w) * (np.exp(w * t) - 1))
 
 def density_func(t, c, w):
     """This is the t * f(t) function calculating the mean time to next event,
     given c, w."""
-    return c * np.exp(-w * t + (c / w) * (np.exp(-w * t) - 1))
+    return c * np.exp(w * t - (c / w) * (np.exp(w * t) - 1))
 
 
 class RMTPP:
@@ -239,13 +239,13 @@ class RMTPP:
                             wt_soft_plus = tf.nn.softplus(self.wt)
                             D = tf.matmul(state, self.Vt) + base_intensity
 
-                            log_lambda_ = (D + (-delta_t_next * wt_soft_plus))
+                            log_lambda_ = (D + (delta_t_next * wt_soft_plus))
 
                             lambda_ = tf.exp(tf.minimum(ETH, log_lambda_), name='lambda_')
 
                             log_f_star = (log_lambda_
-                                          - (1.0 / wt_soft_plus) * tf.exp(tf.minimum(ETH, D))
-                                          + (1.0 / wt_soft_plus) * lambda_)
+                                          + (1.0 / wt_soft_plus) * tf.exp(tf.minimum(ETH, D))
+                                          - (1.0 / wt_soft_plus) * lambda_)
 
                             events_pred = tf.nn.softmax(
                                 tf.minimum(ETH,
