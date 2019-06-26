@@ -595,9 +595,6 @@ class RMTPP:
                     saver.save(self.sess, checkpoint_path)# , global_step=step)
                     print('Model saved at {}'.format(checkpoint_path))
 
-        print('Best Epoch:{}, Best Dev MAE:{:.5f}, Best Test MAE:{:.5f}'.format(
-            best_epoch, best_dev_mae, best_test_mae))
-
         # Remember how many epochs we have trained.
         self.last_epoch += num_epochs
 
@@ -786,7 +783,6 @@ class RMTPP:
         print('all_time_preds shape:', all_time_preds.shape)
 
         return np.asarray(all_time_preds).T, np.asarray(all_event_preds).swapaxes(0, 1)
-
 
     def eval(self, time_preds, time_true, event_preds, event_true):
         """Prints evaluation of the model on the given dataset."""

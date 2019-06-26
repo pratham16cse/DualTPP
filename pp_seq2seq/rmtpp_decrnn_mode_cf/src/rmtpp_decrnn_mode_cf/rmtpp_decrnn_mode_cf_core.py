@@ -751,7 +751,7 @@ class RMTPP_DECRNN:
                 D = D[0]
                 #D = np.where(D>1.0, D, np.ones_like(D)*1.0)
                 val = (np.log(wt) - D)/wt
-                val = 0.0 if val < 0.0 else val
+                val = np.where(val<0.0, 0.0, val)
                 val = val.reshape(-1)[0]
                 #print(val, time_pred_last)
                 preds_i.append(t_last + val)
