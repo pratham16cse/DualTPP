@@ -740,19 +740,17 @@ class RMTPP:
                 batch_idx, (h_i, t_last, tru_gap) = params
                 preds_i = []
                 D = (np.dot(h_i, Vt) + bt).reshape(-1)
-                C = np.exp(D)
+                c_ = np.exp(D)
     
-                args = (C, wt)
+                args = (c_, wt)
                 val, _err = quad(quad_func, 0, np.inf, args=args)
                 preds_i.append(t_last + val)
 
                 if plot_dir:
                     plt_x = np.arange(0, 4, 0.05)
-                    plt_y = density_func(plt_x, D, wt[0, 0])
-                    #mode = val
+                    plt_y = density_func(plt_x, c_, wt[0, 0])
                     mean = val
                     plt.plot(plt_x, plt_y, label='Density')
-                    #plt.plot(mode, 0.0, 'r*', label='mode')
                     plt.plot(mean, 0.0, 'go', label='mean')
                     plt.plot(tru_gap, 0.0, 'b^', label='True gap')
                     plt.xlabel('Gap')
@@ -762,7 +760,7 @@ class RMTPP:
                     plt.close()
     
                     #print(batch_idx, D, wt, mode, mean, density_func(mode, D, wt), density_func(mean, D, wt))
-                    print(batch_idx, D, wt, mean, density_func(mean, D, wt))
+                    print(batch_idx, D, wt, mean, density_func(mean, c_, wt))
 
     
                 return preds_i

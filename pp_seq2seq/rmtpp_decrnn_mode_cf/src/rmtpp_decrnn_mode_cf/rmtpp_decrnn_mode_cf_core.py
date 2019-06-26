@@ -748,19 +748,18 @@ class RMTPP_DECRNN:
             for pred_idx, s_i in enumerate(all_decoder_states):
                 t_last = time_pred_last if pred_idx==0 else preds_i[-1]
                 D = (np.dot(s_i, Vt) + bt).reshape(-1)
+                c_ = np.exp(D)
                 D = D[0]
-                #D = np.where(D>1.0, D, np.ones_like(D)*1.0)
                 val = (np.log(wt) - D)/wt
                 val = np.where(val<0.0, 0.0, val)
                 val = val.reshape(-1)[0]
-                #print(val, time_pred_last)
                 preds_i.append(t_last + val)
 
                 if plot_dir:
                     plt_x = np.arange(0, 4, 0.05)
-                    plt_y = density_func(plt_x, D, wt[0, 0])
+                    plt_y = density_func(plt_x, c_, wt[0, 0])
+                    mean, _ = quad(quad_func, 0, np.inf, args=(c_, wt[0, 0]))
                     mode = val
-                    mean, _ = quad(quad_func, 0, np.inf, args=(D, wt[0, 0]))
                     plt.plot(plt_x, plt_y, label='Density')
                     plt.plot(mode, 0.0, 'r*', label='mode')
                     plt.plot(mean, 0.0, 'go', label='mean')
@@ -771,7 +770,7 @@ class RMTPP_DECRNN:
                     plt.savefig(os.path.join(plot_dir,'instance_'+str(batch_idx)+'.png'))
                     plt.close()
     
-                    print(batch_idx, D, wt, mode, mean, density_func(mode, D, wt), density_func(mean, D, wt))
+                    print(batch_idx, D, wt, mode, mean, density_func(mode, c_, wt), density_func(mean, c_, wt))
 
             return preds_i
 

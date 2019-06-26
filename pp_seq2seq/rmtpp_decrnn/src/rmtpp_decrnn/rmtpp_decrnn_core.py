@@ -751,15 +751,13 @@ class RMTPP_DECRNN:
                 c_ = np.exp(D)
                 args = (c_, wt)
                 val, _err = quad(quad_func, 0, np.inf, args=args)
-                #print(val, c_, t_last)
                 preds_i.append(t_last + val)
 
                 if plot_dir:
                     plt_x = np.arange(0, 4, 0.05)
-                    plt_y = density_func(plt_x, D, wt[0, 0])
+                    plt_y = density_func(plt_x, c_, wt[0, 0])
                     mean = val
                     plt.plot(plt_x, plt_y, label='Density')
-                    #plt.plot(mode, 0.0, 'r*', label='mode')
                     plt.plot(mean, 0.0, 'go', label='mean')
                     plt.plot(tru_gap, 0.0, 'b^', label='True gap')
                     plt.xlabel('Gap')
@@ -769,7 +767,7 @@ class RMTPP_DECRNN:
                     plt.close()
     
                     #print(batch_idx, D, wt, mode, mean, density_func(mode, D, wt), density_func(mean, D, wt))
-                    print(batch_idx, D, wt, mean, density_func(mean, D, wt))
+                    print(batch_idx, D, wt, mean, density_func(mean, c_, wt))
 
             return preds_i
 
