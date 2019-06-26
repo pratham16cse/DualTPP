@@ -782,6 +782,7 @@ class RMTPP_DECRNN:
                 all_time_preds = pool.map(_quad_worker, enumerate(zip(all_decoder_states, time_pred_last, plt_tru_gaps)))
 
         all_time_preds = np.asarray(all_time_preds).T
+        assert np.isfinite(all_time_preds).sum() == all_time_preds.size
 
         print('all_time_preds shape:', all_time_preds.shape)
 

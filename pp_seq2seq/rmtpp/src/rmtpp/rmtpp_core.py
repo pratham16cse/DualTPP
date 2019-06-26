@@ -779,6 +779,7 @@ class RMTPP:
             all_time_preds.extend(step_time_preds)
 
         all_time_preds = np.asarray(all_time_preds).T
+        assert np.isfinite(all_time_preds).sum() == all_time_preds.size
 
         print('all_time_preds shape:', all_time_preds.shape)
 
