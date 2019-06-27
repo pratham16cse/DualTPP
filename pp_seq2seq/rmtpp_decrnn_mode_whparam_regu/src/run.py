@@ -104,9 +104,9 @@ def cmd(dataset_name, alg_name,
     else:
         # TODO(PD) Run hyperparameter tuning in parallel
         #results  = pp.ProcessPool().map(hyperparameter_worker, hidden_layer_size_list)
-        if dataset_name == 'data_bookorder':
+        if dataset_name == 'data_bookorder_40_1_20_20_20':
             hparams[alg_name]['wt'] = [6.87, 6.97, 7.07, 7.17]
-        elif dataset_name == 'data_so':
+        elif dataset_name == 'data_so_40_1_20_20_20':
             hparams[alg_name]['wt'] = [2.26, 2.36, 2.46, 2.56]
         elif dataset_name == 'data_retweet':
             hparams[alg_name]['wt'] = [3.1, 3.3, 3.5, 3.7]
@@ -126,8 +126,9 @@ def cmd(dataset_name, alg_name,
             np.savetxt(os.path.join(save_dir)+'/gt.events.out.csv', data['test_event_out_seq'], delimiter=',')
             np.savetxt(os.path.join(save_dir)+'/gt.times.out.csv', data['test_time_out_seq'], delimiter=',')
 
-            del best_result['best_dev_event_preds'], best_result['best_dev_time_preds'], \
-                    best_result['best_test_event_preds'], best_result['best_test_time_preds']
+            for result in results:
+                del result['best_dev_event_preds'], result['best_dev_time_preds'], \
+                        result['best_test_event_preds'], result['best_test_time_preds']
             with open(os.path.join(save_dir)+'/result.json', 'w') as fp:
                 best_result_json = json.dumps(best_result, indent=4)
                 fp.write(best_result_json)
