@@ -5,6 +5,7 @@ import os
 import tensorflow as tf
 import numpy as np
 import pandas as pd
+from itertools import chain
 
 
 pad_sequences = preprocessing.sequence.pad_sequences
@@ -84,9 +85,17 @@ def read_seq2seq_data(event_train_file, event_dev_file, event_test_file,
         unique_samples = unique_samples.union(x)
 
 
-    if normalization:
-        maxTime = max(itertools.chain((max(x) for x in timeTrain), (max(x) for x in timeDevIn), (max(x) for x in timeTestIn)))
-        minTime = min(itertools.chain((min(x) for x in timeTrain), (min(x) for x in timeDevIn), (min(x) for x in timeTestIn)))
+    if normalization is not None:
+        if normalization == 'minmax':
+            maxTime = max(itertools.chain((max(x) for x in timeTrain), (max(x) for x in timeDevIn), (max(x) for x in timeTestIn)))
+            minTime = min(itertools.chain((min(x) for x in timeTrain), (min(x) for x in timeDevIn), (min(x) for x in timeTestIn)))
+        elif normalization == 'average':
+            allTimes = [x for x in chain(*timeTrain)] + [x for x in chain(*timeDevIn)] + [x for x in chain(*timeTestIn)]
+            maxTime = np.mean(allTimes)
+            minTime = 0
+        else:
+            print('Normalization not found')
+            assert False
     else:
         minTime, maxTime = 0, 1
 

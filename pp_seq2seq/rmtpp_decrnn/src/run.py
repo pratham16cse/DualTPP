@@ -66,7 +66,7 @@ def cmd(dataset_name, alg_name,
 
         #rmtpp_decrnn.utils.data_stats(data) #TODO(PD) Need to support seq2seq models.
 
-        hidden_layer_size, restart, num_epochs, save_dir = params
+        hidden_layer_size, restart, num_epochs, save_dir, with_evals = params
         rmtpp_decrnn_mdl = rmtpp_decrnn.rmtpp_decrnn_core.RMTPP_DECRNN(
             sess=sess,
             num_categories=data['num_categories'],
@@ -87,7 +87,7 @@ def cmd(dataset_name, alg_name,
         rmtpp_decrnn_mdl.initialize(finalize=False)
         result = rmtpp_decrnn_mdl.train(training_data=data, restart=restart,
                                         with_summaries=summary_dir is not None,
-                                        num_epochs=num_epochs, with_evals=True)
+                                        num_epochs=num_epochs, with_evals=with_evals)
         # del rmtpp_mdl
         return result
 
@@ -96,13 +96,13 @@ def cmd(dataset_name, alg_name,
         with open(os.path.join(save_dir)+'/result.json', 'r') as fp:
             result = json.loads(fp.read())
         params = (result[param] for param in hparams[alg_name].keys())
-        result = hyperparameter_worker((result['hidden_layer_size'], True, 0, result['checkpoint_dir']))
+        result = hyperparameter_worker((result['hidden_layer_size'], True, 0, result['checkpoint_dir'], False))
     else:
         # TODO(PD) Run hyperparameter tuning in parallel
         #results  = pp.ProcessPool().map(hyperparameter_worker, hidden_layer_size_list)
         results = []
         for params in product(*hparams[alg_name].values()):
-            result = hyperparameter_worker(params + (False, num_epochs, save_dir))
+            result = hyperparameter_worker(params + (False, num_epochs, save_dir, True))
             results.append(result)
             # print(result['best_test_mae'], result['best_test_acc'])
 

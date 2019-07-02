@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 ETH = 10.0
 __EMBED_SIZE = 4
 __HIDDEN_LAYER_SIZE = 16  # 64, 128, 256, 512, 1024
-epsilon = 0.1
+epsilon = 0.01
 
 def_opts = Deco.Options(
     batch_size=64,          # 16, 32, 64
@@ -616,11 +616,12 @@ class RMTPP_DECRNN:
                                                              single_threaded=True)
             test_time_preds = test_time_preds * (maxTime - minTime) + minTime
             test_time_out_seq = training_data['test_time_out_seq'] * (maxTime - minTime) + minTime
-            gaps = test_time_preds - training_data['test_time_in_seq'][:, -1:]
+            test_time_in_seq = training_data['test_time_in_seq'] * (maxTime - minTime) + minTime
+            gaps = test_time_preds - np.concatenate([test_time_in_seq[:, -1:], test_time_preds[:, :-1]], axis=-1)
+            tru_gaps = test_time_out_seq - np.concatenate([test_time_in_seq[:, -1:], test_time_out_seq[:, :-1]], axis=1)
             print('Predicted gaps')
             print(gaps)
-            print(test_time_out_seq)
-            print(test_time_preds)
+            print(tru_gaps)
             test_mae, test_total_valid, test_acc = self.eval(test_time_preds, test_time_out_seq,
                                                              test_event_preds, training_data['test_event_out_seq'])
 
@@ -685,11 +686,12 @@ class RMTPP_DECRNN:
                                                              plt_tru_gaps, plot_dir=plot_dir, single_threaded=True)
             best_test_time_preds = best_test_time_preds * (maxTime - minTime) + minTime
             test_time_out_seq = training_data['test_time_out_seq'] * (maxTime - minTime) + minTime
-            gaps = best_test_time_preds - training_data['test_time_in_seq'][:, -1:]
+            test_time_in_seq = training_data['test_time_in_seq'] * (maxTime - minTime) + minTime
+            gaps = best_test_time_preds - np.concatenate([test_time_in_seq[:, -1:], best_test_time_preds[:, :-1]], axis=-1)
+            tru_gaps = test_time_out_seq - np.concatenate([test_time_in_seq[:, -1:], test_time_out_seq[:, :-1]], axis=1)
             print('Predicted gaps')
             print(gaps)
-            print(test_time_out_seq)
-            print(best_test_time_preds)
+            print(plt_tru_gaps)
             best_test_mae, test_total_valid, best_test_acc = self.eval(best_test_time_preds, test_time_out_seq,
                                                              best_test_event_preds, training_data['test_event_out_seq'])
             print('TEST: MAE = {:.5f}; valid = {}, ACC = {:.5f}'.format(
@@ -774,11 +776,11 @@ class RMTPP_DECRNN:
                 preds_i.append(t_last + val)
 
                 if plot_dir:
-                    plt_x = np.arange(0, 4, 0.05)
-                    plt_y = density_func(plt_x, c_, wt[0, 0])
-                    mean, _ = quad(quad_func, 0, np.inf, args=(c_, wt[0, 0]))
                     mode = val
-                    plt.plot(plt_x, plt_y, label='Density')
+                    plt_x = np.arange(val-2.0, val+2.0, 0.05)
+                    plt_y = density_func(plt_x, c_, wt)
+                    mean, _ = quad(quad_func, 0, np.inf, args=(c_, wt[0, 0]))
+                    plt.plot(plt_x, plt_y.reshape(-1), label='Density')
                     plt.plot(mode, 0.0, 'r*', label='mode')
                     plt.plot(mean, 0.0, 'go', label='mean')
                     plt.plot(tru_gap, 0.0, 'b^', label='True gap')
@@ -788,7 +790,7 @@ class RMTPP_DECRNN:
                     plt.savefig(os.path.join(plot_dir,'instance_'+str(batch_idx)+'.png'))
                     plt.close()
     
-                    print(batch_idx, D, wt, mode, mean, density_func(mode, c_, wt), density_func(mean, c_, wt))
+                    print(batch_idx, D, c_, wt, mode, mean, density_func(mode, c_, wt), density_func(mean, c_, wt))
 
             return preds_i
 
