@@ -8,6 +8,9 @@ import numpy as np
 import os
 import json
 from itertools import product
+import matplotlib
+matplotlib.use('agg')
+import matplotlib.pyplot as plt
 #import pathos.pools as pp
 
 hidden_layer_size_list = [16, 32, 64, 128]
@@ -125,6 +128,12 @@ def cmd(dataset_name, alg_name,
             with open(os.path.join(save_dir)+'/all_results.json', 'w') as fp:
                 all_results_json = json.dumps(results, indent=4)
                 fp.write(all_results_json)
+
+            plt.plot(best_result['train_loss_list'])
+            plt.ylabel('train_loss')
+            plt.xlabel('epoch')
+            plt.savefig(os.path.join(save_dir, 'train_loss.png'))
+            plt.close()
 
 
 if __name__ == '__main__':
