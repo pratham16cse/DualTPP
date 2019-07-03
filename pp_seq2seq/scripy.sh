@@ -60,35 +60,41 @@ fi
 
 print_dump=$output_dir"/print_dump"
 
-echo "python3.6 \
-	$alg_path/src/run.py \
-	$dataset_name $alg_name \
-	$dataset_path"/train.event" \
-	$dataset_path"/train.time" \
-	$dataset_path"/dev.event" \
-	$dataset_path"/dev.time" \
-	$dataset_path"/test.event" \
-	$dataset_path"/test.time" \
-	--save $save_dir \
-	--cpu-only \
-	--epochs 50 \
-	--init-learning-rate 0.001 \
-	>>$print_dump"
+command="python3.6 \
+	 $alg_path/src/run.py \
+	 $dataset_name $alg_name \
+	 $dataset_path"/train.event" \
+	 $dataset_path"/train.time" \
+	 $dataset_path"/dev.event" \
+	 $dataset_path"/dev.time" \
+	 $dataset_path"/test.event" \
+	 $dataset_path"/test.time" \
+	 --save $save_dir \
+	 --cpu-only \
+	 --epochs 100 \
+	 --init-learning-rate 0.001 \
+	 >>$print_dump"
 
-python3.6 \
-	$alg_path/src/run.py \
-	$dataset_name $alg_name \
-	$dataset_path"/train.event" \
-	$dataset_path"/train.time" \
-	$dataset_path"/dev.event" \
-	$dataset_path"/dev.time" \
-	$dataset_path"/test.event" \
-	$dataset_path"/test.time" \
-	--save $save_dir \
-	--cpu-only \
-	--epochs 50 \
-	--init-learning-rate 0.001 \
-	>>$print_dump
+if [[ "$dataset_name" == *"data_bookorder"* ]]; then
+	command=$command" --normalization average"
+fi
+
+eval $command
+
+#python3.6 \
+#	$alg_path/src/run.py \
+#	$dataset_name $alg_name \
+#	$dataset_path"/train.event" \
+#	$dataset_path"/train.time" \
+#	$dataset_path"/dev.event" \
+#	$dataset_path"/dev.time" \
+#	$dataset_path"/test.event" \
+#	$dataset_path"/test.time" \
+#	--save $save_dir \
+#	--cpu-only \
+#	--epochs 100 \
+#	--init-learning-rate 0.001 \
+#	>>$print_dump
 
 if [ $stashed==1 ]; then
     git stash pop

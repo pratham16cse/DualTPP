@@ -458,6 +458,7 @@ class RMTPP:
         best_test_time_preds, best_test_event_preds = [], []
         best_epoch = 0
         total_loss = 0.0
+        train_loss_list = list()
 
         idxes = list(range(len(train_event_in_seq)))
         n_batches = len(idxes) // self.BATCH_SIZE
@@ -539,6 +540,7 @@ class RMTPP:
                           .format(batch_idx, batch_loss, self.sess.run(self.learning_rate)))
 
             # self.sess.run(self.increment_global_step)
+            train_loss_list.append(total_loss)
             print('Loss on last epoch = {:.4f}, new lr = {:.5f}, global_step = {}'
                   .format(total_loss,
                           self.sess.run(self.learning_rate),
@@ -690,6 +692,7 @@ class RMTPP:
                 'best_w': best_w,
                 'hidden_layer_size': self.HIDDEN_LAYER_SIZE,
                 'checkpoint_dir': checkpoint_dir,
+                'train_loss_list': train_loss_list,
                }
 
 
