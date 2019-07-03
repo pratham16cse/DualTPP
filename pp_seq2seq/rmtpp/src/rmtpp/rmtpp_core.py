@@ -157,7 +157,7 @@ class RMTPP:
                     self.wt = tf.get_variable(name='wt', shape=(1, 1),
                                               dtype=self.FLOAT_TYPE,
                                               initializer=tf.constant_initializer(wt),
-                                              constraint=lambda x: tf.clip_by_value(x, 0, np.inf))
+                                              constraint=lambda x: tf.clip_by_value(x, 1e-5, np.inf))
 
                     self.Wy = tf.get_variable(name='Wy', shape=(self.EMBED_SIZE, self.HIDDEN_LAYER_SIZE),
                                               dtype=self.FLOAT_TYPE,
