@@ -156,7 +156,8 @@ class RMTPP:
                 with tf.variable_scope('output'):
                     self.wt = tf.get_variable(name='wt', shape=(1, 1),
                                               dtype=self.FLOAT_TYPE,
-                                              initializer=tf.constant_initializer(wt))
+                                              initializer=tf.constant_initializer(wt),
+                                              constraint=lambda x: tf.clip_by_value(x, 0, np.inf))
 
                     self.Wy = tf.get_variable(name='Wy', shape=(self.EMBED_SIZE, self.HIDDEN_LAYER_SIZE),
                                               dtype=self.FLOAT_TYPE,
@@ -243,16 +244,15 @@ class RMTPP:
                         with tf.name_scope('loss_calc'):
                             base_intensity = tf.matmul(ones_2d, self.bt)
                             # wt_non_zero = tf.sign(self.wt) * tf.maximum(1e-9, tf.abs(self.wt))
-                            wt_soft_plus = tf.nn.softplus(self.wt)
                             D = tf.matmul(state, self.Vt) + base_intensity
 
-                            log_lambda_ = (D + (delta_t_next * wt_soft_plus))
+                            log_lambda_ = (D + (delta_t_next * self.wt))
 
                             lambda_ = tf.exp(tf.minimum(ETH, log_lambda_), name='lambda_')
 
                             log_f_star = (log_lambda_
-                                          + (1.0 / wt_soft_plus) * tf.exp(tf.minimum(ETH, D))
-                                          - (1.0 / wt_soft_plus) * lambda_)
+                                          + (1.0 / self.wt) * tf.exp(tf.minimum(ETH, D))
+                                          - (1.0 / self.wt) * lambda_)
 
                             events_pred = tf.nn.softmax(
                                 tf.minimum(ETH,
@@ -754,7 +754,6 @@ class RMTPP:
             # TODO: This calculation is completely ignoring the clipping which
             # happens during the inference step.
             [Vt, bt, wt]  = self.sess.run([self.Vt, self.bt, self.wt])
-            wt = softplus(wt)
     
             global _quad_worker
             def _quad_worker(params):
