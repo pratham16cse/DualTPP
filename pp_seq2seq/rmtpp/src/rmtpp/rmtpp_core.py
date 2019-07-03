@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 ETH = 10.0
 __EMBED_SIZE = 4
 __HIDDEN_LAYER_SIZE = 16  # 64, 128, 256, 512, 1024
-epsilon = 0.02
+epsilon = 0.0
 
 def_opts = Deco.Options(
     batch_size=64,          # 16, 32, 64

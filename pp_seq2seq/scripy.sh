@@ -71,7 +71,7 @@ command="python3.6 \
 	 $dataset_path"/test.time" \
 	 --save $save_dir \
 	 --cpu-only \
-	 --epochs 100 \
+	 --epochs 500 \
 	 --init-learning-rate 0.001 \
 	 >>$print_dump"
 

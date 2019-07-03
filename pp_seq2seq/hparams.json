@@ -1,11 +1,11 @@
 {
     "rmtpp":
     {
-        "hidden_layer_size": [16, 32, 64, 128]
+        "hidden_layer_size": [64]
     },
     "rmtpp_decrnn":
     {
-        "hidden_layer_size": [16, 32, 64, 128]
+        "hidden_layer_size": [64]
     },
     "rmtpp_decrnn_mode":
     {
@@ -13,7 +13,7 @@
     },
     "rmtpp_decrnn_mode_cf":
     {
-        "hidden_layer_size": [16, 32, 64, 128]
+        "hidden_layer_size": [64]
     },
     "rmtpp_decrnn_mode_whparam":
     {
@@ -28,7 +28,7 @@
     },
     "rmtpp_mode":
     {
-        "hidden_layer_size": [16, 32, 64, 128]
+        "hidden_layer_size": [64]
     },
     "rmtpp_constraint":
     {
