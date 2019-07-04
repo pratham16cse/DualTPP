@@ -40,10 +40,11 @@ def_opts = rmtpp_mode.rmtpp_mode_core.def_opts
 @click.option('--init-learning-rate', 'learning_rate', help='Initial learning rate.', default=def_opts.learning_rate)
 @click.option('--cpu-only/--no-cpu-only', 'cpu_only', help='Use only the CPU.', default=def_opts.cpu_only)
 @click.option('--normalization', 'normalization', help='The normalization technique', default=def_opts.normalization)
+@click.option('--constraints', 'constraints', help='Constraints over wt and D (or any other values), refer to constraints.json', default="default")
 def cmd(dataset_name, alg_name,
         event_train_file, time_train_file, event_dev_file, time_dev_file, event_test_file, time_test_file,
         save_dir, summary_dir, num_epochs, restart, train_eval, test_eval, scale,
-        batch_size, bptt, decoder_length, learning_rate, cpu_only, normalization):
+        batch_size, bptt, decoder_length, learning_rate, cpu_only, normalization, constraints):
     """Read data from EVENT_TRAIN_FILE, TIME_TRAIN_FILE and try to predict the values in EVENT_TEST_FILE, TIME_TEST_FILE."""
     data = rmtpp_mode.utils.read_seq2seq_data(
         event_train_file=event_train_file,
@@ -81,6 +82,7 @@ def cmd(dataset_name, alg_name,
             decoder_length=data['decoder_length'],
             learning_rate=learning_rate,
             cpu_only=cpu_only,
+            constraints=constraints,
             _opts=rmtpp_mode.rmtpp_mode_core.def_opts
         )
 
@@ -91,6 +93,11 @@ def cmd(dataset_name, alg_name,
         result = rmtpp_mode_mdl.train(training_data=data, restart=restart,
                                  with_summaries=summary_dir is not None,
                                  num_epochs=num_epochs, with_evals=with_evals)
+
+        with open('constraints.json', 'r') as fp:
+            constraints_json = json.loads(fp.read())
+            result['constraints'] = constraints_json[constraints]
+
         # del rmtpp_mode_mdl
         return result
 

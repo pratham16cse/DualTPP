@@ -4,6 +4,7 @@ alg_name=$1
 dataset_name=$2
 alg_path=$3
 dataset_path=$4
+constraints=${5:-default}
 export CUDA_VISIBLE_DEVICES=""
 batch_size=64
 
@@ -25,26 +26,33 @@ fi
 # ----- Create output directory ----- #
 if [ -d "Outputs/Experiment_"$last_commit_id ]; then
     if [ -d "Outputs/Experiment_"$last_commit_id"/"$dataset_name ]; then
-        if [ -d "Outputs/Experiment_"$last_commit_id"/"$dataset_name"/"$alg_name ]; then
-            echo "Outputs/Experiment_"$last_commit_id"/"$dataset_name"/"$alg_name "already exists." 1>&2
+        if [ -d "Outputs/Experiment_"$last_commit_id"/"$dataset_name"/"$constraints ]; then
+	    if [ -d "Outputs/Experiment_"$last_commit_id"/"$dataset_name"/"$constraints"/"$alg_name ]; then
+            echo "Outputs/Experiment_"$last_commit_id"/"$dataset_name"/"$constraints"/"$alg_name "already exists." 1>&2
 #            echo "Exiting . . ." 1>&2
 #	    if [ $stashed==1 ]; then
 #                git stash pop
 #            fi
 #            exit 1
+             else
+                 mkdir "Outputs/Experiment_"$last_commit_id"/"$dataset_name"/"$constraints"/"$alg_name
+	     fi
         else
-            mkdir "Outputs/Experiment_"$last_commit_id"/"$dataset_name"/"$alg_name
+            mkdir "Outputs/Experiment_"$last_commit_id"/"$dataset_name"/"$constraints
+            mkdir "Outputs/Experiment_"$last_commit_id"/"$dataset_name"/"$constraints"/"$alg_name
         fi
     else
         mkdir "Outputs/Experiment_"$last_commit_id"/"$dataset_name
-        mkdir "Outputs/Experiment_"$last_commit_id"/"$dataset_name"/"$alg_name
+        mkdir "Outputs/Experiment_"$last_commit_id"/"$dataset_name"/"$constraints
+        mkdir "Outputs/Experiment_"$last_commit_id"/"$dataset_name"/"$constraints"/"$alg_name
     fi
 else
     mkdir "Outputs/Experiment_"$last_commit_id
     mkdir "Outputs/Experiment_"$last_commit_id"/"$dataset_name
-    mkdir "Outputs/Experiment_"$last_commit_id"/"$dataset_name"/"$alg_name
+    mkdir "Outputs/Experiment_"$last_commit_id"/"$dataset_name"/"$constraints
+    mkdir "Outputs/Experiment_"$last_commit_id"/"$dataset_name"/"$constraints"/"$alg_name
 fi
-output_dir="Outputs/Experiment_"$last_commit_id"/"$dataset_name"/"$alg_name
+output_dir="Outputs/Experiment_"$last_commit_id"/"$dataset_name"/"$constraints"/"$alg_name
 # ----- #
 
 # ----- Create save_dir and summary_dir ----- #
@@ -71,12 +79,16 @@ command="python3.6 \
 	 $dataset_path"/test.time" \
 	 --save $save_dir \
 	 --cpu-only \
-	 --epochs 200 \
+	 --epochs 100 \
 	 --init-learning-rate 0.001 \
 	 >>$print_dump"
 
 if [[ "$dataset_name" == *"data_bookorder"* ]]; then
 	command=$command" --normalization average"
+fi
+
+if [ "$constraints" != "default" ]; then
+	command=$command" --constraints "$constraints
 fi
 
 eval $command

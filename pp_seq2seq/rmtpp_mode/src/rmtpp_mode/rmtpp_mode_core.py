@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 ETH = 10.0
 __EMBED_SIZE = 4
 __HIDDEN_LAYER_SIZE = 16  # 64, 128, 256, 512, 1024
-epsilon = 0.0
+epsilon = 0.01
 
 def_opts = Deco.Options(
     batch_size=64,          # 16, 32, 64
@@ -39,6 +39,7 @@ def_opts = Deco.Options(
     cpu_only=False,
 
     normalization=None,
+    constraints="default",
 
     embed_size=__EMBED_SIZE,
     Wem=lambda num_categories: np.random.RandomState(42).randn(num_categories, __EMBED_SIZE) * 0.01,
@@ -86,7 +87,7 @@ class RMTPP:
     def __init__(self, sess, num_categories, hidden_layer_size, batch_size,
                  learning_rate, momentum, l2_penalty, embed_size,
                  float_type, bptt, decoder_length, seed, scope, save_dir, decay_steps, decay_rate,
-                 device_gpu, device_cpu, summary_dir, cpu_only,
+                 device_gpu, device_cpu, summary_dir, cpu_only, constraints,
                  Wt, Wem, Wh, bh, Ws, bs, wt, Wy, Vy, Vt, bk, bt):
         self.HIDDEN_LAYER_SIZE = hidden_layer_size
         self.BATCH_SIZE = batch_size
@@ -98,6 +99,7 @@ class RMTPP:
         self.DEC_LEN = decoder_length
         self.SAVE_DIR = save_dir
         self.SUMMARY_DIR = summary_dir
+        self.CONSTRAINTS = constraints
 
         self.NUM_CATEGORIES = num_categories
         self.FLOAT_TYPE = float_type
@@ -111,6 +113,26 @@ class RMTPP:
 
         self.rs = np.random.RandomState(seed + 42)
         np.random.seed(42)
+
+        def get_wt_constraint():
+            if self.CONSTRAINTS == 'default':
+                return lambda x: tf.clip_by_value(x, 1e-5, np.inf)
+            if self.CONSTRAINTS == 'c1':
+                return lambda x: tf.clip_by_value(x, 1.0, np.inf)
+            elif self.CONSTRAINTS == 'c2':
+                return lambda x: tf.clip_by_value(x, 1e-5, np.inf)
+            else:
+                print('Constraint on wt not found.')
+                assert False
+
+        def get_D_constraint():
+            if self.CONSTRAINTS == 'default':
+                return lambda x: x
+            if self.CONSTRAINTS in ['c1', 'c2']:
+                return lambda x: -tf.nn.softplus(-x)
+            else:
+                print('Constraint on wt not found.')
+                assert False
 
         with tf.variable_scope(scope):
             with tf.device(device_gpu if not cpu_only else device_cpu):
@@ -157,7 +179,7 @@ class RMTPP:
                     self.wt = tf.get_variable(name='wt', shape=(1, 1),
                                               dtype=self.FLOAT_TYPE,
                                               initializer=tf.constant_initializer(wt),
-                                              constraint=lambda x: tf.clip_by_value(x, 1e-5, np.inf))
+                                              constraint=get_wt_constraint())
 
                     self.Wy = tf.get_variable(name='Wy', shape=(self.EMBED_SIZE, self.HIDDEN_LAYER_SIZE),
                                               dtype=self.FLOAT_TYPE,
@@ -245,6 +267,7 @@ class RMTPP:
                             base_intensity = tf.matmul(ones_2d, self.bt)
                             # wt_non_zero = tf.sign(self.wt) * tf.maximum(1e-9, tf.abs(self.wt))
                             D = tf.matmul(state, self.Vt) + base_intensity
+                            D = get_D_constraint()(D)
 
                             log_lambda_ = (D + (delta_t_next * self.wt))
 
@@ -705,6 +728,26 @@ class RMTPP:
 
     def predict(self, event_in_seq, time_in_seq, decoder_length, plt_tru_gaps, single_threaded=False, plot_dir=False):
         """Treats the entire dataset as a single batch and processes it."""
+
+        def get_wt_constraint():
+            if self.CONSTRAINTS == 'default':
+                return lambda x: tf.clip_by_value(x, 1e-5, np.inf)
+            if self.CONSTRAINTS == 'c1':
+                return lambda x: tf.clip_by_value(x, 1.0, np.inf)
+            elif self.CONSTRAINTS == 'c2':
+                return lambda x: tf.clip_by_value(x, 1e-5, np.inf)
+            else:
+                print('Constraint on wt not found.')
+                assert False
+
+        def get_D_constraint():
+            if self.CONSTRAINTS == 'default':
+                return lambda x: x
+            if self.CONSTRAINTS in ['c1', 'c2']:
+                return lambda x: -softplus(-x)
+            else:
+                print('Constraint on wt not found.')
+                assert False
 
         all_hidden_states = []
         all_event_preds = []
