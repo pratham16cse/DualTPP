@@ -807,6 +807,7 @@ class RMTPP:
                 preds_i = []
                 D = (np.dot(h_i, Vt) + bt).reshape(-1)
                 D = np.clip(D, np.ones_like(D)*-50.0, np.ones_like(D)*50.0)
+                D = get_D_constraint()(D)
                 c_ = np.exp(np.maximum(D, np.ones_like(D)*-87.0))
 
                 if self.ALG_NAME in ['rmtpp']:
