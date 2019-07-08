@@ -75,6 +75,7 @@ def cmd(dataset_name, alg_name,
             sess=sess,
             num_categories=data['num_categories'],
             hidden_layer_size=hidden_layer_size, # A hyperparameter
+            alg_name=alg_name,
             save_dir=save_dir,
             summary_dir=summary_dir,
             batch_size=batch_size,

@@ -28,6 +28,7 @@ def_opts = Deco.Options(
 
     seed=42,
     scope='RMTPP',
+    alg_name='rmtpp',
     save_dir='./save.rmtpp/',
     summary_dir='./summary.rmtpp/',
 
@@ -86,7 +87,8 @@ class RMTPP:
     @Deco.optioned()
     def __init__(self, sess, num_categories, hidden_layer_size, batch_size,
                  learning_rate, momentum, l2_penalty, embed_size,
-                 float_type, bptt, decoder_length, seed, scope, save_dir, decay_steps, decay_rate,
+                 float_type, bptt, decoder_length, seed, scope, alg_name,
+                 save_dir, decay_steps, decay_rate,
                  device_gpu, device_cpu, summary_dir, cpu_only, constraints,
                  Wt, Wem, Wh, bh, Ws, bs, wt, Wy, Vy, Vt, bk, bt):
         self.HIDDEN_LAYER_SIZE = hidden_layer_size
@@ -97,6 +99,7 @@ class RMTPP:
         self.EMBED_SIZE = embed_size
         self.BPTT = bptt
         self.DEC_LEN = decoder_length
+        self.ALG_NAME = alg_name
         self.SAVE_DIR = save_dir
         self.SUMMARY_DIR = summary_dir
         self.CONSTRAINTS = constraints
@@ -805,10 +808,16 @@ class RMTPP:
                 D = (np.dot(h_i, Vt) + bt).reshape(-1)
                 D = np.clip(D, np.ones_like(D)*-50.0, np.ones_like(D)*50.0)
                 c_ = np.exp(np.maximum(D, np.ones_like(D)*-87.0))
-    
-                args = (c_, wt)
-                val, _err = quad(quad_func, 0, np.inf, args=args)
-                print(batch_idx, D, c_, wt, val, _err)
+
+                if self.ALG_NAME in ['rmtpp']:
+                    args = (c_, wt)
+                    val, _err = quad(quad_func, 0, np.inf, args=args)
+                elif self.ALG_NAME in ['rmtpp_mode']:
+                    val = (np.log(wt) - D)/wt
+                    val = np.where(val<0.0, 0.0, val)
+                    val = val.reshape(-1)[0]
+
+                print(batch_idx, D, c_, wt, val)
                 assert np.isfinite(val)
                 preds_i.append(t_last + val)
 
