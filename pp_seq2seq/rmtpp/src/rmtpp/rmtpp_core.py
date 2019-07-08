@@ -824,11 +824,21 @@ class RMTPP:
                 preds_i.append(t_last + val)
 
                 if plot_dir:
-                    mean = val
+                    if self.ALG_NAME in ['rmtpp']:
+                        mean = val
+                        mode = (np.log(wt) - D)/wt
+                        mode = np.where(mode<0.0, 0.0, mode)
+                        mode = mode.reshape(-1)[0]
+                    elif self.ALG_NAME in ['rmtpp_mode']:
+                        args = (c_, wt)
+                        mode = val
+                        mean, _ = quad(quad_func, 0, np.inf, args=args)
+
                     plt_x = np.arange(val-2.0, val+2.0, 0.05)
                     plt_y = density_func(plt_x, c_, wt)
                     plt.plot(plt_x, plt_y.reshape(-1), label='Density')
                     plt.plot(mean, 0.0, 'go', label='mean')
+                    plt.plot(mode, 0.0, 'r*', label='mode')
                     plt.plot(tru_gap, 0.0, 'b^', label='True gap')
                     plt.xlabel('Gap')
                     plt.ylabel('Density')
