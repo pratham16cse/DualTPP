@@ -813,12 +813,13 @@ class RMTPP:
                 if self.ALG_NAME in ['rmtpp']:
                     args = (c_, wt)
                     val, _err = quad(quad_func, 0, np.inf, args=args)
+                    print(batch_idx, D, c_, wt, val)
                 elif self.ALG_NAME in ['rmtpp_mode']:
-                    val = (np.log(wt) - D)/wt
-                    val = np.where(val<0.0, 0.0, val)
+                    val_raw = (np.log(wt) - D)/wt
+                    val = np.where(val_raw<0.0, 0.0, val_raw)
                     val = val.reshape(-1)[0]
+                    print(batch_idx, D, c_, wt, val, val_raw)
 
-                print(batch_idx, D, c_, wt, val)
                 assert np.isfinite(val)
                 preds_i.append(t_last + val)
 
