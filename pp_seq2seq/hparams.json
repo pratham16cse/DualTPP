@@ -7,6 +7,11 @@
     {
         "hidden_layer_size": [64]
     },
+    "rmtpp_whparam":
+    {
+        "hidden_layer_size": [64],
+	"wt_hparam": [1.0] 
+    },
     "rmtpp_decrnn":
     {
         "hidden_layer_size": [64]
@@ -37,6 +42,11 @@
     "rmtpp_mode_wcmpt":
     {
         "hidden_layer_size": [64]
+    },
+    "rmtpp_mode_whparam":
+    {
+        "hidden_layer_size": [64],
+	"wt_hparam": [1.0] 
     },
     "rmtpp_constraint":
     {

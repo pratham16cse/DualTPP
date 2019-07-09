@@ -42,6 +42,8 @@ def_opts = Deco.Options(
     normalization=None,
     constraints="default",
 
+    wt_hparam=1.0,
+
     embed_size=__EMBED_SIZE,
     Wem=lambda num_categories: np.random.RandomState(42).randn(num_categories, __EMBED_SIZE) * 0.01,
 
@@ -92,7 +94,7 @@ class RMTPP:
                  float_type, bptt, decoder_length, seed, scope, alg_name,
                  save_dir, decay_steps, decay_rate,
                  device_gpu, device_cpu, summary_dir, cpu_only, constraints,
-                 Wt, Wem, Wh, bh, Ws, bs, wt, Wy, Vy, Vt, Vw, bk, bt, bw):
+                 Wt, Wem, Wh, bh, Ws, bs, wt, Wy, Vy, Vt, Vw, bk, bt, bw, wt_hparam):
         self.HIDDEN_LAYER_SIZE = hidden_layer_size
         self.BATCH_SIZE = batch_size
         self.LEARNING_RATE = learning_rate
@@ -111,6 +113,8 @@ class RMTPP:
 
         self.DEVICE_CPU = device_cpu
         self.DEVICE_GPU = device_gpu
+
+        self.wt_hparam = wt_hparam
 
         self.sess = sess
         self.seed = seed
@@ -294,8 +298,10 @@ class RMTPP:
                             if self.ALG_NAME in ['rmtpp_wcmpt', 'rmtpp_mode_wcmpt']:
                                 WT = tf.matmul(state, self.Vw) + base_intensity_bw
                                 WT = get_WT_constraint()(WT)
-                            else:
+                            elif self.ALG_NAME in ['rmtpp', 'rmtpp_mode']:
                                 WT = self.wt
+                            elif self.ALG_NAME in ['rmtpp_whparam', 'rmtpp_mode_whparam']:
+                                WT = self.wt_hparam
 
                             log_lambda_ = (D + (delta_t_next * WT))
 
@@ -761,6 +767,7 @@ class RMTPP:
                 'best_test_time_preds': best_test_time_preds.tolist(),
                 'best_w': best_w,
                 'hidden_layer_size': self.HIDDEN_LAYER_SIZE,
+                'wt_hparam': self.wt_hparam,
                 'checkpoint_dir': checkpoint_dir,
                 'train_loss_list': train_loss_list,
                }
@@ -865,14 +872,16 @@ class RMTPP:
                 if self.ALG_NAME in ['rmtpp_wcmpt', 'rmtpp_mode_wcmpt']:
                     WT = (np.dot(h_i, Vw) + bw).reshape(-1)
                     WT = get_WT_constraint()(WT)
-                else:
+                elif self.ALG_NAME in ['rmtpp', 'rmtpp_mode']:
                     WT = wt
+                elif self.ALG_NAME in ['rmtpp_whparam', 'rmtpp_mode_whparam']:
+                    WT = self.wt_hparam
 
-                if self.ALG_NAME in ['rmtpp', 'rmtpp_wcmpt']:
+                if self.ALG_NAME in ['rmtpp', 'rmtpp_wcmpt', 'rmtpp_whparam']:
                     args = (c_, WT)
                     val, _err = quad(quad_func, 0, np.inf, args=args)
                     print(batch_idx, D, c_, WT, val)
-                elif self.ALG_NAME in ['rmtpp_mode', 'rmtpp_mode_wcmpt']:
+                elif self.ALG_NAME in ['rmtpp_mode', 'rmtpp_mode_wcmpt', 'rmtpp_mode_whparam']:
                     val_raw = (np.log(WT) - D)/WT
                     val = np.where(val_raw<0.0, 0.0, val_raw)
                     val = val.reshape(-1)[0]

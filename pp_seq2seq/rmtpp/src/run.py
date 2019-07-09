@@ -70,7 +70,7 @@ def cmd(dataset_name, alg_name,
 
         #rmtpp.utils.data_stats(data) #TODO(PD) Need to support seq2seq models.
 
-        hidden_layer_size, restart, num_epochs, save_dir, with_evals = params
+        hidden_layer_size, wt_hparam, restart, num_epochs, save_dir, with_evals = params
         rmtpp_mdl = rmtpp.rmtpp_core.RMTPP(
             sess=sess,
             num_categories=data['num_categories'],
@@ -84,6 +84,7 @@ def cmd(dataset_name, alg_name,
             learning_rate=learning_rate,
             cpu_only=cpu_only,
             constraints=constraints,
+            wt_hparam=wt_hparam,
             _opts=rmtpp.rmtpp_core.def_opts
         )
 
@@ -107,7 +108,7 @@ def cmd(dataset_name, alg_name,
         with open(os.path.join(save_dir)+'/result.json', 'r') as fp:
             result = json.loads(fp.read())
         params = (result[param] for param in hparams[alg_name].keys())
-        result = hyperparameter_worker((result['hidden_layer_size'], True, 0, result['checkpoint_dir'], False))
+        result = hyperparameter_worker((result['hidden_layer_size'], result['wt_hparam'], True, 0, result['checkpoint_dir'], False))
     else:
         # TODO(PD) Run hyperparameter tuning in parallel
         #results  = pp.ProcessPool().map(hyperparameter_worker, hidden_layer_size_list)
