@@ -207,21 +207,22 @@ class RMTPP:
                     self.Vt = tf.get_variable(name='Vt', shape=(self.HIDDEN_LAYER_SIZE, 1),
                                               dtype=self.FLOAT_TYPE,
                                               initializer=tf.constant_initializer(Vt(self.HIDDEN_LAYER_SIZE)))
-                    self.Vw = tf.get_variable(name='Vw', shape=(self.HIDDEN_LAYER_SIZE, 1),
-                                              dtype=self.FLOAT_TYPE,
-                                              initializer=tf.constant_initializer(Vw(self.HIDDEN_LAYER_SIZE)))
                     self.bt = tf.get_variable(name='bt', shape=(1, 1),
                                               dtype=self.FLOAT_TYPE,
                                               initializer=tf.constant_initializer(bt))
-                    self.bw = tf.get_variable(name='bw', shape=(1, 1),
-                                              dtype=self.FLOAT_TYPE,
-                                              initializer=tf.constant_initializer(bw))
                     self.bk = tf.get_variable(name='bk', shape=(1, self.NUM_CATEGORIES),
                                               dtype=self.FLOAT_TYPE,
                                               initializer=tf.constant_initializer(bk(self.HIDDEN_LAYER_SIZE, num_categories)))
+                    self.Vw = tf.get_variable(name='Vw', shape=(self.HIDDEN_LAYER_SIZE, 1),
+                                              dtype=self.FLOAT_TYPE,
+                                              initializer=tf.constant_initializer(Vw(self.HIDDEN_LAYER_SIZE)))
+                    self.bw = tf.get_variable(name='bw', shape=(1, 1),
+                                              dtype=self.FLOAT_TYPE,
+                                              initializer=tf.constant_initializer(bw))
+
 
                 self.all_vars = [self.Wt, self.Wem, self.Wh, self.bh, self.Ws, self.bs,
-                                 self.wt, self.Wy, self.Vy, self.Vt, self.Vw, self.bt, self.bw, self.bk]
+                                 self.wt, self.Wy, self.Vy, self.Vt, self.bt, self.bk, self.Vw, self.bw]
 
                 # Add summaries for all (trainable) variables
                 with tf.device(device_cpu):
