@@ -591,7 +591,22 @@ class RMTPP:
                 batch_size = len(training_data['dev_event_in_seq'])
 
             minTime, maxTime = training_data['minTime'], training_data['maxTime']
-            print('Running evaluation on dev data: ...')
+            print('Running evaluation on train, dev, test: ...')
+
+            plt_time_out_seq = training_data['train_time_out_seq']
+            plt_tru_gaps = plt_time_out_seq - np.concatenate([training_data['train_time_in_seq'][:, -1:], plt_time_out_seq[:, :-1]], axis=1)
+            train_time_preds, train_event_preds = self.predict(training_data['train_event_in_seq'],
+                                                           training_data['train_time_in_seq'],
+                                                           training_data['decoder_length'],
+                                                           plt_tru_gaps,
+                                                           single_threaded=True)
+            train_time_preds = train_time_preds * (maxTime - minTime) + minTime
+            train_time_out_seq = training_data['train_time_out_seq'] * (maxTime - minTime) + minTime
+            train_mae, train_total_valid, train_acc = self.eval(train_time_preds, train_time_out_seq,
+                                                          train_event_preds, training_data['train_event_out_seq'])
+            print('TRAIN: MAE = {:.5f}; valid = {}, ACC = {:.5f}'.format(
+                train_mae, train_total_valid, train_acc))
+
 
             plt_time_out_seq = training_data['dev_time_out_seq']
             plt_tru_gaps = plt_time_out_seq - np.concatenate([training_data['dev_time_in_seq'][:, -1:], plt_time_out_seq[:, :-1]], axis=1)
@@ -604,7 +619,6 @@ class RMTPP:
             dev_time_out_seq = training_data['dev_time_out_seq'] * (maxTime - minTime) + minTime
             dev_mae, dev_total_valid, dev_acc = self.eval(dev_time_preds, dev_time_out_seq,
                                                           dev_event_preds, training_data['dev_event_out_seq'])
-
             print('DEV: MAE = {:.5f}; valid = {}, ACC = {:.5f}'.format(
                 dev_mae, dev_total_valid, dev_acc))
 
@@ -622,17 +636,18 @@ class RMTPP:
             tru_gaps = test_time_out_seq - np.concatenate([test_time_in_seq[:, -1:], test_time_out_seq[:, :-1]], axis=1)
             print('Predicted gaps')
             print(gaps)
+            print('True gaps')
             print(tru_gaps)
             test_mae, test_total_valid, test_acc = self.eval(test_time_preds, test_time_out_seq,
                                                              test_event_preds, training_data['test_event_out_seq'])
-
             print('TEST: MAE = {:.5f}; valid = {}, ACC = {:.5f}'.format(
                 test_mae, test_total_valid, test_acc))
 
             if dev_mae < best_dev_mae:
                 best_epoch = epoch
-                best_dev_mae, best_test_mae = dev_mae, test_mae
-                best_dev_acc, best_test_acc = dev_acc, test_acc
+                best_train_mae, best_dev_mae, best_test_mae = train_mae, dev_mae, test_mae
+                best_train_acc, best_dev_acc, best_test_acc = train_acc, dev_acc, test_acc
+                best_train_event_preds, best_train_time_preds  = train_event_preds, train_time_preds
                 best_dev_event_preds, best_dev_time_preds  = dev_event_preds, dev_time_preds
                 best_test_event_preds, best_test_time_preds  = test_event_preds, test_time_preds
                 best_w = self.sess.run(self.wt).tolist()
@@ -707,10 +722,14 @@ class RMTPP:
 
         return {
                 'best_epoch': best_epoch,
+                'best_train_mae': best_train_mae,
+                'best_train_acc': best_train_acc,
                 'best_dev_mae': best_dev_mae,
                 'best_dev_acc': best_dev_acc,
                 'best_test_mae': best_test_mae,
                 'best_test_acc': best_test_acc,
+                'best_train_event_preds': best_train_event_preds.tolist(),
+                'best_train_time_preds': best_train_time_preds.tolist(),
                 'best_dev_event_preds': best_dev_event_preds.tolist(),
                 'best_dev_time_preds': best_dev_time_preds.tolist(),
                 'best_test_event_preds': best_test_event_preds.tolist(),
