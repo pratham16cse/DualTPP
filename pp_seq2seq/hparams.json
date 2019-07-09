@@ -3,6 +3,10 @@
     {
         "hidden_layer_size": [64]
     },
+    "rmtpp_wcmpt":
+    {
+        "hidden_layer_size": [64]
+    },
     "rmtpp_decrnn":
     {
         "hidden_layer_size": [64]
@@ -27,6 +31,10 @@
 	"l2_penalty":[0.1, 0.01, 0.001, 0.0]
     },
     "rmtpp_mode":
+    {
+        "hidden_layer_size": [64]
+    },
+    "rmtpp_mode_wcmpt":
     {
         "hidden_layer_size": [64]
     },

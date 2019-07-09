@@ -54,7 +54,9 @@ def_opts = Deco.Options(
     Wy=lambda hidden_layer_size: np.random.randn(__EMBED_SIZE, hidden_layer_size) * np.sqrt(1.0/__EMBED_SIZE),
     Vy=lambda hidden_layer_size, num_categories: np.random.randn(hidden_layer_size, num_categories) * np.sqrt(1.0/hidden_layer_size),
     Vt=lambda hidden_layer_size: np.random.randn(hidden_layer_size, 1) * np.sqrt(1.0/hidden_layer_size),
+    Vw=lambda hidden_layer_size: np.random.randn(hidden_layer_size, 1) * np.sqrt(1.0/hidden_layer_size),
     bt=np.log(1.0), # bt is provided by the base_rate
+    bw=np.log(1.0), # bw is provided by the base_rate
     bk=lambda hidden_layer_size, num_categories: np.random.randn(1, num_categories) * np.sqrt(1.0/hidden_layer_size),
 )
 
@@ -90,7 +92,7 @@ class RMTPP:
                  float_type, bptt, decoder_length, seed, scope, alg_name,
                  save_dir, decay_steps, decay_rate,
                  device_gpu, device_cpu, summary_dir, cpu_only, constraints,
-                 Wt, Wem, Wh, bh, Ws, bs, wt, Wy, Vy, Vt, bk, bt):
+                 Wt, Wem, Wh, bh, Ws, bs, wt, Wy, Vy, Vt, Vw, bk, bt, bw):
         self.HIDDEN_LAYER_SIZE = hidden_layer_size
         self.BATCH_SIZE = batch_size
         self.LEARNING_RATE = learning_rate
@@ -120,7 +122,7 @@ class RMTPP:
         def get_wt_constraint():
             if self.CONSTRAINTS == 'default':
                 return lambda x: tf.clip_by_value(x, 1e-5, np.inf)
-            if self.CONSTRAINTS == 'c1':
+            elif self.CONSTRAINTS == 'c1':
                 return lambda x: tf.clip_by_value(x, 1.0, np.inf)
             elif self.CONSTRAINTS == 'c2':
                 return lambda x: tf.clip_by_value(x, 1e-5, np.inf)
@@ -131,11 +133,21 @@ class RMTPP:
         def get_D_constraint():
             if self.CONSTRAINTS == 'default':
                 return lambda x: x
-            if self.CONSTRAINTS in ['c1', 'c2']:
+            elif self.CONSTRAINTS in ['c1', 'c2']:
                 return lambda x: -tf.nn.softplus(-x)
             else:
                 print('Constraint on wt not found.')
                 assert False
+
+        def get_WT_constraint():
+            if self.CONSTRAINTS == 'default':
+                return lambda x: tf.nn.softplus(x)
+            elif self.CONSTRAINTS in ['c1', 'c2']:
+                return lambda x: tf.nn.softplus(x)
+            else:
+                print('Constraint on wt not found.')
+                assert False
+
 
         with tf.variable_scope(scope):
             with tf.device(device_gpu if not cpu_only else device_cpu):
@@ -195,15 +207,21 @@ class RMTPP:
                     self.Vt = tf.get_variable(name='Vt', shape=(self.HIDDEN_LAYER_SIZE, 1),
                                               dtype=self.FLOAT_TYPE,
                                               initializer=tf.constant_initializer(Vt(self.HIDDEN_LAYER_SIZE)))
+                    self.Vw = tf.get_variable(name='Vw', shape=(self.HIDDEN_LAYER_SIZE, 1),
+                                              dtype=self.FLOAT_TYPE,
+                                              initializer=tf.constant_initializer(Vw(self.HIDDEN_LAYER_SIZE)))
                     self.bt = tf.get_variable(name='bt', shape=(1, 1),
                                               dtype=self.FLOAT_TYPE,
                                               initializer=tf.constant_initializer(bt))
+                    self.bw = tf.get_variable(name='bw', shape=(1, 1),
+                                              dtype=self.FLOAT_TYPE,
+                                              initializer=tf.constant_initializer(bw))
                     self.bk = tf.get_variable(name='bk', shape=(1, self.NUM_CATEGORIES),
                                               dtype=self.FLOAT_TYPE,
                                               initializer=tf.constant_initializer(bk(self.HIDDEN_LAYER_SIZE, num_categories)))
 
                 self.all_vars = [self.Wt, self.Wem, self.Wh, self.bh, self.Ws, self.bs,
-                                 self.wt, self.Wy, self.Vy, self.Vt, self.bt, self.bk]
+                                 self.wt, self.Wy, self.Vy, self.Vt, self.Vw, self.bt, self.bw, self.bk]
 
                 # Add summaries for all (trainable) variables
                 with tf.device(device_cpu):
@@ -267,18 +285,24 @@ class RMTPP:
                             state = tf.where(self.events_in[:, i] > 0, new_state, state)
 
                         with tf.name_scope('loss_calc'):
-                            base_intensity = tf.matmul(ones_2d, self.bt)
+                            base_intensity_bt = tf.matmul(ones_2d, self.bt)
+                            base_intensity_bw = tf.matmul(ones_2d, self.bw)
                             # wt_non_zero = tf.sign(self.wt) * tf.maximum(1e-9, tf.abs(self.wt))
-                            D = tf.matmul(state, self.Vt) + base_intensity
+                            D = tf.matmul(state, self.Vt) + base_intensity_bt
                             D = get_D_constraint()(D)
+                            if self.ALG_NAME in ['rmtpp_wcmpt', 'rmtpp_mode_wcmpt']:
+                                WT = tf.matmul(state, self.Vw) + base_intensity_bw
+                                WT = get_WT_constraint()(WT)
+                            else:
+                                WT = self.wt
 
-                            log_lambda_ = (D + (delta_t_next * self.wt))
+                            log_lambda_ = (D + (delta_t_next * WT))
 
                             lambda_ = tf.exp(tf.minimum(ETH, log_lambda_), name='lambda_')
 
                             log_f_star = (log_lambda_
-                                          + (1.0 / self.wt) * tf.exp(tf.minimum(ETH, D))
-                                          - (1.0 / self.wt) * lambda_)
+                                          + (1.0 / WT) * tf.exp(tf.minimum(ETH, D))
+                                          - (1.0 / WT) * lambda_)
 
                             events_pred = tf.nn.softmax(
                                 tf.minimum(ETH,
@@ -754,7 +778,7 @@ class RMTPP:
         def get_wt_constraint():
             if self.CONSTRAINTS == 'default':
                 return lambda x: tf.clip_by_value(x, 1e-5, np.inf)
-            if self.CONSTRAINTS == 'c1':
+            elif self.CONSTRAINTS == 'c1':
                 return lambda x: tf.clip_by_value(x, 1.0, np.inf)
             elif self.CONSTRAINTS == 'c2':
                 return lambda x: tf.clip_by_value(x, 1e-5, np.inf)
@@ -765,8 +789,17 @@ class RMTPP:
         def get_D_constraint():
             if self.CONSTRAINTS == 'default':
                 return lambda x: x
-            if self.CONSTRAINTS in ['c1', 'c2']:
+            elif self.CONSTRAINTS in ['c1', 'c2']:
                 return lambda x: -softplus(-x)
+            else:
+                print('Constraint on wt not found.')
+                assert False
+
+        def get_WT_constraint():
+            if self.CONSTRAINTS == 'default':
+                return lambda x: softplus(x)
+            elif self.CONSTRAINTS in ['c1', 'c2']:
+                return lambda x: softplus(x)
             else:
                 print('Constraint on wt not found.')
                 assert False
@@ -818,7 +851,7 @@ class RMTPP:
 
             # TODO: This calculation is completely ignoring the clipping which
             # happens during the inference step.
-            [Vt, bt, wt]  = self.sess.run([self.Vt, self.bt, self.wt])
+            [Vt, Vw, bt, bw, wt]  = self.sess.run([self.Vt, self.Vw, self.bt, self.bw, self.wt])
     
             global _quad_worker
             def _quad_worker(params):
@@ -828,33 +861,38 @@ class RMTPP:
                 D = np.clip(D, np.ones_like(D)*-50.0, np.ones_like(D)*50.0)
                 D = get_D_constraint()(D)
                 c_ = np.exp(np.maximum(D, np.ones_like(D)*-87.0))
+                if self.ALG_NAME in ['rmtpp_wcmpt', 'rmtpp_mode_wcmpt']:
+                    WT = (np.dot(h_i, Vw) + bw).reshape(-1)
+                    WT = get_WT_constraint()(WT)
+                else:
+                    WT = wt
 
-                if self.ALG_NAME in ['rmtpp']:
-                    args = (c_, wt)
+                if self.ALG_NAME in ['rmtpp', 'rmtpp_wcmpt']:
+                    args = (c_, WT)
                     val, _err = quad(quad_func, 0, np.inf, args=args)
-                    print(batch_idx, D, c_, wt, val)
-                elif self.ALG_NAME in ['rmtpp_mode']:
-                    val_raw = (np.log(wt) - D)/wt
+                    print(batch_idx, D, c_, WT, val)
+                elif self.ALG_NAME in ['rmtpp_mode', 'rmtpp_mode_wcmpt']:
+                    val_raw = (np.log(WT) - D)/WT
                     val = np.where(val_raw<0.0, 0.0, val_raw)
                     val = val.reshape(-1)[0]
-                    print(batch_idx, D, c_, wt, val, val_raw)
+                    print(batch_idx, D, c_, WT, val, val_raw)
 
                 assert np.isfinite(val)
                 preds_i.append(t_last + val)
 
                 if plot_dir:
-                    if self.ALG_NAME in ['rmtpp']:
+                    if self.ALG_NAME in ['rmtpp', 'rmtpp_wcmpt']:
                         mean = val
-                        mode = (np.log(wt) - D)/wt
+                        mode = (np.log(WT) - D)/WT
                         mode = np.where(mode<0.0, 0.0, mode)
                         mode = mode.reshape(-1)[0]
-                    elif self.ALG_NAME in ['rmtpp_mode']:
-                        args = (c_, wt)
+                    elif self.ALG_NAME in ['rmtpp_mode', 'rmtpp_mode_wcmpt']:
+                        args = (c_, WT)
                         mode = val
                         mean, _ = quad(quad_func, 0, np.inf, args=args)
 
                     plt_x = np.arange(val-2.0, val+2.0, 0.05)
-                    plt_y = density_func(plt_x, c_, wt)
+                    plt_y = density_func(plt_x, c_, WT)
                     plt.plot(plt_x, plt_y.reshape(-1), label='Density')
                     plt.plot(mean, 0.0, 'go', label='mean')
                     plt.plot(mode, 0.0, 'r*', label='mode')
@@ -866,7 +904,7 @@ class RMTPP:
                     plt.close()
     
                     #print(batch_idx, D, wt, mode, mean, density_func(mode, D, wt), density_func(mean, D, wt))
-                    print(batch_idx, D, c_, wt, mean, density_func(mean, c_, wt))
+                    print(batch_idx, D, c_, WT, mean, density_func(mean, c_, WT))
 
     
                 return preds_i
