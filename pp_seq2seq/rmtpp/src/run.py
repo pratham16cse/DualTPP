@@ -129,7 +129,8 @@ def cmd(dataset_name, alg_name,
             np.savetxt(os.path.join(save_dir)+'/gt.times.out.csv', data['test_time_out_seq'], delimiter=',')
 
             for result in results:
-                del result['best_dev_event_preds'], result['best_dev_time_preds'], \
+                del result['best_train_event_preds'], result['best_train_time_preds'], \
+                        result['best_dev_event_preds'], result['best_dev_time_preds'], \
                         result['best_test_event_preds'], result['best_test_time_preds']
             with open(os.path.join(save_dir)+'/result.json', 'w') as fp:
                 best_result_json = json.dumps(best_result, indent=4)
