@@ -40,10 +40,11 @@ def_opts = rmtpp_decrnn.rmtpp_decrnn_core.def_opts
 @click.option('--init-learning-rate', 'learning_rate', help='Initial learning rate.', default=def_opts.learning_rate)
 @click.option('--cpu-only/--no-cpu-only', 'cpu_only', help='Use only the CPU.', default=def_opts.cpu_only)
 @click.option('--normalization', 'normalization', help='The normalization technique', default=def_opts.normalization)
+@click.option('--constraints', 'constraints', help='Constraints over wt and D (or any other values), refer to constraints.json', default="default")
 def cmd(dataset_name, alg_name,
         event_train_file, time_train_file, event_dev_file, time_dev_file, event_test_file, time_test_file,
         save_dir, summary_dir, num_epochs, restart, train_eval, test_eval, scale,
-        batch_size, bptt, decoder_length, learning_rate, cpu_only, normalization):
+        batch_size, bptt, decoder_length, learning_rate, cpu_only, normalization, constraints):
     """Read data from EVENT_TRAIN_FILE, TIME_TRAIN_FILE and try to predict the values in EVENT_TEST_FILE, TIME_TEST_FILE."""
     data = rmtpp_decrnn.utils.read_seq2seq_data(
         event_train_file=event_train_file,
@@ -69,11 +70,12 @@ def cmd(dataset_name, alg_name,
 
         #rmtpp_decrnn.utils.data_stats(data) #TODO(PD) Need to support seq2seq models.
 
-        hidden_layer_size, restart, num_epochs, save_dir, with_evals = params
+        hidden_layer_size, wt_hparam, restart, num_epochs, save_dir, with_evals = params
         rmtpp_decrnn_mdl = rmtpp_decrnn.rmtpp_decrnn_core.RMTPP_DECRNN(
             sess=sess,
             num_categories=data['num_categories'],
             hidden_layer_size=hidden_layer_size, # A hyperparameter
+            alg_name=alg_name,
             save_dir=save_dir,
             summary_dir=summary_dir,
             batch_size=batch_size,
@@ -81,6 +83,8 @@ def cmd(dataset_name, alg_name,
             decoder_length=data['decoder_length'],
             learning_rate=learning_rate,
             cpu_only=cpu_only,
+            constraints=constraints,
+            wt_hparam=wt_hparam,
             _opts=rmtpp_decrnn.rmtpp_decrnn_core.def_opts
         )
 
@@ -91,6 +95,11 @@ def cmd(dataset_name, alg_name,
         result = rmtpp_decrnn_mdl.train(training_data=data, restart=restart,
                                         with_summaries=summary_dir is not None,
                                         num_epochs=num_epochs, with_evals=with_evals)
+
+        with open('constraints.json', 'r') as fp:
+            constraints_json = json.loads(fp.read())
+            result['constraints'] = constraints_json[constraints]
+
         # del rmtpp_mdl
         return result
 
@@ -99,7 +108,7 @@ def cmd(dataset_name, alg_name,
         with open(os.path.join(save_dir)+'/result.json', 'r') as fp:
             result = json.loads(fp.read())
         params = (result[param] for param in hparams[alg_name].keys())
-        result = hyperparameter_worker((result['hidden_layer_size'], True, 0, result['checkpoint_dir'], False))
+        result = hyperparameter_worker((result['hidden_layer_size'], result['wt_hparam'], True, 0, result['checkpoint_dir'], False))
     else:
         # TODO(PD) Run hyperparameter tuning in parallel
         #results  = pp.ProcessPool().map(hyperparameter_worker, hidden_layer_size_list)
@@ -120,7 +129,8 @@ def cmd(dataset_name, alg_name,
             np.savetxt(os.path.join(save_dir)+'/gt.times.out.csv', data['test_time_out_seq'], delimiter=',')
 
             for result in results:
-                del result['best_dev_event_preds'], result['best_dev_time_preds'], \
+                del result['best_train_event_preds'], result['best_train_time_preds'], \
+                        result['best_dev_event_preds'], result['best_dev_time_preds'], \
                         result['best_test_event_preds'], result['best_test_time_preds']
             with open(os.path.join(save_dir)+'/result.json', 'w') as fp:
                 best_result_json = json.dumps(best_result, indent=4)

@@ -14,29 +14,6 @@
         "hidden_layer_size": [64],
 	"wt_hparam": [0.0001, 0.001, 0.01, 0.1, 1.0] 
     },
-    "rmtpp_decrnn":
-    {
-        "hidden_layer_size": [64]
-    },
-    "rmtpp_decrnn_mode":
-    {
-        "hidden_layer_size": [16, 32, 64, 128]
-    },
-    "rmtpp_decrnn_mode_cf":
-    {
-        "hidden_layer_size": [64]
-    },
-    "rmtpp_decrnn_mode_whparam":
-    {
-        "hidden_layer_size": [16, 32, 64, 128],
-	"wt": [10.0, 5.0, 2.0, 1.0]
-    },
-    "rmtpp_decrnn_mode_whparam_regu":
-    {
-        "hidden_layer_size": [16, 32, 64, 128],
-	"wt": [10.0, 5.0, 2.0, 1.0],
-	"l2_penalty":[0.1, 0.01, 0.001, 0.0]
-    },
     "rmtpp_mode":
     {
         "hidden_layer_size": [64],
@@ -51,6 +28,52 @@
     {
         "hidden_layer_size": [64],
 	"wt_hparam": [0.0001, 0.001, 0.01, 0.1, 1.0] 
+    },
+    "rmtpp_decrnn":
+    {
+        "hidden_layer_size": [64],
+	"wt_hparam": [1.0]
+    },
+    "rmtpp_decrnn_wcmpt":
+    {
+        "hidden_layer_size": [64],
+	"wt_hparam": [1.0]
+    },
+    "rmtpp_decrnn_whparam":
+    {
+        "hidden_layer_size": [64],
+	"wt_hparam": [1.0]
+    },
+    "rmtpp_decrnn_mode":
+    {
+        "hidden_layer_size": [64],
+	"wt_hparam": [1.0]
+    },
+    "rmtpp_decrnn_mode_wcmpt":
+    {
+        "hidden_layer_size": [64],
+	"wt_hparam": [1.0]
+    },
+    "rmtpp_decrnn_mode_whparam":
+    {
+        "hidden_layer_size": [64],
+	"wt_hparam": [0.0001, 0.001, 0.01, 0.1, 1.0] 
+    },
+    "rmtpp_decrnn_mode_cf":
+    {
+        "hidden_layer_size": [64],
+	"wt_hparam": [1.0]
+    },
+    "rmtpp_decrnn_mode_whparam":
+    {
+        "hidden_layer_size": [16, 32, 64, 128],
+	"wt_hparam": [0.0001, 0.001, 0.01, 0.1, 1.0] 
+    },
+    "rmtpp_decrnn_mode_whparam_regu":
+    {
+        "hidden_layer_size": [16, 32, 64, 128],
+	"wt": [10.0, 5.0, 2.0, 1.0],
+	"l2_penalty":[0.1, 0.01, 0.001, 0.0]
     },
     "rmtpp_constraint":
     {
