@@ -86,9 +86,9 @@ command="python3.6 \
 	 --epsilon 0.1 \
 	 >>$print_dump"
 
-#if [[ "$dataset_name" == *"data_bookorder"* ]]; then
-#	command=$command" --normalization average"
-#fi
+if [[ "$dataset_name" == *"data_bookorder"* ]]; then
+	command=$command" --normalization average"
+fi
 
 if [ "$constraints" != "default" ]; then
 	command=$command" --constraints "$constraints
