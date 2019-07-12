@@ -79,7 +79,7 @@ command="python3.6 \
 	 $dataset_path"/test.time" \
 	 --save $save_dir \
 	 --cpu-only \
-	 --epochs 100 \
+	 --epochs 50 \
 	 --init-learning-rate 0.001 \
 	 --patience 20 \
 	 --stop-criteria epsilon \
