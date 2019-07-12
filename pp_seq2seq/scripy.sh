@@ -81,6 +81,9 @@ command="python3.6 \
 	 --cpu-only \
 	 --epochs 100 \
 	 --init-learning-rate 0.001 \
+	 --patience 20 \
+	 --stop-criteria epsilon \
+	 --epsilon 0.1 \
 	 >>$print_dump"
 
 #if [[ "$dataset_name" == *"data_bookorder"* ]]; then

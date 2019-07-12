@@ -42,6 +42,10 @@ def_opts = Deco.Options(
     normalization=None,
     constraints="default",
 
+    patience=0,
+    stop_criteria='per_epoch_val_err',
+    epsilon=0.0,
+
     wt_hparam=1.0,
 
     embed_size=__EMBED_SIZE,
@@ -94,6 +98,7 @@ class RMTPP_DECRNN:
                  float_type, bptt, decoder_length, seed, scope, alg_name,
                  save_dir, decay_steps, decay_rate,
                  device_gpu, device_cpu, summary_dir, cpu_only, constraints,
+                 patience, stop_criteria, epsilon,
                  Wt, Wem, Wh, bh, Ws, bs, wt, Wy, Vy, Vt, Vw, bk, bt, bw, wt_hparam):
         self.HIDDEN_LAYER_SIZE = hidden_layer_size
         self.BATCH_SIZE = batch_size
@@ -115,6 +120,12 @@ class RMTPP_DECRNN:
         self.DEVICE_GPU = device_gpu
 
         self.wt_hparam = wt_hparam
+
+        self.PATIENCE = patience
+        self.STOP_CRITERIA = stop_criteria
+        self.EPSILON = epsilon
+        if self.STOP_CRITERIA == 'epsilon':
+            assert self.EPSILON > 0.0
 
         self.sess = sess
         self.seed = seed
@@ -527,7 +538,7 @@ class RMTPP_DECRNN:
 
     def train(self, training_data, num_epochs=1,
               restart=False, check_nans=False, one_batch=False,
-              with_summaries=False, with_evals=False):
+              with_summaries=False, eval_train_data=False):
         """Train the model given the training data.
 
         If with_evals is an integer, then that many elements from the test set
@@ -623,6 +634,82 @@ class RMTPP_DECRNN:
                     print('Loss during batch {} last BPTT = {:.3f}, lr = {:.5f}'
                           .format(batch_idx, batch_loss, self.sess.run(self.learning_rate)))
 
+            if self.STOP_CRITERIA == 'per_epoch_val_err' and epoch >= self.PATIENCE:
+
+                minTime, maxTime = training_data['minTime'], training_data['maxTime']
+
+                if eval_train_data:
+                    print('Running evaluation on train, dev, test: ...')
+                else:
+                    print('Running evaluation on dev, test: ...')
+
+                if eval_train_data:
+                    plt_time_out_seq = training_data['train_time_out_seq']
+                    plt_tru_gaps = plt_time_out_seq - np.concatenate([training_data['train_time_in_seq'][:, -1:], plt_time_out_seq[:, :-1]], axis=1)
+                    train_time_preds, train_event_preds = self.predict(training_data['train_event_in_seq'],
+                                                                   training_data['train_time_in_seq'],
+                                                                   training_data['decoder_length'],
+                                                                   plt_tru_gaps,
+                                                                   single_threaded=True)
+                    train_time_preds = train_time_preds * (maxTime - minTime) + minTime
+                    train_time_out_seq = training_data['train_time_out_seq'] * (maxTime - minTime) + minTime
+                    train_mae, train_total_valid, train_acc = self.eval(train_time_preds, train_time_out_seq,
+                                                                  train_event_preds, training_data['train_event_out_seq'])
+                    print('TRAIN: MAE = {:.5f}; valid = {}, ACC = {:.5f}'.format(
+                        train_mae, train_total_valid, train_acc))
+                else:
+                    train_mae, train_acc, train_time_preds, train_event_preds = None, None, np.array([]), np.array([])
+
+                plt_time_out_seq = training_data['dev_time_out_seq']
+                plt_tru_gaps = plt_time_out_seq - np.concatenate([training_data['dev_time_in_seq'][:, -1:], plt_time_out_seq[:, :-1]], axis=1)
+                dev_time_preds, dev_event_preds = self.predict(training_data['dev_event_in_seq'],
+                                                               training_data['dev_time_in_seq'],
+                                                               training_data['decoder_length'],
+                                                               plt_tru_gaps,
+                                                               single_threaded=True)
+                dev_time_preds = dev_time_preds * (maxTime - minTime) + minTime
+                dev_time_out_seq = training_data['dev_time_out_seq'] * (maxTime - minTime) + minTime
+                dev_mae, dev_total_valid, dev_acc = self.eval(dev_time_preds, dev_time_out_seq,
+                                                              dev_event_preds, training_data['dev_event_out_seq'])
+                print('DEV: MAE = {:.5f}; valid = {}, ACC = {:.5f}'.format(
+                    dev_mae, dev_total_valid, dev_acc))
+    
+                plt_time_out_seq = training_data['test_time_out_seq']
+                plt_tru_gaps = plt_time_out_seq - np.concatenate([training_data['test_time_in_seq'][:, -1:], plt_time_out_seq[:, :-1]], axis=1)
+                test_time_preds, test_event_preds = self.predict(training_data['test_event_in_seq'],
+                                                                 training_data['test_time_in_seq'],
+                                                                 training_data['decoder_length'],
+                                                                 plt_tru_gaps,
+                                                                 single_threaded=True)
+                test_time_preds = test_time_preds * (maxTime - minTime) + minTime
+                test_time_out_seq = training_data['test_time_out_seq'] * (maxTime - minTime) + minTime
+                test_time_in_seq = training_data['test_time_in_seq'] * (maxTime - minTime) + minTime
+                gaps = test_time_preds - np.concatenate([test_time_in_seq[:, -1:], test_time_preds[:, :-1]], axis=-1)
+                tru_gaps = test_time_out_seq - np.concatenate([test_time_in_seq[:, -1:], test_time_out_seq[:, :-1]], axis=1)
+                print('Predicted gaps')
+                print(gaps)
+                print('True gaps')
+                print(tru_gaps)
+                test_mae, test_total_valid, test_acc = self.eval(test_time_preds, test_time_out_seq,
+                                                                 test_event_preds, training_data['test_event_out_seq'])
+                print('TEST: MAE = {:.5f}; valid = {}, ACC = {:.5f}'.format(
+                    test_mae, test_total_valid, test_acc))
+    
+                if dev_mae < best_dev_mae:
+                    best_epoch = epoch
+                    best_train_mae, best_dev_mae, best_test_mae = train_mae, dev_mae, test_mae
+                    best_train_acc, best_dev_acc, best_test_acc = train_acc, dev_acc, test_acc
+                    best_train_event_preds, best_train_time_preds  = train_event_preds, train_time_preds
+                    best_dev_event_preds, best_dev_time_preds  = dev_event_preds, dev_time_preds
+                    best_test_event_preds, best_test_time_preds  = test_event_preds, test_time_preds
+                    best_w = self.sess.run(self.wt).tolist()
+    
+                    checkpoint_dir = os.path.join(self.SAVE_DIR, 'hls_'+str(self.HIDDEN_LAYER_SIZE))
+                    checkpoint_path = os.path.join(checkpoint_dir, 'model.ckpt')
+                    saver.save(self.sess, checkpoint_path)# , global_step=step)
+                    print('Model saved at {}'.format(checkpoint_path))
+
+
             # self.sess.run(self.increment_global_step)
             train_loss_list.append(total_loss)
             print('Loss on last epoch = {:.4f}, new lr = {:.5f}, global_step = {}'
@@ -631,7 +718,7 @@ class RMTPP_DECRNN:
                           self.sess.run(self.global_step)))
 
             print(total_loss, total_loss_prev, abs(total_loss-total_loss_prev))
-            if abs(total_loss-total_loss_prev) < epsilon:
+            if self.STOP_CRITERIA == 'epsilon' and epoch >= self.PATIENCE and abs(total_loss-total_loss_prev) < self.EPSILON:
                 break
 
             if one_batch:
@@ -641,30 +728,31 @@ class RMTPP_DECRNN:
         # Remember how many epochs we have trained.
         self.last_epoch += num_epochs
 
-        if with_evals:
+        if self.STOP_CRITERIA == 'epsilon':
             print('w:', self.sess.run(self.wt).tolist())
-            if isinstance(with_evals, int):
-                batch_size = with_evals
-            else:
-                batch_size = len(training_data['dev_event_in_seq'])
 
             minTime, maxTime = training_data['minTime'], training_data['maxTime']
-            print('Running evaluation on train, dev, test: ...')
+            if eval_train_data:
+                print('Running evaluation on train, dev, test: ...')
+            else:
+                print('Running evaluation on dev, test: ...')
 
-            plt_time_out_seq = training_data['train_time_out_seq']
-            plt_tru_gaps = plt_time_out_seq - np.concatenate([training_data['train_time_in_seq'][:, -1:], plt_time_out_seq[:, :-1]], axis=1)
-            train_time_preds, train_event_preds = self.predict(training_data['train_event_in_seq'],
-                                                           training_data['train_time_in_seq'],
-                                                           training_data['decoder_length'],
-                                                           plt_tru_gaps,
-                                                           single_threaded=True)
-            train_time_preds = train_time_preds * (maxTime - minTime) + minTime
-            train_time_out_seq = training_data['train_time_out_seq'] * (maxTime - minTime) + minTime
-            train_mae, train_total_valid, train_acc = self.eval(train_time_preds, train_time_out_seq,
-                                                          train_event_preds, training_data['train_event_out_seq'])
-            print('TRAIN: MAE = {:.5f}; valid = {}, ACC = {:.5f}'.format(
-                train_mae, train_total_valid, train_acc))
-
+            if eval_train_data: 
+                plt_time_out_seq = training_data['train_time_out_seq']
+                plt_tru_gaps = plt_time_out_seq - np.concatenate([training_data['train_time_in_seq'][:, -1:], plt_time_out_seq[:, :-1]], axis=1)
+                train_time_preds, train_event_preds = self.predict(training_data['train_event_in_seq'],
+                                                               training_data['train_time_in_seq'],
+                                                               training_data['decoder_length'],
+                                                               plt_tru_gaps,
+                                                               single_threaded=True)
+                train_time_preds = train_time_preds * (maxTime - minTime) + minTime
+                train_time_out_seq = training_data['train_time_out_seq'] * (maxTime - minTime) + minTime
+                train_mae, train_total_valid, train_acc = self.eval(train_time_preds, train_time_out_seq,
+                                                              train_event_preds, training_data['train_event_out_seq'])
+                print('TRAIN: MAE = {:.5f}; valid = {}, ACC = {:.5f}'.format(
+                    train_mae, train_total_valid, train_acc))
+            else:
+                train_mae, train_acc, train_time_preds, train_event_preds = None, None, np.array([]), np.array([])
 
             plt_time_out_seq = training_data['dev_time_out_seq']
             plt_tru_gaps = plt_time_out_seq - np.concatenate([training_data['dev_time_in_seq'][:, -1:], plt_time_out_seq[:, :-1]], axis=1)
@@ -887,12 +975,12 @@ class RMTPP_DECRNN:
                 if self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_wcmpt', 'rmtpp_decrnn_whparam']:
                     args = (c_, WT)
                     val, _err = quad(quad_func, 0, np.inf, args=args)
-                    print(batch_idx, D, c_, WT, val)
+                    #print(batch_idx, D, c_, WT, val)
                 elif self.ALG_NAME in ['rmtpp_decrnn_mode', 'rmtpp_decrnn_mode_wcmpt', 'rmtpp_decrnn_mode_whparam']:
                     val_raw = (np.log(WT) - D)/WT
                     val = np.where(val_raw<0.0, 0.0, val_raw)
                     val = val.reshape(-1)[0]
-                    print(batch_idx, D, c_, WT, val, val_raw)
+                    #print(batch_idx, D, c_, WT, val, val_raw)
 
                 assert np.isfinite(val)
                 preds_i.append(t_last + val)
