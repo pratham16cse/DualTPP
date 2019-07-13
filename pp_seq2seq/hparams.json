@@ -11,8 +11,8 @@
     },
     "rmtpp_whparam":
     {
-        "hidden_layer_size": [16, 32, 64, 128],
-	"wt_hparam": [0.0001, 0.001, 0.01, 0.1, 1.0] 
+        "hidden_layer_size": [64],
+	"wt_hparam": [0.00097, 0.00197, 0.00297, 0.00397]
     },
     "rmtpp_mode":
     {
@@ -41,8 +41,8 @@
     },
     "rmtpp_decrnn_whparam":
     {
-        "hidden_layer_size": [16, 32, 64, 128],
-	"wt_hparam": [1.0]
+        "hidden_layer_size": [64],
+	"wt_hparam": [0.69506, 0.69606, 0.69706, 0.69806]
     },
     "rmtpp_decrnn_mode":
     {
