@@ -309,6 +309,7 @@ class RMTPP:
                             if self.ALG_NAME in ['rmtpp_wcmpt', 'rmtpp_mode_wcmpt']:
                                 WT = tf.matmul(state, self.Vw) + base_intensity_bw
                                 WT = get_WT_constraint()(WT)
+                                WT = tf.clip_by_value(WT, 0.0, 10.0)
                             elif self.ALG_NAME in ['rmtpp', 'rmtpp_mode']:
                                 WT = self.wt
                             elif self.ALG_NAME in ['rmtpp_whparam', 'rmtpp_mode_whparam']:
@@ -960,6 +961,7 @@ class RMTPP:
                 if self.ALG_NAME in ['rmtpp_wcmpt', 'rmtpp_mode_wcmpt']:
                     WT = (np.dot(h_i, Vw) + bw).reshape(-1)
                     WT = get_WT_constraint()(WT)
+                    WT = np.clip(WT, 0.0, 10.0)
                 elif self.ALG_NAME in ['rmtpp', 'rmtpp_mode']:
                     WT = wt
                 elif self.ALG_NAME in ['rmtpp_whparam', 'rmtpp_mode_whparam']:

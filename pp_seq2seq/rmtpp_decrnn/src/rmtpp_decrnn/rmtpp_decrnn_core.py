@@ -373,6 +373,7 @@ class RMTPP_DECRNN:
                     if self.ALG_NAME in ['rmtpp_decrnn_wcmpt', 'rmtpp_decrnn_mode_wcmpt']:
                         WT = tf.squeeze(tf.tensordot(self.decoder_states, self.Vw, axes=[[2],[0]]), axis=-1) + base_intensity_bw
                         WT = get_WT_constraint()(WT)
+                        WT = tf.clip_by_value(WT, 0.0, 10.0)
                     elif self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_mode']:
                         WT = self.wt
                     elif self.ALG_NAME in ['rmtpp_decrnn_whparam', 'rmtpp_decrnn_mode_whparam']:
@@ -967,6 +968,7 @@ class RMTPP_DECRNN:
                 if self.ALG_NAME in ['rmtpp_decrnn_wcmpt', 'rmtpp_decrnn_mode_wcmpt']:
                     WT = (np.dot(s_i, Vw) + bw).reshape(-1)
                     WT = get_WT_constraint()(WT)
+                    WT = np.clip(WT, 0.0, 10.0)
                 elif self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_mode']:
                     WT = wt
                 elif self.ALG_NAME in ['rmtpp_decrnn_whparam', 'rmtpp_decrnn_mode_whparam']:
