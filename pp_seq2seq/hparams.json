@@ -1,17 +1,17 @@
 {
     "rmtpp":
     {
-        "hidden_layer_size": [64],
+        "hidden_layer_size": [16, 32, 64, 128],
 	"wt_hparam": [1.0] 
     },
     "rmtpp_wcmpt":
     {
-        "hidden_layer_size": [64],
+        "hidden_layer_size": [16, 32, 64, 128],
 	"wt_hparam": [1.0] 
     },
     "rmtpp_whparam":
     {
-        "hidden_layer_size": [64],
+        "hidden_layer_size": [16, 32, 64, 128],
 	"wt_hparam": [0.00153, 0.00253, 0.00353, 0.00453]
     },
     "rmtpp_mode":
@@ -36,12 +36,12 @@
     },
     "rmtpp_decrnn_wcmpt":
     {
-        "hidden_layer_size": [64],
+        "hidden_layer_size": [16, 32, 64, 128],
 	"wt_hparam": [1.0]
     },
     "rmtpp_decrnn_whparam":
     {
-        "hidden_layer_size": [64],
+        "hidden_layer_size": [16, 32, 64, 128],
 	"wt_hparam": [0.15332, 0.15432, 0.15532, 0.15632]
     },
     "rmtpp_decrnn_mode":
