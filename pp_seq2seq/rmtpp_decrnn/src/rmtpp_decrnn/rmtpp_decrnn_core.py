@@ -156,7 +156,7 @@ class RMTPP_DECRNN:
 
         def get_WT_constraint():
             if self.CONSTRAINTS == 'default':
-                return lambda x: tf.nn.softplus(x)
+                return lambda x: tf.clip_by_value(x, 1e-5, np.inf)
             elif self.CONSTRAINTS in ['c1', 'c2']:
                 return lambda x: tf.nn.softplus(x)
             else:
@@ -921,7 +921,7 @@ class RMTPP_DECRNN:
 
         def get_WT_constraint():
             if self.CONSTRAINTS == 'default':
-                return lambda x: softplus(x)
+                return lambda x: np.clip(x, 1e-5, np.inf)
             elif self.CONSTRAINTS in ['c1', 'c2']:
                 return lambda x: softplus(x)
             else:
