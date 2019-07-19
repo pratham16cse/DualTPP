@@ -134,7 +134,10 @@ class RMTPP_DECRNN_VAE:
         self.sess = sess
         self.seed = seed
         self.last_epoch = 0
+
         self.sample_num = 100
+        self.pass_mean = False
+        self.sampled = False
 
         self.rs = np.random.RandomState(seed + 42)
         np.random.seed(42)
@@ -384,9 +387,11 @@ class RMTPP_DECRNN_VAE:
                 KL_divergence_val = tf.reduce_sum(KL_divergence_val, 1)
                 self.KL_divergence = tf.reduce_mean(KL_divergence_val)
 
-                self.h_m_z_hat = tf.concat([self.final_state, self.latent_vector_q_min], axis=-1)
+                if self.pass_mean:
+                    self.h_m_z_hat = tf.concat([self.final_state, self.mu], axis=-1)
+                else:
+                    self.h_m_z_hat = tf.concat([self.final_state, self.latent_vector_q_min], axis=-1)
 
-                # self.h_m_z_hat = tf.concat([self.final_state, self.mu], axis=-1)
 
                 self.z_hat_lst = self.sampling(self.mu, self.sigma, self.sample_num)
                 final_state_num = tf.tile(tf.expand_dims(self.final_state, axis=1), [1, self.sample_num, 1])
@@ -1078,14 +1083,18 @@ class RMTPP_DECRNN_VAE:
             self.mode: 0.0 #Test Mode
         }
 
-        all_encoder_states, all_decoder_states, all_decoder_states_num, all_event_preds, cur_state = self.sess.run(
+        all_encoder_states, all_decoder_states_processed, all_decoder_states_num_processed, all_event_preds, cur_state = self.sess.run(
             [self.hidden_states, self.merge_decoder_states, self.merge_decoder_states_num, self.event_preds, self.final_state],
             feed_dict=feed_dict
         )
         all_event_preds = np.argmax(all_event_preds, axis=-1) + 1
         all_event_preds = np.transpose(all_event_preds)
 
-        print('all_decoder_states_num', np.shape(all_decoder_states_num))
+        all_decoder_states = all_decoder_states_processed
+        if self.sampled:
+            all_decoder_states = all_decoder_states_num_processed
+
+        print('all_decoder_states', np.shape(all_decoder_states))
 
         # TODO: This calculation is completely ignoring the clipping which
         # happens during the inference step.
@@ -1172,12 +1181,12 @@ class RMTPP_DECRNN_VAE:
             return preds_i
 
         time_pred_last = time_in_seq[:, -1]
-        print(all_decoder_states_num.shape)
+        print(all_decoder_states.shape)
         if single_threaded:
-            all_time_preds = [_quad_worker((idx, (state, t_last, tru_gap))) for idx, (state, t_last, tru_gap) in enumerate(zip(all_decoder_states_num, time_pred_last, plt_tru_gaps))]
+            all_time_preds = [_quad_worker((idx, (state, t_last, tru_gap))) for idx, (state, t_last, tru_gap) in enumerate(zip(all_decoder_states, time_pred_last, plt_tru_gaps))]
         else:
             with MP.Pool() as pool:
-                all_time_preds = pool.map(_quad_worker, enumerate(zip(all_decoder_states_num, time_pred_last, plt_tru_gaps)))
+                all_time_preds = pool.map(_quad_worker, enumerate(zip(all_decoder_states, time_pred_last, plt_tru_gaps)))
 
         all_time_preds = np.asarray(all_time_preds).T
         assert np.isfinite(all_time_preds).sum() == all_time_preds.size
