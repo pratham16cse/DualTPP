@@ -134,6 +134,7 @@ class RMTPP_DECRNN_VAE:
         self.sess = sess
         self.seed = seed
         self.last_epoch = 0
+        self.sample_num = 100
 
         self.rs = np.random.RandomState(seed + 42)
         np.random.seed(42)
@@ -385,6 +386,13 @@ class RMTPP_DECRNN_VAE:
 
                 self.h_m_z_hat = tf.concat([self.final_state, self.latent_vector_q_min], axis=-1)
 
+                # self.h_m_z_hat = tf.concat([self.final_state, self.mu], axis=-1)
+
+                self.z_hat_lst = self.sampling(self.mu, self.sigma, self.sample_num)
+                final_state_num = tf.tile(tf.expand_dims(self.final_state, axis=1), [1, self.sample_num, 1])
+                self.h_m_z_hat_num = tf.concat([final_state_num, self.z_hat_lst], axis=-1)
+                # self.h_m_z_hat_num = tf.concat([tf.expand_dims(self.final_state, axis=1), self.latent_vector_q_min], axis=1)
+
                 #----------- Decoder Begin ----------#
                 # TODO Does affine transformations (Wy) need to be different? Wt is not \
                   # required in the decoder
@@ -393,6 +401,8 @@ class RMTPP_DECRNN_VAE:
                 #s_state = tf.Print(s_state, [self.mode, tf.equal(self.mode, 1.0)], message='mode ')
                 self.decoder_states = []
                 self.merge_decoder_states = []
+                self.merge_decoder_states_num = []
+
                 with tf.name_scope('Decoder'):
                     for i in range(self.DEC_LEN):
 
@@ -437,19 +447,27 @@ class RMTPP_DECRNN_VAE:
                             )
                             s_state = new_state
 
-                            self.merge_decoder_state = tf.layers.dense(
+                            merge_decoder_state = tf.layers.dense(
                               tf.concat([s_state, self.h_m_z_hat], axis=-1)
                               , self.HIDDEN_LAYER_SIZE)
 
+                            s_state_num = tf.tile(tf.expand_dims(s_state, axis=1), [1, self.sample_num, 1])
+                            merge_decoder_state_num = tf.layers.dense(
+                              tf.concat([s_state_num, self.h_m_z_hat_num], axis=-1)
+                              , self.HIDDEN_LAYER_SIZE)
+
+
                         self.decoder_states.append(s_state)
-                        self.merge_decoder_states.append(s_state)
+                        self.merge_decoder_states.append(merge_decoder_state)
+                        self.merge_decoder_states_num.append(merge_decoder_state_num)
 
                     self.event_preds = tf.stack(self.event_preds, axis=1)
 
                     # ------ Begin time-prediction ------ #
                     self.decoder_states = tf.stack(self.decoder_states, axis=1)
                     self.merge_decoder_states = tf.stack(self.merge_decoder_states, axis=1)
-                    print(self.merge_decoder_states, 'merge_decoder_states')
+                    self.merge_decoder_states_num = tf.stack(self.merge_decoder_states_num, axis=1)
+
                     times_out_prev = tf.concat([self.times_in[:, -1:], self.times_out[:, :-1]], axis=1)
 
                     gaps = self.times_out-times_out_prev
@@ -586,6 +604,18 @@ class RMTPP_DECRNN_VAE:
         # print('stddev', stddev)
         # print('latent_vector', latent_vector)
         return mean, stddev, latent_vector
+
+    def sampling(self, mean, sigma, num):
+        # mean = [batch_size, hidden_size]
+        # mean_num = [batch_size, num, hidden_size]
+        multiply = tf.constant([num, 1])
+
+        # temp = tf.tile(mean, multiply)
+        mean_num = tf.reshape(tf.tile(mean, multiply), [tf.shape(mean)[0], multiply[0], self.HIDDEN_LAYER_SIZE])
+        stddev_num = tf.reshape(tf.tile(sigma, multiply), [tf.shape(sigma)[0], multiply[0], self.HIDDEN_LAYER_SIZE])
+
+        latent_vector = tf.add(mean_num , tf.tensordot(stddev_num , tf.random_normal([stddev_num.get_shape().as_list()[2], stddev_num.get_shape().as_list()[2]], mean=0., stddev=1., dtype=tf.float32), axes=[[2],[0]]))
+        return latent_vector
 
     def initialize(self, finalize=False):
         """Initialize the global trainable variables."""
@@ -1048,12 +1078,14 @@ class RMTPP_DECRNN_VAE:
             self.mode: 0.0 #Test Mode
         }
 
-        all_encoder_states, all_decoder_states, all_event_preds, cur_state = self.sess.run(
-            [self.hidden_states, self.merge_decoder_states, self.event_preds, self.final_state],
+        all_encoder_states, all_decoder_states, all_decoder_states_num, all_event_preds, cur_state = self.sess.run(
+            [self.hidden_states, self.merge_decoder_states, self.merge_decoder_states_num, self.event_preds, self.final_state],
             feed_dict=feed_dict
         )
         all_event_preds = np.argmax(all_event_preds, axis=-1) + 1
         all_event_preds = np.transpose(all_event_preds)
+
+        print('all_decoder_states_num', np.shape(all_decoder_states_num))
 
         # TODO: This calculation is completely ignoring the clipping which
         # happens during the inference step.
@@ -1063,6 +1095,7 @@ class RMTPP_DECRNN_VAE:
         def _quad_worker(params):
             batch_idx, (all_decoder_states, time_pred_last, tru_gap) = params
             preds_i = []
+
             #print(np.matmul(all_decoder_states, Vt) + bt)
             for pred_idx, s_i in enumerate(all_decoder_states):
                 t_last = time_pred_last if pred_idx==0 else preds_i[-1]
@@ -1070,6 +1103,10 @@ class RMTPP_DECRNN_VAE:
                 D = np.clip(D, np.ones_like(D)*-50.0, np.ones_like(D)*50.0)
                 D = get_D_constraint()(D)
                 c_ = np.exp(np.maximum(D, np.ones_like(D)*-87.0))
+
+                # print('pred_idx', pred_idx)
+                # print('c_', c_, np.shape(c_))
+
                 if self.ALG_NAME in ['rmtpp_decrnn_vae_wcmpt', 'rmtpp_decrnn_vae_mode_wcmpt']:
                     WT = (np.dot(s_i, Vw) + bw).reshape(-1)
                     WT = get_WT_constraint()(WT)
@@ -1079,15 +1116,29 @@ class RMTPP_DECRNN_VAE:
                 elif self.ALG_NAME in ['rmtpp_decrnn_vae_whparam', 'rmtpp_decrnn_vae_mode_whparam']:
                     WT = self.wt_hparam
 
+                WT = np.ones_like(D)*WT
+                WT = np.reshape(WT, np.shape(D))
+                # print('WT', WT, np.shape(WT))
+
                 if self.ALG_NAME in ['rmtpp_decrnn_vae', 'rmtpp_decrnn_vae_wcmpt', 'rmtpp_decrnn_vae_whparam']:
-                    args = (c_, WT)
-                    val, _err = quad(quad_func, 0, np.inf, args=args)
+                    t_val = 0.0
+                    t_err = 0.0
+                    for test_idx, c_per_test in enumerate(c_):
+                        args = (c_per_test, WT[test_idx])
+                        val, _err = quad(quad_func, 0, np.inf, args=args)
+                        t_val += val
+                        t_err += _err
+
+                    val = t_val/self.sample_num
+                    _err = t_err/self.sample_num
                     #print(batch_idx, D, c_, WT, val)
                 elif self.ALG_NAME in ['rmtpp_decrnn_vae_mode', 'rmtpp_decrnn_vae_mode_wcmpt', 'rmtpp_decrnn_vae_mode_whparam']:
                     val_raw = (np.log(WT) - D)/WT
                     val = np.where(val_raw<0.0, 0.0, val_raw)
                     val = val.reshape(-1)[0]
                     #print(batch_idx, D, c_, WT, val, val_raw)
+
+                # print('val', val)
 
                 assert np.isfinite(val)
                 preds_i.append(t_last + val)
@@ -1121,12 +1172,12 @@ class RMTPP_DECRNN_VAE:
             return preds_i
 
         time_pred_last = time_in_seq[:, -1]
-        print(all_decoder_states.shape)
+        print(all_decoder_states_num.shape)
         if single_threaded:
-            all_time_preds = [_quad_worker((idx, (state, t_last, tru_gap))) for idx, (state, t_last, tru_gap) in enumerate(zip(all_decoder_states, time_pred_last, plt_tru_gaps))]
+            all_time_preds = [_quad_worker((idx, (state, t_last, tru_gap))) for idx, (state, t_last, tru_gap) in enumerate(zip(all_decoder_states_num, time_pred_last, plt_tru_gaps))]
         else:
             with MP.Pool() as pool:
-                all_time_preds = pool.map(_quad_worker, enumerate(zip(all_decoder_states, time_pred_last, plt_tru_gaps)))
+                all_time_preds = pool.map(_quad_worker, enumerate(zip(all_decoder_states_num, time_pred_last, plt_tru_gaps)))
 
         all_time_preds = np.asarray(all_time_preds).T
         assert np.isfinite(all_time_preds).sum() == all_time_preds.size

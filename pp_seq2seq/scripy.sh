@@ -81,7 +81,7 @@ command="python3.6 \
 	 --cpu-only \
 	 --epochs 50 \
 	 --init-learning-rate 0.001 \
-	 --patience 0 \
+	 --patience 20 \
 	 --stop-criteria per_epoch_val_err \
 	 --epsilon 0.1 \
 	 >>$print_dump"
