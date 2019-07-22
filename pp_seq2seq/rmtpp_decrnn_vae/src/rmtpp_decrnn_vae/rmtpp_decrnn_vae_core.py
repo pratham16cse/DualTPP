@@ -135,9 +135,9 @@ class RMTPP_DECRNN_VAE:
         self.seed = seed
         self.last_epoch = 0
 
-        self.sample_num = 100
+        self.sample_num = 50
         self.pass_mean = False
-        self.sampled = False
+        self.sampled = True
 
         self.rs = np.random.RandomState(seed + 42)
         np.random.seed(42)
