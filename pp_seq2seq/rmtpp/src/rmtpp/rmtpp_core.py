@@ -141,6 +141,8 @@ class RMTPP:
                 return lambda x: tf.clip_by_value(x, 1.0, np.inf)
             elif self.CONSTRAINTS == 'c2':
                 return lambda x: tf.clip_by_value(x, 1e-5, np.inf)
+            elif self.CONSTRAINTS == 'unconstrained':
+                return lambda x: x
             else:
                 print('Constraint on wt not found.')
                 assert False
@@ -150,6 +152,8 @@ class RMTPP:
                 return lambda x: x
             elif self.CONSTRAINTS in ['c1', 'c2']:
                 return lambda x: -tf.nn.softplus(-x)
+            elif self.CONSTRAINTS == 'unconstrained':
+                return lambda x: x
             else:
                 print('Constraint on wt not found.')
                 assert False
@@ -879,6 +883,8 @@ class RMTPP:
                 return lambda x: tf.clip_by_value(x, 1.0, np.inf)
             elif self.CONSTRAINTS == 'c2':
                 return lambda x: tf.clip_by_value(x, 1e-5, np.inf)
+            elif self.CONSTRAINTS == 'unconstrained':
+                return lambda x: x
             else:
                 print('Constraint on wt not found.')
                 assert False
@@ -888,6 +894,8 @@ class RMTPP:
                 return lambda x: x
             elif self.CONSTRAINTS in ['c1', 'c2']:
                 return lambda x: -softplus(-x)
+            elif self.CONSTRAINTS == 'unconstrained':
+                return lambda x: x
             else:
                 print('Constraint on wt not found.')
                 assert False
