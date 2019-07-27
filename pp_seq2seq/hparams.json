@@ -85,10 +85,12 @@
     },
     "zero_pred":
     {
-        "hidden_layer_size": [16]
+        "hidden_layer_size": [16],
+	"wt_hparam": [1.0]
     },
     "average_gap_pred":
     {
-        "hidden_layer_size": [16]
+        "hidden_layer_size": [16],
+	"wt_hparam": [1.0]
     }
 }
