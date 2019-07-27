@@ -135,7 +135,7 @@ class RMTPP_DECRNN_VAE:
         self.seed = seed
         self.last_epoch = 0
 
-        self.sample_num = 50
+        self.sample_num = 30
         self.pass_mean = False
         self.sampled = True
 
@@ -149,6 +149,8 @@ class RMTPP_DECRNN_VAE:
                 return lambda x: tf.clip_by_value(x, 1.0, np.inf)
             elif self.CONSTRAINTS == 'c2':
                 return lambda x: tf.clip_by_value(x, 1e-5, np.inf)
+            elif self.CONSTRAINTS == 'unconstrained':
+                return lambda x: x
             else:
                 print('Constraint on wt not found.')
                 assert False
@@ -158,6 +160,8 @@ class RMTPP_DECRNN_VAE:
                 return lambda x: x
             elif self.CONSTRAINTS in ['c1', 'c2']:
                 return lambda x: -tf.nn.softplus(-x)
+            elif self.CONSTRAINTS == 'unconstrained':
+                return lambda x: x
             else:
                 print('Constraint on wt not found.')
                 assert False
@@ -167,6 +171,8 @@ class RMTPP_DECRNN_VAE:
                 return lambda x: tf.clip_by_value(x, 1e-5, np.inf)
             elif self.CONSTRAINTS in ['c1', 'c2']:
                 return lambda x: tf.nn.softplus(x)
+            elif self.CONSTRAINTS == 'unconstrained':
+                return lambda x: x
             else:
                 print('Constraint on wt not found.')
                 assert False
@@ -341,9 +347,10 @@ class RMTPP_DECRNN_VAE:
 
 
                 #----------- d Decoder Begin ----------#
-                state_d = tf.zeros([self.inf_batch_size, self.HIDDEN_LAYER_SIZE],
-                                                      dtype=self.FLOAT_TYPE,
-                                                      name='initial_state_d_dec')
+                if self.pass_mean:
+                    self.latent_vector_q_min = self.mu
+
+                state_d = self.latent_vector_q_min
                 with tf.name_scope('d_Decoder'):
 
                     for i in range(self.DEC_LEN):
@@ -387,11 +394,7 @@ class RMTPP_DECRNN_VAE:
                 KL_divergence_val = tf.reduce_sum(KL_divergence_val, 1)
                 self.KL_divergence = tf.reduce_mean(KL_divergence_val)
 
-                if self.pass_mean:
-                    self.h_m_z_hat = tf.concat([self.final_state, self.mu], axis=-1)
-                else:
-                    self.h_m_z_hat = tf.concat([self.final_state, self.latent_vector_q_min], axis=-1)
-
+                self.h_m_z_hat = tf.concat([self.final_state, self.latent_vector_q_min], axis=-1)
 
                 self.z_hat_lst = self.sampling(self.mu, self.sigma, self.sample_num)
                 final_state_num = tf.tile(tf.expand_dims(self.final_state, axis=1), [1, self.sample_num, 1])
@@ -473,6 +476,8 @@ class RMTPP_DECRNN_VAE:
                     self.merge_decoder_states = tf.stack(self.merge_decoder_states, axis=1)
                     self.merge_decoder_states_num = tf.stack(self.merge_decoder_states_num, axis=1)
 
+                    print('self.merge_decoder_states_num', self.merge_decoder_states_num)
+
                     times_out_prev = tf.concat([self.times_in[:, -1:], self.times_out[:, :-1]], axis=1)
 
                     gaps = self.times_out-times_out_prev
@@ -482,29 +487,37 @@ class RMTPP_DECRNN_VAE:
                     base_intensity_bt = self.bt
                     base_intensity_bw = self.bw
 
-                    D = tf.squeeze(tf.tensordot(self.merge_decoder_states, self.Vt, axes=[[2],[0]]), axis=-1) + base_intensity_bt
+                    D = tf.squeeze(tf.tensordot(self.merge_decoder_states_num, self.Vt, axes=[[3],[0]]), axis=-1) + base_intensity_bt
                     D = get_D_constraint()(D)
+
                     #TODO: size of wt should be 1 or batch_size
                     if self.ALG_NAME in ['rmtpp_decrnn_vae_wcmpt', 'rmtpp_decrnn_vae_mode_wcmpt']:
-                        WT = tf.squeeze(tf.tensordot(self.merge_decoder_states, self.Vw, axes=[[2],[0]]), axis=-1) + base_intensity_bw
+                        WT = tf.squeeze(tf.tensordot(self.merge_decoder_states_num, self.Vw, axes=[[3],[0]]), axis=-1) + base_intensity_bw
                         WT = get_WT_constraint()(WT)
                         WT = tf.clip_by_value(WT, 0.0, 10.0)
                     elif self.ALG_NAME in ['rmtpp_decrnn_vae', 'rmtpp_decrnn_vae_mode']:
                         WT = self.wt
                     elif self.ALG_NAME in ['rmtpp_decrnn_vae_whparam', 'rmtpp_decrnn_vae_mode_whparam']:
                         WT = self.wt_hparam
-                    log_lambda_ = (D + gaps * WT)
+
+                    tile_gape = tf.tile(tf.expand_dims(gaps, axis=2), [1, 1, self.sample_num])
+                    log_lambda_ = (D + (tile_gape * WT))
                     lambda_ = tf.exp(tf.minimum(ETH, log_lambda_), name='lambda_')
                     log_f_star = (log_lambda_
                                   + (1.0 / WT) * tf.exp(tf.minimum(ETH, D))
                                   - (1.0 / WT) * lambda_)
 
+                    log_f_star = tf.reduce_sum(log_f_star, axis=-1)
+                    log_lambda_ = tf.reduce_sum(log_lambda_, axis=-1)
+                    lambda_ = tf.reduce_sum(lambda_, axis=-1)
 
                 with tf.name_scope('loss_calc'):
 
                     self.mark_LLs = tf.squeeze(tf.stack(self.mark_LLs, axis=1), axis=-1)
                     self.time_LLs = log_f_star
                     step_LLs = self.time_LLs + self.mark_LLs
+
+                    print(step_LLs)
                     #step_LLs = self.mark_LLs
                     #step_LLs = self.time_LLs
 
@@ -1046,6 +1059,8 @@ class RMTPP_DECRNN_VAE:
                 return lambda x: tf.clip_by_value(x, 1.0, np.inf)
             elif self.CONSTRAINTS == 'c2':
                 return lambda x: tf.clip_by_value(x, 1e-5, np.inf)
+            elif self.CONSTRAINTS == 'unconstrained':
+                return lambda x: x
             else:
                 print('Constraint on wt not found.')
                 assert False
@@ -1055,6 +1070,8 @@ class RMTPP_DECRNN_VAE:
                 return lambda x: x
             elif self.CONSTRAINTS in ['c1', 'c2']:
                 return lambda x: -softplus(-x)
+            elif self.CONSTRAINTS == 'unconstrained':
+                return lambda x: x
             else:
                 print('Constraint on wt not found.')
                 assert False
@@ -1064,6 +1081,8 @@ class RMTPP_DECRNN_VAE:
                 return lambda x: np.clip(x, 1e-5, np.inf)
             elif self.CONSTRAINTS in ['c1', 'c2']:
                 return lambda x: softplus(x)
+            elif self.CONSTRAINTS == 'unconstrained':
+                return lambda x: x
             else:
                 print('Constraint on wt not found.')
                 assert False
