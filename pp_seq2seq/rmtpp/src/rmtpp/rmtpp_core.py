@@ -986,7 +986,7 @@ class RMTPP:
                     #print(batch_idx, D, c_, WT, val, val_raw)
 
                 assert np.isfinite(val)
-                preds_i.append(t_last + val)
+                preds_i = t_last + val
 
                 if plot_dir:
                     if self.ALG_NAME in ['rmtpp', 'rmtpp_wcmpt']:
@@ -1026,9 +1026,9 @@ class RMTPP:
                 with MP.Pool() as pool:
                     step_time_preds = pool.map(_quad_worker, enumerate(zip(cur_state, time_pred_last, plt_tru_gaps)))
 
-            all_time_preds.extend(step_time_preds)
+            all_time_preds.append(step_time_preds)
 
-        all_time_preds = np.asarray(all_time_preds).T
+        all_time_preds = np.asarray(all_time_preds)
         assert np.isfinite(all_time_preds).sum() == all_time_preds.size
 
         print('all_time_preds shape:', all_time_preds.shape)
