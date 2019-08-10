@@ -77,6 +77,7 @@ command="python3.6 \
 	 $dataset_path"/dev.time" \
 	 $dataset_path"/test.event" \
 	 $dataset_path"/test.time" \
+	 --dataset_path $dataset_path\
 	 --save $save_dir \
 	 --cpu-only \
 	 --epochs 50 \

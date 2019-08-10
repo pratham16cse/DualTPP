@@ -136,11 +136,13 @@ class RMTPP_DECRNN:
 
         def get_wt_constraint():
             if self.CONSTRAINTS == 'default':
-                return lambda x: tf.clip_by_value(x, 1e-5, np.inf)
+                return lambda x: tf.clip_by_value(x, 1e-5, 20.0)
             elif self.CONSTRAINTS == 'c1':
                 return lambda x: tf.clip_by_value(x, 1.0, np.inf)
             elif self.CONSTRAINTS == 'c2':
                 return lambda x: tf.clip_by_value(x, 1e-5, np.inf)
+            elif self.CONSTRAINTS == 'unconstrained':
+                return lambda x: x
             else:
                 print('Constraint on wt not found.')
                 assert False
@@ -150,6 +152,8 @@ class RMTPP_DECRNN:
                 return lambda x: x
             elif self.CONSTRAINTS in ['c1', 'c2']:
                 return lambda x: -tf.nn.softplus(-x)
+            elif self.CONSTRAINTS == 'unconstrained':
+                return lambda x: x
             else:
                 print('Constraint on wt not found.')
                 assert False
@@ -668,8 +672,15 @@ class RMTPP_DECRNN:
                                                                training_data['decoder_length'],
                                                                plt_tru_gaps,
                                                                single_threaded=True)
+                # dev_time_out_seq = training_data['dev_time_out_seq'] * (maxTime - minTime) + minTime
                 dev_time_preds = dev_time_preds * (maxTime - minTime) + minTime
-                dev_time_out_seq = training_data['dev_time_out_seq'] * (maxTime - minTime) + minTime
+                dev_time_out_seq = np.array(training_data['dev_actual_time_out_seq'])
+                dev_time_in_seq = training_data['dev_time_in_seq'] * (maxTime - minTime) + minTime
+                gaps = dev_time_preds - np.concatenate([dev_time_in_seq[:, -1:], dev_time_preds[:, :-1]], axis=-1)
+                unnorm_gaps = gaps * training_data['dev_avg_gaps']
+                unnorm_gaps = np.cumsum(unnorm_gaps, axis=1)
+                dev_time_preds = unnorm_gaps + training_data['dev_actual_time_in_seq']
+                
                 dev_mae, dev_total_valid, dev_acc = self.eval(dev_time_preds, dev_time_out_seq,
                                                               dev_event_preds, training_data['dev_event_out_seq'])
                 print('DEV: MAE = {:.5f}; valid = {}, ACC = {:.5f}'.format(
@@ -683,14 +694,26 @@ class RMTPP_DECRNN:
                                                                  plt_tru_gaps,
                                                                  single_threaded=True)
                 test_time_preds = test_time_preds * (maxTime - minTime) + minTime
-                test_time_out_seq = training_data['test_time_out_seq'] * (maxTime - minTime) + minTime
+                # test_time_out_seq = training_data['test_time_out_seq'] * (maxTime - minTime) + minTime
+                test_time_out_seq = np.array(training_data['test_actual_time_out_seq'])
                 test_time_in_seq = training_data['test_time_in_seq'] * (maxTime - minTime) + minTime
                 gaps = test_time_preds - np.concatenate([test_time_in_seq[:, -1:], test_time_preds[:, :-1]], axis=-1)
-                tru_gaps = test_time_out_seq - np.concatenate([test_time_in_seq[:, -1:], test_time_out_seq[:, :-1]], axis=1)
-                print('Predicted gaps')
-                print(gaps)
+                # gaps = test_time_preds - np.concatenate([training_data['test_actual_time_in_seq'], test_time_preds[:, :-1]], axis=-1)
+                # tru_gaps = test_time_out_seq - np.concatenate([training_data['test_actual_time_in_seq'], test_time_out_seq[:, :-1]], axis=1)
+                tru_gaps = test_time_out_seq - np.concatenate([training_data['test_actual_time_in_seq'], test_time_out_seq[:, :-1]], axis=1)
+                # unnorm_true_gaps = tru_gaps * training_data['test_avg_gaps']
+                unnorm_gaps = gaps * training_data['test_avg_gaps']
+                unnorm_gaps = np.cumsum(unnorm_gaps, axis=1)
+                test_time_preds = unnorm_gaps + training_data['test_actual_time_in_seq']
+
+                # print('Predicted gaps')
+                # print(gaps)
+                print('UnNormed Predicted gaps')
+                print(unnorm_gaps)
                 print('True gaps')
                 print(tru_gaps)
+                # print('UnNormed True gaps')
+                # print(unnorm_true_gaps)
                 test_mae, test_total_valid, test_acc = self.eval(test_time_preds, test_time_out_seq,
                                                                  test_event_preds, training_data['test_event_out_seq'])
                 print('TEST: MAE = {:.5f}; valid = {}, ACC = {:.5f}'.format(
@@ -763,7 +786,13 @@ class RMTPP_DECRNN:
                                                            plt_tru_gaps,
                                                            single_threaded=True)
             dev_time_preds = dev_time_preds * (maxTime - minTime) + minTime
-            dev_time_out_seq = training_data['dev_time_out_seq'] * (maxTime - minTime) + minTime
+            dev_time_out_seq = np.array(training_data['dev_actual_time_out_seq'])
+            dev_time_in_seq = training_data['dev_time_in_seq'] * (maxTime - minTime) + minTime
+            gaps = dev_time_preds - np.concatenate([dev_time_in_seq[:, -1:], dev_time_preds[:, :-1]], axis=-1)
+            unnorm_gaps = gaps * training_data['dev_avg_gaps']
+            unnorm_gaps = np.cumsum(unnorm_gaps, axis=1)
+            dev_time_preds = unnorm_gaps + training_data['dev_actual_time_in_seq']
+            
             dev_mae, dev_total_valid, dev_acc = self.eval(dev_time_preds, dev_time_out_seq,
                                                           dev_event_preds, training_data['dev_event_out_seq'])
             print('DEV: MAE = {:.5f}; valid = {}, ACC = {:.5f}'.format(
@@ -777,14 +806,19 @@ class RMTPP_DECRNN:
                                                              plt_tru_gaps,
                                                              single_threaded=True)
             test_time_preds = test_time_preds * (maxTime - minTime) + minTime
-            test_time_out_seq = training_data['test_time_out_seq'] * (maxTime - minTime) + minTime
+            test_time_out_seq = np.array(training_data['test_actual_time_out_seq'])
             test_time_in_seq = training_data['test_time_in_seq'] * (maxTime - minTime) + minTime
             gaps = test_time_preds - np.concatenate([test_time_in_seq[:, -1:], test_time_preds[:, :-1]], axis=-1)
-            tru_gaps = test_time_out_seq - np.concatenate([test_time_in_seq[:, -1:], test_time_out_seq[:, :-1]], axis=1)
-            print('Predicted gaps')
-            print(gaps)
+            unnorm_gaps = gaps * training_data['test_avg_gaps']
+            unnorm_gaps = np.cumsum(unnorm_gaps, axis=1)
+            tru_gaps = test_time_out_seq - np.concatenate([training_data['test_actual_time_in_seq'], test_time_out_seq[:, :-1]], axis=1)
+            test_time_preds = unnorm_gaps + training_data['test_actual_time_in_seq']
+
+            print('UnNormed Predicted gaps')
+            print(unnorm_gaps)
             print('True gaps')
             print(tru_gaps)
+            
             test_mae, test_total_valid, test_acc = self.eval(test_time_preds, test_time_out_seq,
                                                              test_event_preds, training_data['test_event_out_seq'])
             print('TEST: MAE = {:.5f}; valid = {}, ACC = {:.5f}'.format(
@@ -901,11 +935,13 @@ class RMTPP_DECRNN:
 
         def get_wt_constraint():
             if self.CONSTRAINTS == 'default':
-                return lambda x: tf.clip_by_value(x, 1e-5, np.inf)
+                return lambda x: tf.clip_by_value(x, 1e-5, 20.0)
             elif self.CONSTRAINTS == 'c1':
                 return lambda x: tf.clip_by_value(x, 1.0, np.inf)
             elif self.CONSTRAINTS == 'c2':
                 return lambda x: tf.clip_by_value(x, 1e-5, np.inf)
+            elif self.CONSTRAINTS == 'unconstrained':
+                return lambda x: x
             else:
                 print('Constraint on wt not found.')
                 assert False
@@ -915,6 +951,8 @@ class RMTPP_DECRNN:
                 return lambda x: x
             elif self.CONSTRAINTS in ['c1', 'c2']:
                 return lambda x: -softplus(-x)
+            elif self.CONSTRAINTS == 'unconstrained':
+                return lambda x: x
             else:
                 print('Constraint on wt not found.')
                 assert False
@@ -953,7 +991,7 @@ class RMTPP_DECRNN:
         # TODO: This calculation is completely ignoring the clipping which
         # happens during the inference step.
         [Vt, Vw, bt, bw, wt]  = self.sess.run([self.Vt, self.Vw, self.bt, self.bw, self.wt])
-
+        
         global _quad_worker
         def _quad_worker(params):
             batch_idx, (all_decoder_states, time_pred_last, tru_gap) = params

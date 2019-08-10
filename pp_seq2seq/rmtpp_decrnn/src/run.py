@@ -27,6 +27,7 @@ def_opts = rmtpp_decrnn.rmtpp_decrnn_core.def_opts
 @click.argument('time_dev_file')
 @click.argument('event_test_file')
 @click.argument('time_test_file')
+@click.option('--dataset_path', 'dataset_path', help='Dataset path.', default=None)
 @click.option('--summary', 'summary_dir', help='Which folder to save summaries to.', default=None)
 @click.option('--save', 'save_dir', help='Which folder to save checkpoints to.', default=None)
 @click.option('--epochs', 'num_epochs', help='How many epochs to train for.', default=1)
@@ -44,12 +45,13 @@ def_opts = rmtpp_decrnn.rmtpp_decrnn_core.def_opts
 @click.option('--patience', 'patience', help='Number of epochs to wait before applying stop_criteria for training', default=0)
 @click.option('--stop-criteria', 'stop_criteria', help='Stopping criteria: per_epoch_val_err or epsilon', default=None)
 @click.option('--epsilon', 'epsilon', help='threshold for epsilon-stopping-criteria', default=0.0)
-def cmd(dataset_name, alg_name,
+def cmd(dataset_name, alg_name, dataset_path,
         event_train_file, time_train_file, event_dev_file, time_dev_file, event_test_file, time_test_file,
         save_dir, summary_dir, num_epochs, restart, train_eval, test_eval, scale,
         batch_size, bptt, decoder_length, learning_rate, cpu_only, normalization, constraints,
         patience, stop_criteria, epsilon):
     """Read data from EVENT_TRAIN_FILE, TIME_TRAIN_FILE and try to predict the values in EVENT_TEST_FILE, TIME_TEST_FILE."""
+
     data = rmtpp_decrnn.utils.read_seq2seq_data(
         event_train_file=event_train_file,
         event_dev_file=event_dev_file,
@@ -58,8 +60,10 @@ def cmd(dataset_name, alg_name,
         time_dev_file=time_dev_file,
         time_test_file=time_test_file,
         normalization=normalization,
+        dataset_path=dataset_path
     )
 
+    print('scaling with ', scale)
     data['train_time_out_seq'] /= scale
     data['train_time_in_seq'] /= scale
     data['dev_time_out_seq'] /= scale

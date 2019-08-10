@@ -22,7 +22,7 @@ def change_zero_label(sequences):
 def read_seq2seq_data(event_train_file, event_dev_file, event_test_file,
                       time_train_file, time_dev_file, time_test_file,
                       normalization=None,
-                      pad=True):
+                      pad=True, dataset_path=None):
     """Read data from given files and return it as a dictionary."""
 
     with open(event_train_file+'.in', 'r') as in_file:
@@ -54,6 +54,22 @@ def read_seq2seq_data(event_train_file, event_dev_file, event_test_file,
         timeTestIn = [[float(y) for y in x.strip().split()] for x in in_file]
     with open(time_test_file+'.out', 'r') as in_file:
         timeTestOut = [[float(y) for y in x.strip().split()] for x in in_file]
+
+    with open(dataset_path+'dev.avg.gaps', 'r') as in_file:
+        devAvgGaps = [[float(y) for y in x.strip().split()] for x in in_file]
+    with open(dataset_path+'test.avg.gaps', 'r') as in_file:
+        testAvgGaps = [[float(y) for y in x.strip().split()] for x in in_file]
+
+    with open(dataset_path+'dev.actual.time.out', 'r') as in_file:
+        devActualTimeOut = [[float(y) for y in x.strip().split()] for x in in_file]
+    with open(dataset_path+'test.actual.time.out', 'r') as in_file:
+        testActualTimeOut = [[float(y) for y in x.strip().split()] for x in in_file]
+
+    with open(dataset_path+'dev.actual.time.in', 'r') as in_file:
+        devActualTimeIn = [[float(y) for y in x.strip().split()] for x in in_file]
+    with open(dataset_path+'test.actual.time.in', 'r') as in_file:
+        testActualTimeIn = [[float(y) for y in x.strip().split()] for x in in_file]
+
 
     assert len(timeTrainIn) == len(eventTrainIn)
     assert len(timeDevIn) == len(eventDevIn)
@@ -154,6 +170,15 @@ def read_seq2seq_data(event_train_file, event_dev_file, event_test_file,
 
         'test_time_in_seq': test_time_in_seq,
         'test_time_out_seq': test_time_out_seq,
+
+        'dev_avg_gaps': devAvgGaps,
+        'test_avg_gaps': testAvgGaps,
+
+        'test_actual_time_in_seq': testActualTimeIn,
+        'test_actual_time_out_seq': testActualTimeOut,
+
+        'dev_actual_time_in_seq': devActualTimeIn,
+        'dev_actual_time_out_seq': devActualTimeOut,
 
         'num_categories': len(unique_samples),
         'encoder_length': len(eventTrainIn[0]),
