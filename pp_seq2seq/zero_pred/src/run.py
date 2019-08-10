@@ -24,6 +24,7 @@ def_opts = zero_pred.zero_pred_core.def_opts
 @click.argument('time_dev_file')
 @click.argument('event_test_file')
 @click.argument('time_test_file')
+@click.option('--dataset_path', 'dataset_path', help='Dataset path.', default=None)
 @click.option('--summary', 'summary_dir', help='Which folder to save summaries to.', default=None)
 @click.option('--save', 'save_dir', help='Which folder to save checkpoints to.', default=None)
 @click.option('--epochs', 'num_epochs', help='How many epochs to train for.', default=1)
@@ -37,10 +38,15 @@ def_opts = zero_pred.zero_pred_core.def_opts
 @click.option('--init-learning-rate', 'learning_rate', help='Initial learning rate.', default=def_opts.learning_rate)
 @click.option('--cpu-only/--no-cpu-only', 'cpu_only', help='Use only the CPU.', default=def_opts.cpu_only)
 @click.option('--normalization', 'normalization', help='The normalization technique', default=def_opts.normalization)
-def cmd(dataset_name, alg_name,
+@click.option('--constraints', 'constraints', help='Constraints over wt and D (or any other values), refer to constraints.json', default="default")
+@click.option('--patience', 'patience', help='Number of epochs to wait before applying stop_criteria for training', default=0)
+@click.option('--stop-criteria', 'stop_criteria', help='Stopping criteria: per_epoch_val_err or epsilon', default=None)
+@click.option('--epsilon', 'epsilon', help='threshold for epsilon-stopping-criteria', default=0.0)
+def cmd(dataset_name, alg_name, dataset_path,
         event_train_file, time_train_file, event_dev_file, time_dev_file, event_test_file, time_test_file,
         save_dir, summary_dir, num_epochs, restart, train_eval, test_eval, scale,
-        batch_size, bptt, decoder_length, learning_rate, cpu_only, normalization):
+        batch_size, bptt, decoder_length, learning_rate, cpu_only, normalization, constraints,
+        patience, stop_criteria, epsilon):
     """Read data from EVENT_TRAIN_FILE, TIME_TRAIN_FILE and try to predict the values in EVENT_TEST_FILE, TIME_TEST_FILE."""
     data = zero_pred.utils.read_seq2seq_data(
         event_train_file=event_train_file,
@@ -50,6 +56,7 @@ def cmd(dataset_name, alg_name,
         time_dev_file=time_dev_file,
         time_test_file=time_test_file,
         normalization=normalization,
+        dataset_path=dataset_path
     )
 
     data['train_time_out_seq'] /= scale
@@ -66,11 +73,12 @@ def cmd(dataset_name, alg_name,
 
         #zero_pred.utils.data_stats(data) #TODO(PD) Need to support seq2seq models.
 
-        hidden_layer_size, restart, num_epochs, save_dir = params
+        hidden_layer_size, wt_hparam, restart, num_epochs, save_dir, train_eval = params
         zero_pred_mdl = zero_pred.zero_pred_core.ZERO_PRED(
             sess=sess,
             num_categories=data['num_categories'],
             hidden_layer_size=hidden_layer_size, # A hyperparameter
+            alg_name=alg_name,
             save_dir=save_dir,
             summary_dir=summary_dir,
             batch_size=batch_size,
@@ -78,6 +86,11 @@ def cmd(dataset_name, alg_name,
             decoder_length=data['decoder_length'],
             learning_rate=learning_rate,
             cpu_only=cpu_only,
+            constraints=constraints,
+            wt_hparam=wt_hparam,
+            patience=patience,
+            stop_criteria=stop_criteria,
+            epsilon=epsilon,
             _opts=zero_pred.zero_pred_core.def_opts
         )
 
@@ -96,25 +109,29 @@ def cmd(dataset_name, alg_name,
         with open(os.path.join(save_dir)+'/result.json', 'r') as fp:
             result = json.loads(fp.read())
         params = (result[param] for param in hparams[alg_name].keys())
-        result = hyperparameter_worker((result['hidden_layer_size'], True, 0, result['checkpoint_dir']))
+        result = hyperparameter_worker((result['hidden_layer_size'], result['wt_hparam'], True, 0, result['checkpoint_dir'], train_eval))
     else:
         # TODO(PD) Run hyperparameter tuning in parallel
         #results  = pp.ProcessPool().map(hyperparameter_worker, hidden_layer_size_list)
         results = []
         for params in product(*hparams[alg_name].values()):
-            result = hyperparameter_worker(params + (False, num_epochs, save_dir))
+            result = hyperparameter_worker(params + (False, num_epochs, save_dir, train_eval))
             results.append(result)
             # print(result['best_test_mae'], result['best_test_acc'])
 
         best_result_idx, _ = min(enumerate([result['best_dev_mae'] for result in results]), key=itemgetter(1))
         best_result = results[best_result_idx]
-        for param in hparams[alg_name].keys(): assert param in best_result.keys() # Check whether all hyperparameters are stored
         print('best test mae:', best_result['best_test_mae'])
         if save_dir:
-            np.savetxt(os.path.join(save_dir)+'/pred.events.out.csv', best_result['best_test_event_preds'], delimiter=',')
-            np.savetxt(os.path.join(save_dir)+'/pred.times.out.csv', best_result['best_test_time_preds'], delimiter=',')
-            np.savetxt(os.path.join(save_dir)+'/gt.events.out.csv', data['test_event_out_seq'], delimiter=',')
-            np.savetxt(os.path.join(save_dir)+'/gt.times.out.csv', data['test_time_out_seq'], delimiter=',')
+            np.savetxt(os.path.join(save_dir)+'/test.pred.events.out.csv', best_result['best_test_event_preds'], delimiter=',')
+            np.savetxt(os.path.join(save_dir)+'/test.pred.times.out.csv', best_result['best_test_time_preds'], delimiter=',')
+            np.savetxt(os.path.join(save_dir)+'/test.gt.events.out.csv', data['test_event_out_seq'], delimiter=',')
+            np.savetxt(os.path.join(save_dir)+'/test.gt.times.out.csv', data['test_time_out_seq'], delimiter=',')
+
+            np.savetxt(os.path.join(save_dir)+'/dev.pred.events.out.csv', best_result['best_dev_event_preds'], delimiter=',')
+            np.savetxt(os.path.join(save_dir)+'/dev.pred.times.out.csv', best_result['best_dev_time_preds'], delimiter=',')
+            np.savetxt(os.path.join(save_dir)+'/dev.gt.events.out.csv', data['dev_event_out_seq'], delimiter=',')
+            np.savetxt(os.path.join(save_dir)+'/dev.gt.times.out.csv', data['dev_time_out_seq'], delimiter=',')
 
             del best_result['best_dev_event_preds'], best_result['best_dev_time_preds'], \
                     best_result['best_test_event_preds'], best_result['best_test_time_preds']

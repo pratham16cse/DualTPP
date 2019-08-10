@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 ETH = 10.0
 __EMBED_SIZE = 4
 __HIDDEN_LAYER_SIZE = 16  # 64, 128, 256, 512, 1024
+epsilon = 0.1
 
 def_opts = Deco.Options(
     batch_size=64,          # 16, 32, 64
@@ -38,6 +39,13 @@ def_opts = Deco.Options(
     cpu_only=False,
 
     normalization=None,
+    constraints="default",
+
+    patience=0,
+    stop_criteria='per_epoch_val_err',
+    epsilon=0.0,
+
+    wt_hparam=1.0,
 
     embed_size=__EMBED_SIZE,
     Wem=lambda num_categories: np.random.RandomState(42).randn(num_categories, __EMBED_SIZE) * 0.01,
@@ -47,11 +55,13 @@ def_opts = Deco.Options(
     bh=lambda hidden_layer_size: np.random.randn(1, hidden_layer_size) * np.sqrt(1.0/hidden_layer_size),
     Ws=lambda hidden_layer_size: np.random.randn(hidden_layer_size) * np.sqrt(1.0/hidden_layer_size),
     bs=lambda hidden_layer_size: np.random.randn(1, hidden_layer_size) * np.sqrt(1.0/hidden_layer_size),
-    wt=3.0,
+    wt=1.0,
     Wy=lambda hidden_layer_size: np.random.randn(__EMBED_SIZE, hidden_layer_size) * np.sqrt(1.0/__EMBED_SIZE),
     Vy=lambda hidden_layer_size, num_categories: np.random.randn(hidden_layer_size, num_categories) * np.sqrt(1.0/hidden_layer_size),
     Vt=lambda hidden_layer_size: np.random.randn(hidden_layer_size, 1) * np.sqrt(1.0/hidden_layer_size),
+    Vw=lambda hidden_layer_size: np.random.randn(hidden_layer_size, 1) * np.sqrt(1.0/hidden_layer_size),
     bt=np.log(1.0), # bt is provided by the base_rate
+    bw=np.log(1.0), # bw is provided by the base_rate
     bk=lambda hidden_layer_size, num_categories: np.random.randn(1, num_categories) * np.sqrt(1.0/hidden_layer_size),
 )
 
@@ -73,9 +83,11 @@ class ZERO_PRED:
     @Deco.optioned()
     def __init__(self, sess, num_categories, hidden_layer_size, batch_size,
                  learning_rate, momentum, l2_penalty, embed_size,
-                 float_type, bptt, decoder_length, seed, scope, save_dir, decay_steps, decay_rate,
-                 device_gpu, device_cpu, summary_dir, cpu_only,
-                 Wt, Wem, Wh, bh, Ws, bs, wt, Wy, Vy, Vt, bk, bt):
+                 float_type, bptt, decoder_length, seed, scope, alg_name,
+                 save_dir, decay_steps, decay_rate,
+                 device_gpu, device_cpu, summary_dir, cpu_only, constraints,
+                 patience, stop_criteria, epsilon,
+                 Wt, Wem, Wh, bh, Ws, bs, wt, Wy, Vy, Vt, Vw, bk, bt, bw, wt_hparam):
         self.HIDDEN_LAYER_SIZE = hidden_layer_size
         self.BATCH_SIZE = batch_size
         self.LEARNING_RATE = learning_rate
@@ -583,7 +595,12 @@ class ZERO_PRED:
                                                                training_data['decoder_length'],
                                                                plt_tru_gaps)
                 dev_time_preds = dev_time_preds * (maxTime - minTime) + minTime
-                dev_time_out_seq = training_data['dev_time_out_seq'] * (maxTime - minTime) + minTime
+                dev_time_out_seq = np.array(training_data['dev_actual_time_out_seq'])
+                dev_time_in_seq = training_data['dev_time_in_seq'] * (maxTime - minTime) + minTime
+                gaps = dev_time_preds - np.concatenate([dev_time_in_seq[:, -1:], dev_time_preds[:, :-1]], axis=-1)
+                unnorm_gaps = gaps * training_data['dev_avg_gaps']
+                unnorm_gaps = np.cumsum(unnorm_gaps, axis=1)
+                dev_time_preds = unnorm_gaps + training_data['dev_actual_time_in_seq']
                 dev_mae, dev_total_valid, dev_acc = self.eval(dev_time_preds, dev_time_out_seq,
                                                               dev_event_preds, training_data['dev_event_out_seq'])
 
@@ -597,10 +614,18 @@ class ZERO_PRED:
                                                                  training_data['decoder_length'],
                                                                  plt_tru_gaps)
                 test_time_preds = test_time_preds * (maxTime - minTime) + minTime
-                test_time_out_seq = training_data['test_time_out_seq'] * (maxTime - minTime) + minTime
-                gaps = test_time_preds - training_data['test_time_in_seq'][:, -1:]
+                test_time_out_seq = np.array(training_data['test_actual_time_out_seq'])
+                test_time_in_seq = training_data['test_time_in_seq'] * (maxTime - minTime) + minTime
+                gaps = test_time_preds - np.concatenate([test_time_in_seq[:, -1:], test_time_preds[:, :-1]], axis=-1)
+                unnorm_gaps = gaps * training_data['test_avg_gaps']
+                unnorm_gaps = np.cumsum(unnorm_gaps, axis=1)
+                tru_gaps = test_time_out_seq - np.concatenate([training_data['test_actual_time_in_seq'], test_time_out_seq[:, :-1]], axis=1)
+                test_time_preds = unnorm_gaps + training_data['test_actual_time_in_seq']
+
                 print('Predicted gaps')
-                print(gaps)
+                print(unnorm_gaps)
+                print('True gaps')
+                print(tru_gaps)
                 print(test_time_out_seq)
                 print(test_time_preds)
                 test_mae, test_total_valid, test_acc = self.eval(test_time_preds, test_time_out_seq,
