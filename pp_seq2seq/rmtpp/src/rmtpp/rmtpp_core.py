@@ -497,14 +497,20 @@ class RMTPP:
 
     def train(self, training_data, num_epochs=1,
               restart=False, check_nans=False, one_batch=False,
-              with_summaries=False, eval_train_data=False):
+              with_summaries=False, eval_train_data=False, stop_criteria=None, 
+              restore_path=None, dec_len_for_eval=0):
+
+        # if dec_len_for_eval==0:
+        #     dec_len_for_eval=training_data['decoder_length']
+        if restore_path is None:
+            restore_path = self.SAVE_DIR
         """Train the model given the training data.
 
         If with_evals is an integer, then that many elements from the test set
         will be tested.
         """
         create_dir(self.SAVE_DIR)
-        ckpt = tf.train.get_checkpoint_state(self.SAVE_DIR)
+        ckpt = tf.train.get_checkpoint_state(restore_path)
 
         # TODO: Why does this create new nodes in the graph? Possibly memory leak?
         saver = tf.train.Saver(tf.global_variables())
@@ -516,6 +522,9 @@ class RMTPP:
         if ckpt and restart:
             print('Restoring from {}'.format(ckpt.model_checkpoint_path))
             saver.restore(self.sess, ckpt.model_checkpoint_path)
+
+        if stop_criteria is not None:
+            self.STOP_CRITERIA = stop_criteria
 
         train_event_in_seq = training_data['train_event_in_seq']
         train_time_in_seq = training_data['train_time_in_seq']
@@ -532,6 +541,7 @@ class RMTPP:
         idxes = list(range(len(train_event_in_seq)))
         n_batches = len(idxes) // self.BATCH_SIZE
 
+        print('Training with ', self.STOP_CRITERIA, 'stop_criteria and ', num_epochs, 'num_epochs')
         for epoch in range(self.last_epoch, self.last_epoch + num_epochs):
             self.rs.shuffle(idxes)
 
@@ -723,6 +733,8 @@ class RMTPP:
                 print('Running evaluation on dev, test: ...')
 
             if eval_train_data: 
+                assert 1==0
+                #Not yet Implemented
                 plt_time_out_seq = training_data['train_time_out_seq']
                 plt_tru_gaps = plt_time_out_seq - np.concatenate([training_data['train_time_in_seq'][:, -1:], plt_time_out_seq[:, :-1]], axis=1)
                 train_time_preds, train_event_preds = self.predict(training_data['train_event_in_seq'],
@@ -740,14 +752,14 @@ class RMTPP:
                 train_mae, train_acc, train_time_preds, train_event_preds = None, None, np.array([]), np.array([])
 
             plt_time_out_seq = training_data['dev_time_out_seq']
-            plt_tru_gaps = plt_time_out_seq - np.concatenate([training_data['dev_time_in_seq'][:, -1:], plt_time_out_seq[:, :-1]], axis=1)
+            plt_tru_gaps = plt_time_out_seq[:,:dec_len_for_eval] - np.concatenate([training_data['dev_time_in_seq'][:, -1:], plt_time_out_seq[:, :dec_len_for_eval-1]], axis=1)
             dev_time_preds, dev_event_preds = self.predict(training_data['dev_event_in_seq'],
                                                            training_data['dev_time_in_seq'],
                                                            training_data['decoder_length'],
                                                            plt_tru_gaps,
                                                            single_threaded=True)
-            dev_time_preds = dev_time_preds * (maxTime - minTime) + minTime
-            dev_time_out_seq = np.array(training_data['dev_actual_time_out_seq'])
+            dev_time_preds = dev_time_preds[:,:dec_len_for_eval] * (maxTime - minTime) + minTime
+            dev_time_out_seq = np.array(training_data['dev_actual_time_out_seq'])[:,:dec_len_for_eval]
             dev_time_in_seq = training_data['dev_time_in_seq'] * (maxTime - minTime) + minTime
             gaps = dev_time_preds - np.concatenate([dev_time_in_seq[:, -1:], dev_time_preds[:, :-1]], axis=-1)
             unnorm_gaps = gaps * training_data['dev_avg_gaps']
@@ -760,14 +772,14 @@ class RMTPP:
                 dev_mae, dev_total_valid, dev_acc))
 
             plt_time_out_seq = training_data['test_time_out_seq']
-            plt_tru_gaps = plt_time_out_seq - np.concatenate([training_data['test_time_in_seq'][:, -1:], plt_time_out_seq[:, :-1]], axis=1)
+            plt_tru_gaps = plt_time_out_seq[:,:dec_len_for_eval] - np.concatenate([training_data['test_time_in_seq'][:, -1:], plt_time_out_seq[:, :dec_len_for_eval-1]], axis=1)
             test_time_preds, test_event_preds = self.predict(training_data['test_event_in_seq'],
                                                              training_data['test_time_in_seq'],
                                                              training_data['decoder_length'],
                                                              plt_tru_gaps,
                                                              single_threaded=True)
-            test_time_preds = test_time_preds * (maxTime - minTime) + minTime
-            test_time_out_seq = np.array(training_data['test_actual_time_out_seq'])
+            test_time_preds = test_time_preds[:,:dec_len_for_eval] * (maxTime - minTime) + minTime
+            test_time_out_seq = np.array(training_data['test_actual_time_out_seq'])[:,:dec_len_for_eval]
             test_time_in_seq = training_data['test_time_in_seq'] * (maxTime - minTime) + minTime
             gaps = test_time_preds - np.concatenate([test_time_in_seq[:, -1:], test_time_preds[:, :-1]], axis=-1)
             unnorm_gaps = gaps * training_data['test_avg_gaps']
@@ -775,10 +787,10 @@ class RMTPP:
             tru_gaps = test_time_out_seq - np.concatenate([training_data['test_actual_time_in_seq'], test_time_out_seq[:, :-1]], axis=1)
             test_time_preds = unnorm_gaps + training_data['test_actual_time_in_seq']
 
-            print('UnNormed Predicted gaps')
-            print(unnorm_gaps)
-            print('True gaps')
-            print(tru_gaps)
+            # print('UnNormed Predicted gaps')
+            # print(unnorm_gaps)
+            # print('True gaps')
+            # print(tru_gaps)
             
             test_mae, test_total_valid, test_acc = self.eval(test_time_preds, test_time_out_seq,
                                                              test_event_preds, training_data['test_event_out_seq'])
@@ -786,7 +798,7 @@ class RMTPP:
                 test_mae, test_total_valid, test_acc))
 
             if dev_mae < best_dev_mae:
-                best_epoch = epoch
+                best_epoch = -1
                 best_train_mae, best_dev_mae, best_test_mae = train_mae, dev_mae, test_mae
                 best_train_acc, best_dev_acc, best_test_acc = train_acc, dev_acc, test_acc
                 best_train_event_preds, best_train_time_preds  = train_event_preds, train_time_preds

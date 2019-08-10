@@ -67,7 +67,7 @@ def cmd(dataset_name, alg_name, dataset_path,
     data['test_time_in_seq'] /= scale
 
 
-    def hyperparameter_worker(params):
+    def model_creator(params):
         tf.reset_default_graph()
         sess = tf.Session()
 
@@ -94,50 +94,81 @@ def cmd(dataset_name, alg_name, dataset_path,
             _opts=zero_pred.zero_pred_core.def_opts
         )
 
+        return zero_pred_mdl
+
+    def hyperparameter_worker(params, zero_pred_mdl, dec_len, restore_path=None):
+        
+        hidden_layer_size, wt_hparam, restart, num_epochs, save_dir, train_eval = params
         # TODO: The finalize here has to be false because tf.global_variables()
         # creates a new graph node (why?). Hence, need to be extra careful while
         # saving the model.
         zero_pred_mdl.initialize(finalize=False)
         result = zero_pred_mdl.train(training_data=data, restart=restart,
                                         with_summaries=summary_dir is not None,
-                                        num_epochs=num_epochs, with_evals=True)
+                                        num_epochs=num_epochs, eval_train_data=train_eval,
+                                        restore_path=restore_path, dec_len_for_eval=dec_len)
+
+        with open('constraints.json', 'r') as fp:
+            constraints_json = json.loads(fp.read())
+            result['constraints'] = constraints_json[constraints]
+
         # del rmtpp_mdl
         return result
 
-    if os.path.isfile(save_dir+'/result.json'):
-        print('Model already trained, stored, restoring . . .')
-        with open(os.path.join(save_dir)+'/result.json', 'r') as fp:
-            result = json.loads(fp.read())
-        params = (result[param] for param in hparams[alg_name].keys())
-        result = hyperparameter_worker((result['hidden_layer_size'], result['wt_hparam'], True, 0, result['checkpoint_dir'], train_eval))
-    else:
-        # TODO(PD) Run hyperparameter tuning in parallel
-        #results  = pp.ProcessPool().map(hyperparameter_worker, hidden_layer_size_list)
-        results = []
-        for params in product(*hparams[alg_name].values()):
-            result = hyperparameter_worker(params + (False, num_epochs, save_dir, train_eval))
-            results.append(result)
-            # print(result['best_test_mae'], result['best_test_acc'])
+    decoder_length_run = [0, 1, 2, 3]
 
-        best_result_idx, _ = min(enumerate([result['best_dev_mae'] for result in results]), key=itemgetter(1))
-        best_result = results[best_result_idx]
-        print('best test mae:', best_result['best_test_mae'])
-        if save_dir:
-            np.savetxt(os.path.join(save_dir)+'/test.pred.events.out.csv', best_result['best_test_event_preds'], delimiter=',')
-            np.savetxt(os.path.join(save_dir)+'/test.pred.times.out.csv', best_result['best_test_time_preds'], delimiter=',')
-            np.savetxt(os.path.join(save_dir)+'/test.gt.events.out.csv', data['test_event_out_seq'], delimiter=',')
-            np.savetxt(os.path.join(save_dir)+'/test.gt.times.out.csv', data['test_time_out_seq'], delimiter=',')
+    old_save_dir = save_dir
+    num_epochs = 1
+    for dec_len in decoder_length_run:
+        save_dir = old_save_dir+'/'+str(dec_len)
+        if dec_len != decoder_length_run[0]:
+            num_epochs = -1
+            stop_criteria = 'epsilon'
 
-            np.savetxt(os.path.join(save_dir)+'/dev.pred.events.out.csv', best_result['best_dev_event_preds'], delimiter=',')
-            np.savetxt(os.path.join(save_dir)+'/dev.pred.times.out.csv', best_result['best_dev_time_preds'], delimiter=',')
-            np.savetxt(os.path.join(save_dir)+'/dev.gt.events.out.csv', data['dev_event_out_seq'], delimiter=',')
-            np.savetxt(os.path.join(save_dir)+'/dev.gt.times.out.csv', data['dev_time_out_seq'], delimiter=',')
+        if os.path.isfile(save_dir+'/result.json'):
+            print('Model already trained, stored, restoring . . .')
+            with open(os.path.join(save_dir)+'/result.json', 'r') as fp:
+                result = json.loads(fp.read())
+            params = (result[param] for param in hparams[alg_name].keys())
+            args = (result['hidden_layer_size'], result['wt_hparam'], True, 0, result['checkpoint_dir'], train_eval)
+            zero_pred_mdl = model_creator(args)
+            result = hyperparameter_worker(args, zero_pred_mdl, dec_len)
+        else:
+            # TODO(PD) Run hyperparameter tuning in parallel
+            #results  = pp.ProcessPool().map(hyperparameter_worker, hidden_layer_size_list)
+            results = []
+            for params in product(*hparams[alg_name].values()):
+                checkp_dir = old_save_dir+'/'+str(decoder_length_run[0])+'/hls_'+str(params[0])
+                state_restart=True
+                if dec_len==decoder_length_run[0]:
+                    checkp_dir=None
+                    state_restart = False
+                print("check dir ", checkp_dir)
+                args = params + (state_restart, num_epochs, save_dir, train_eval)
+                zero_pred_mdl = model_creator(args)
+                result = hyperparameter_worker(args, zero_pred_mdl, dec_len, checkp_dir)
+                results.append(result)
+                # print(result['best_test_mae'], result['best_test_acc'])
 
-            del best_result['best_dev_event_preds'], best_result['best_dev_time_preds'], \
-                    best_result['best_test_event_preds'], best_result['best_test_time_preds']
-            with open(os.path.join(save_dir)+'/result.json', 'w') as fp:
-                best_result_json = json.dumps(best_result, indent=4)
-                fp.write(best_result_json)
+            best_result_idx, _ = min(enumerate([result['best_dev_mae'] for result in results]), key=itemgetter(1))
+            best_result = results[best_result_idx]
+            print('best test mae:', best_result['best_test_mae'])
+            if save_dir:
+                np.savetxt(os.path.join(save_dir)+'/test.pred.events.out.csv', best_result['best_test_event_preds'], delimiter=',')
+                np.savetxt(os.path.join(save_dir)+'/test.pred.times.out.csv', best_result['best_test_time_preds'], delimiter=',')
+                np.savetxt(os.path.join(save_dir)+'/test.gt.events.out.csv', data['test_event_out_seq'], delimiter=',')
+                np.savetxt(os.path.join(save_dir)+'/test.gt.times.out.csv', data['test_time_out_seq'], delimiter=',')
+
+                np.savetxt(os.path.join(save_dir)+'/dev.pred.events.out.csv', best_result['best_dev_event_preds'], delimiter=',')
+                np.savetxt(os.path.join(save_dir)+'/dev.pred.times.out.csv', best_result['best_dev_time_preds'], delimiter=',')
+                np.savetxt(os.path.join(save_dir)+'/dev.gt.events.out.csv', data['dev_event_out_seq'], delimiter=',')
+                np.savetxt(os.path.join(save_dir)+'/dev.gt.times.out.csv', data['dev_time_out_seq'], delimiter=',')
+
+                del best_result['best_dev_event_preds'], best_result['best_dev_time_preds'], \
+                        best_result['best_test_event_preds'], best_result['best_test_time_preds']
+                with open(os.path.join(save_dir)+'/result.json', 'w') as fp:
+                    best_result_json = json.dumps(best_result, indent=4)
+                    fp.write(best_result_json)
 
 if __name__ == '__main__':
     cmd()
