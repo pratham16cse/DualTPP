@@ -59,10 +59,10 @@ def_opts = Deco.Options(
     wt=1.0,
     Wy=lambda hidden_layer_size: np.random.randn(__EMBED_SIZE, hidden_layer_size) * np.sqrt(1.0/__EMBED_SIZE),
     Vy=lambda hidden_layer_size, num_categories: np.random.randn(hidden_layer_size, num_categories) * np.sqrt(1.0/hidden_layer_size),
-    Vt=lambda hidden_layer_size: np.random.randn(hidden_layer_size, 1) * np.sqrt(1.0/hidden_layer_size),
-    Vw=lambda hidden_layer_size: np.random.randn(hidden_layer_size, 1) * np.sqrt(1.0/hidden_layer_size),
-    bt=np.log(1.0), # bt is provided by the base_rate
-    bw=np.log(1.0), # bw is provided by the base_rate
+    Vt=lambda hidden_layer_size, decoder_length: np.random.randn(decoder_length, hidden_layer_size) * np.sqrt(1.0/hidden_layer_size*decoder_length),
+    Vw=lambda hidden_layer_size, decoder_length: np.random.randn(decoder_length, hidden_layer_size) * np.sqrt(1.0/hidden_layer_size*decoder_length),
+    bt=lambda decoder_length: np.random.randn(decoder_length) * np.log(1.0/decoder_length), # bt is provided by the base_rate
+    bw=lambda decoder_length: np.random.randn(decoder_length) * np.log(1.0/decoder_length), # bw is provided by the base_rate
     bk=lambda hidden_layer_size, num_categories: np.random.randn(1, num_categories) * np.sqrt(1.0/hidden_layer_size),
 )
 
@@ -223,21 +223,21 @@ class RMTPP_DECRNN:
                     self.Vy = tf.get_variable(name='Vy', shape=(self.HIDDEN_LAYER_SIZE, self.NUM_CATEGORIES),
                                               dtype=self.FLOAT_TYPE,
                                               initializer=tf.constant_initializer(Vy(self.HIDDEN_LAYER_SIZE, self.NUM_CATEGORIES)))
-                    self.Vt = tf.get_variable(name='Vt', shape=(self.HIDDEN_LAYER_SIZE, 1),
+                    self.Vt = tf.get_variable(name='Vt', shape=(self.DEC_LEN, self.HIDDEN_LAYER_SIZE),
                                               dtype=self.FLOAT_TYPE,
-                                              initializer=tf.constant_initializer(Vt(self.HIDDEN_LAYER_SIZE)))
-                    self.bt = tf.get_variable(name='bt', shape=(1, 1),
+                                              initializer=tf.constant_initializer(Vt(self.HIDDEN_LAYER_SIZE, self.DEC_LEN)))
+                    self.bt = tf.get_variable(name='bt', shape=(1, self.DEC_LEN),
                                               dtype=self.FLOAT_TYPE,
-                                              initializer=tf.constant_initializer(bt))
+                                              initializer=tf.constant_initializer(bt(self.DEC_LEN)))
                     self.bk = tf.get_variable(name='bk', shape=(1, self.NUM_CATEGORIES),
                                               dtype=self.FLOAT_TYPE,
                                               initializer=tf.constant_initializer(bk(self.HIDDEN_LAYER_SIZE, num_categories)))
-                    self.Vw = tf.get_variable(name='Vw', shape=(self.HIDDEN_LAYER_SIZE, 1),
+                    self.Vw = tf.get_variable(name='Vw', shape=(self.DEC_LEN, self.HIDDEN_LAYER_SIZE),
                                               dtype=self.FLOAT_TYPE,
-                                              initializer=tf.constant_initializer(Vw(self.HIDDEN_LAYER_SIZE)))
-                    self.bw = tf.get_variable(name='bw', shape=(1, 1),
+                                              initializer=tf.constant_initializer(Vw(self.HIDDEN_LAYER_SIZE, self.DEC_LEN)))
+                    self.bw = tf.get_variable(name='bw', shape=(1, self.DEC_LEN),
                                               dtype=self.FLOAT_TYPE,
-                                              initializer=tf.constant_initializer(bw))
+                                              initializer=tf.constant_initializer(bw(self.DEC_LEN)))
 
 
                 self.all_vars = [self.Wt, self.Wem, self.Wh, self.bh, self.Ws, self.bs,
@@ -253,6 +253,9 @@ class RMTPP_DECRNN:
 
                 # Initial state for GRU cells
                 self.initial_state = state = tf.zeros([self.inf_batch_size, self.HIDDEN_LAYER_SIZE],
+                                                      dtype=self.FLOAT_TYPE,
+                                                      name='initial_state')
+                s_state = tf.zeros([self.inf_batch_size, self.HIDDEN_LAYER_SIZE],
                                                       dtype=self.FLOAT_TYPE,
                                                       name='initial_state')
                 self.initial_time = last_time = tf.zeros((self.inf_batch_size,),
@@ -311,7 +314,7 @@ class RMTPP_DECRNN:
                 # TODO Does affine transformations (Wy) need to be different? Wt is not \
                   # required in the decoder
 
-                s_state = self.final_state
+                # s_state = self.final_state
                 #s_state = tf.Print(s_state, [self.mode, tf.equal(self.mode, 1.0)], message='mode ')
                 self.decoder_states = []
                 with tf.name_scope('Decoder'):
@@ -356,7 +359,12 @@ class RMTPP_DECRNN:
                                 tf.matmul(ones_2d, self.bs),
                                 name='s_t'
                             )
+                            new_state = tf.layers.dense(
+                              tf.concat([new_state, self.final_state], axis=-1)
+                              , self.HIDDEN_LAYER_SIZE)
+
                             s_state = new_state
+
                         self.decoder_states.append(s_state)
 
                     self.event_preds = tf.stack(self.event_preds, axis=1)
@@ -372,10 +380,16 @@ class RMTPP_DECRNN:
                     base_intensity_bt = self.bt
                     base_intensity_bw = self.bw
 
-                    D = tf.squeeze(tf.tensordot(self.decoder_states, self.Vt, axes=[[2],[0]]), axis=-1) + base_intensity_bt
+                    newVt = tf.tile(tf.expand_dims(self.Vt, axis=0), [tf.shape(self.decoder_states)[0], 1, 1]) 
+                    newVw = tf.tile(tf.expand_dims(self.Vw, axis=0), [tf.shape(self.decoder_states)[0], 1, 1]) 
+
+                    D = tf.reduce_sum(self.decoder_states*newVt, axis=2) + base_intensity_bt
+
+                    # D = tf.squeeze(tf.tensordot(self.decoder_states, self.Vt, axes=[[2],[0]]), axis=-1) + base_intensity_bt
                     D = get_D_constraint()(D)
                     if self.ALG_NAME in ['rmtpp_decrnn_wcmpt', 'rmtpp_decrnn_mode_wcmpt']:
-                        WT = tf.squeeze(tf.tensordot(self.decoder_states, self.Vw, axes=[[2],[0]]), axis=-1) + base_intensity_bw
+                        WT = tf.reduce_sum(self.decoder_states*newVw, axis=2) + base_intensity_bw
+                        # WT = tf.squeeze(tf.tensordot(self.decoder_states, self.Vw, axes=[[2],[0]]), axis=-1) + base_intensity_bw
                         WT = get_WT_constraint()(WT)
                         WT = tf.clip_by_value(WT, 0.0, 10.0)
                     elif self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_mode']:
@@ -719,10 +733,10 @@ class RMTPP_DECRNN:
                 # print('Predicted gaps')
                 # print(gaps)
 
-                print('UnNormed Predicted gaps')
-                print(unnorm_gaps)
-                print('True gaps')
-                print(tru_gaps)
+                # print('UnNormed Predicted gaps')
+                # print(unnorm_gaps)
+                # print('True gaps')
+                # print(tru_gaps)
 
                 # print('UnNormed True gaps')
                 # print(unnorm_true_gaps)
@@ -1007,20 +1021,20 @@ class RMTPP_DECRNN:
         # TODO: This calculation is completely ignoring the clipping which
         # happens during the inference step.
         [Vt, Vw, bt, bw, wt]  = self.sess.run([self.Vt, self.Vw, self.bt, self.bw, self.wt])
-        
+
         global _quad_worker
         def _quad_worker(params):
-            batch_idx, (all_decoder_states, time_pred_last, tru_gap) = params
+            batch_idx, (decoder_states, time_pred_last, tru_gap) = params
             preds_i = []
-            #print(np.matmul(all_decoder_states, Vt) + bt)
-            for pred_idx, s_i in enumerate(all_decoder_states):
+            #print(np.matmul(decoder_states, Vt) + bt)
+            for pred_idx, s_i in enumerate(decoder_states):
                 t_last = time_pred_last if pred_idx==0 else preds_i[-1]
-                D = (np.dot(s_i, Vt) + bt).reshape(-1)
+                D = (np.dot(s_i, Vt[pred_idx,:]) + bt[:,pred_idx]).reshape(-1)
                 D = np.clip(D, np.ones_like(D)*-50.0, np.ones_like(D)*50.0)
                 D = get_D_constraint()(D)
                 c_ = np.exp(np.maximum(D, np.ones_like(D)*-87.0))
                 if self.ALG_NAME in ['rmtpp_decrnn_wcmpt', 'rmtpp_decrnn_mode_wcmpt']:
-                    WT = (np.dot(s_i, Vw) + bw).reshape(-1)
+                    WT = (np.dot(s_i, Vw[pred_idx,:]) + bw[:,pred_idx]).reshape(-1)
                     WT = get_WT_constraint()(WT)
                     WT = np.clip(WT, 0.0, 10.0)
                 elif self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_mode']:
