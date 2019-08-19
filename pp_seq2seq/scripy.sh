@@ -85,6 +85,7 @@ command="python3.6 \
 	 --patience 0 \
 	 --stop-criteria per_epoch_val_err \
 	 --epsilon 0.1 \
+	 --normalization average_per_seq
 	 >>$print_dump"
 
 #if [[ "$dataset_name" == *"data_bookorder"* ]]; then
