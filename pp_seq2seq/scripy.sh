@@ -87,6 +87,7 @@ command="python3.6 \
 	 --epsilon 0.1 \
 	 --normalization average_per_seq
 	 --no-init-zero-dec-state \
+	 --no-concat-final-enc-state \
 	 >>$print_dump"
 
 #if [[ "$dataset_name" == *"data_bookorder"* ]]; then
