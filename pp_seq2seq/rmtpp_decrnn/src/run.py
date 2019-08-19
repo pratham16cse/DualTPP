@@ -45,11 +45,12 @@ def_opts = rmtpp_decrnn.rmtpp_decrnn_core.def_opts
 @click.option('--patience', 'patience', help='Number of epochs to wait before applying stop_criteria for training', default=0)
 @click.option('--stop-criteria', 'stop_criteria', help='Stopping criteria: per_epoch_val_err or epsilon', default=None)
 @click.option('--epsilon', 'epsilon', help='threshold for epsilon-stopping-criteria', default=0.0)
+@click.option('--share-dec-params/--no-share-dec-params', 'share_dec_params', help='Share/not share decoder parameters', default=True)
 def cmd(dataset_name, alg_name, dataset_path,
         event_train_file, time_train_file, event_dev_file, time_dev_file, event_test_file, time_test_file,
         save_dir, summary_dir, num_epochs, restart, train_eval, test_eval, scale,
         batch_size, bptt, decoder_length, learning_rate, cpu_only, normalization, constraints,
-        patience, stop_criteria, epsilon):
+        patience, stop_criteria, epsilon, share_dec_params):
     """Read data from EVENT_TRAIN_FILE, TIME_TRAIN_FILE and try to predict the values in EVENT_TEST_FILE, TIME_TEST_FILE."""
 
     data = rmtpp_decrnn.utils.read_seq2seq_data(
@@ -95,6 +96,7 @@ def cmd(dataset_name, alg_name, dataset_path,
             patience=patience,
             stop_criteria=stop_criteria,
             epsilon=epsilon,
+            share_dec_params=share_dec_params,
             _opts=rmtpp_decrnn.rmtpp_decrnn_core.def_opts
         )
 

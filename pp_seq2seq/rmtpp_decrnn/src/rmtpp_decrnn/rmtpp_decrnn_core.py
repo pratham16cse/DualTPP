@@ -46,6 +46,8 @@ def_opts = Deco.Options(
     stop_criteria='per_epoch_val_err',
     epsilon=0.0,
 
+    share_dec_params=True,
+
     wt_hparam=1.0,
 
     embed_size=__EMBED_SIZE,
@@ -98,7 +100,7 @@ class RMTPP_DECRNN:
                  float_type, bptt, decoder_length, seed, scope, alg_name,
                  save_dir, decay_steps, decay_rate,
                  device_gpu, device_cpu, summary_dir, cpu_only, constraints,
-                 patience, stop_criteria, epsilon,
+                 patience, stop_criteria, epsilon, share_dec_params,
                  Wt, Wem, Wh, bh, Ws, bs, wt, Wy, Vy, Vt, Vw, bk, bt, bw, wt_hparam):
         self.HIDDEN_LAYER_SIZE = hidden_layer_size
         self.BATCH_SIZE = batch_size
@@ -126,6 +128,8 @@ class RMTPP_DECRNN:
         self.EPSILON = epsilon
         if self.STOP_CRITERIA == 'epsilon':
             assert self.EPSILON > 0.0
+
+        self.SHARE_DEC_PARAMS = share_dec_params
 
         self.sess = sess
         self.seed = seed
@@ -239,6 +243,14 @@ class RMTPP_DECRNN:
                                               dtype=self.FLOAT_TYPE,
                                               initializer=tf.constant_initializer(bw(self.DEC_LEN)))
 
+                    if self.SHARE_DEC_PARAMS:
+                        print('Sharing Decoder Parameters')
+                        self.Vt = tf.tile(self.Vt[0:1, :], [self.DEC_LEN, 1])
+                        self.bt = tf.tile(self.bt[:, 0:1], [1, self.DEC_LEN])
+                        self.Vw = tf.tile(self.Vw[0:1, :], [self.DEC_LEN, 1])
+                        self.bw = tf.tile(self.bw[:, 0:1], [1, self.DEC_LEN])
+                    else:
+                        print('NOT Sharing Decoder Parameters')
 
                 self.all_vars = [self.Wt, self.Wem, self.Wh, self.bh, self.Ws, self.bs,
                                  self.wt, self.Wy, self.Vy, self.Vt, self.bt, self.bk, self.Vw, self.bw]
