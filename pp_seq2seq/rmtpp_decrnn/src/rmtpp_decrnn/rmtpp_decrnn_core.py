@@ -404,6 +404,8 @@ class RMTPP_DECRNN:
                                                            tf.tile(tf.expand_dims(self.final_state, axis=1),
                                                                    [1, self.DEC_LEN, 1])],
                                                            axis=-1)
+                    else:
+                        decoder_states_concat = self.decoder_states
                     times_out_prev = tf.concat([self.times_in[:, -1:], self.times_out[:, :-1]], axis=1)
 
                     gaps = self.times_out-times_out_prev
