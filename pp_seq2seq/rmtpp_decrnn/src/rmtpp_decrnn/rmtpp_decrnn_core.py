@@ -352,16 +352,17 @@ class RMTPP_DECRNN:
                         events_embedded = tf.nn.embedding_lookup(self.Wem,
                                                                  tf.mod(events - 1, self.NUM_CATEGORIES))
 
-                        with tf.name_scope('state_recursion'):
+                        with tf.variable_scope('state_recursion', reuse=tf.AUTO_REUSE):
                             new_state = tf.tanh(
                                 tf.matmul(s_state, self.Ws) +
                                 tf.matmul(events_embedded, self.Wy) +
                                 tf.matmul(ones_2d, self.bs),
                                 name='s_t'
                             )
-                            new_state = tf.layers.dense(
-                              tf.concat([new_state, self.final_state], axis=-1)
-                              , self.HIDDEN_LAYER_SIZE)
+                            new_state = tf.layers.dense(tf.concat([new_state, self.final_state], axis=-1),
+                                                        self.HIDDEN_LAYER_SIZE,
+                                                        name='hidden_layer_1',
+                                                        kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed))
 
                             s_state = new_state
 
