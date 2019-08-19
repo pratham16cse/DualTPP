@@ -46,11 +46,13 @@ def_opts = rmtpp_decrnn.rmtpp_decrnn_core.def_opts
 @click.option('--stop-criteria', 'stop_criteria', help='Stopping criteria: per_epoch_val_err or epsilon', default=None)
 @click.option('--epsilon', 'epsilon', help='threshold for epsilon-stopping-criteria', default=0.0)
 @click.option('--share-dec-params/--no-share-dec-params', 'share_dec_params', help='Share/not share decoder parameters', default=True)
+@click.option('--init-zero-dec-state/--no-init-zero-dec-state', 'init_zero_dec_state', help='Concatenate final encoder state with decoder state at each step', default=True)
+@click.option('--concat-final-enc-state/--no-concat-final-enc-state', 'concat_final_enc_state', help='Concatenate final encoder state with decoder state at each step', default=True)
 def cmd(dataset_name, alg_name, dataset_path,
         event_train_file, time_train_file, event_dev_file, time_dev_file, event_test_file, time_test_file,
         save_dir, summary_dir, num_epochs, restart, train_eval, test_eval, scale,
         batch_size, bptt, decoder_length, learning_rate, cpu_only, normalization, constraints,
-        patience, stop_criteria, epsilon, share_dec_params):
+        patience, stop_criteria, epsilon, share_dec_params, init_zero_dec_state, concat_final_enc_state):
     """Read data from EVENT_TRAIN_FILE, TIME_TRAIN_FILE and try to predict the values in EVENT_TEST_FILE, TIME_TEST_FILE."""
 
     data = rmtpp_decrnn.utils.read_seq2seq_data(
@@ -97,6 +99,8 @@ def cmd(dataset_name, alg_name, dataset_path,
             stop_criteria=stop_criteria,
             epsilon=epsilon,
             share_dec_params=share_dec_params,
+            init_zero_dec_state=init_zero_dec_state,
+            concat_final_enc_state=concat_final_enc_state,
             _opts=rmtpp_decrnn.rmtpp_decrnn_core.def_opts
         )
 
