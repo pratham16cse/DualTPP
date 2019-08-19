@@ -386,7 +386,7 @@ class RMTPP_DECRNN:
                             else:
                                 new_state = new_state_
 
-                            s_state = new_state_
+                            s_state = new_state
 
                         self.decoder_states.append(s_state)
 
