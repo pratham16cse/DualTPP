@@ -136,6 +136,11 @@ class RMTPP_DECRNN:
         self.INIT_ZERO_DEC_STATE = init_zero_dec_state
         self.CONCAT_FINAL_ENC_STATE = concat_final_enc_state
 
+        if self.CONCAT_FINAL_ENC_STATE:
+            self.DEC_STATE_SIZE = 2 * self.HIDDEN_LAYER_SIZE
+        else:
+            self.DEC_STATE_SIZE = self.HIDDEN_LAYER_SIZE
+
         self.sess = sess
         self.seed = seed
         self.last_epoch = 0
@@ -232,18 +237,18 @@ class RMTPP_DECRNN:
                     self.Vy = tf.get_variable(name='Vy', shape=(self.HIDDEN_LAYER_SIZE, self.NUM_CATEGORIES),
                                               dtype=self.FLOAT_TYPE,
                                               initializer=tf.constant_initializer(Vy(self.HIDDEN_LAYER_SIZE, self.NUM_CATEGORIES)))
-                    self.Vt = tf.get_variable(name='Vt', shape=(self.DEC_LEN, self.HIDDEN_LAYER_SIZE),
+                    self.Vt = tf.get_variable(name='Vt', shape=(self.DEC_LEN, self.DEC_STATE_SIZE),
                                               dtype=self.FLOAT_TYPE,
-                                              initializer=tf.constant_initializer(Vt(self.HIDDEN_LAYER_SIZE, self.DEC_LEN)))
+                                              initializer=tf.constant_initializer(Vt(self.DEC_STATE_SIZE, self.DEC_LEN)))
                     self.bt = tf.get_variable(name='bt', shape=(1, self.DEC_LEN),
                                               dtype=self.FLOAT_TYPE,
                                               initializer=tf.constant_initializer(bt(self.DEC_LEN)))
                     self.bk = tf.get_variable(name='bk', shape=(1, self.NUM_CATEGORIES),
                                               dtype=self.FLOAT_TYPE,
-                                              initializer=tf.constant_initializer(bk(self.HIDDEN_LAYER_SIZE, num_categories)))
-                    self.Vw = tf.get_variable(name='Vw', shape=(self.DEC_LEN, self.HIDDEN_LAYER_SIZE),
+                                              initializer=tf.constant_initializer(bk(self.DEC_STATE_SIZE, num_categories)))
+                    self.Vw = tf.get_variable(name='Vw', shape=(self.DEC_LEN, self.DEC_STATE_SIZE),
                                               dtype=self.FLOAT_TYPE,
-                                              initializer=tf.constant_initializer(Vw(self.HIDDEN_LAYER_SIZE, self.DEC_LEN)))
+                                              initializer=tf.constant_initializer(Vw(self.DEC_STATE_SIZE, self.DEC_LEN)))
                     self.bw = tf.get_variable(name='bw', shape=(1, self.DEC_LEN),
                                               dtype=self.FLOAT_TYPE,
                                               initializer=tf.constant_initializer(bw(self.DEC_LEN)))
@@ -381,10 +386,10 @@ class RMTPP_DECRNN:
                                                         self.HIDDEN_LAYER_SIZE,
                                                         name='hidden_layer_1',
                                                         kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed))
-                            if self.CONCAT_FINAL_ENC_STATE:
-                                new_state = tf.concat([new_state_, self.final_state], axis=-1)
-                            else:
-                                new_state = new_state_
+                            # if self.CONCAT_FINAL_ENC_STATE:
+                            #     new_state = tf.concat([new_state_, self.final_state], axis=-1)
+                            # else:
+                            #     new_state = new_state_
 
                             s_state = new_state
 
@@ -394,6 +399,11 @@ class RMTPP_DECRNN:
 
                     # ------ Begin time-prediction ------ #
                     self.decoder_states = tf.stack(self.decoder_states, axis=1)
+                    if self.CONCAT_FINAL_ENC_STATE:
+                        decoder_states_concat = tf.concat([self.decoder_states,
+                                                           tf.tile(tf.expand_dims(self.final_state, axis=1),
+                                                                   [1, self.DEC_LEN, 1])],
+                                                           axis=-1)
                     times_out_prev = tf.concat([self.times_in[:, -1:], self.times_out[:, :-1]], axis=1)
 
                     gaps = self.times_out-times_out_prev
@@ -406,12 +416,12 @@ class RMTPP_DECRNN:
                     newVt = tf.tile(tf.expand_dims(self.Vt, axis=0), [tf.shape(self.decoder_states)[0], 1, 1]) 
                     newVw = tf.tile(tf.expand_dims(self.Vw, axis=0), [tf.shape(self.decoder_states)[0], 1, 1]) 
 
-                    D = tf.reduce_sum(self.decoder_states*newVt, axis=2) + base_intensity_bt
+                    D = tf.reduce_sum(decoder_states_concat * newVt, axis=2) + base_intensity_bt
 
                     # D = tf.squeeze(tf.tensordot(self.decoder_states, self.Vt, axes=[[2],[0]]), axis=-1) + base_intensity_bt
                     D = get_D_constraint()(D)
                     if self.ALG_NAME in ['rmtpp_decrnn_wcmpt', 'rmtpp_decrnn_mode_wcmpt']:
-                        WT = tf.reduce_sum(self.decoder_states*newVw, axis=2) + base_intensity_bw
+                        WT = tf.reduce_sum(decoder_states_concat * newVw, axis=2) + base_intensity_bw
                         # WT = tf.squeeze(tf.tensordot(self.decoder_states, self.Vw, axes=[[2],[0]]), axis=-1) + base_intensity_bw
                         WT = get_WT_constraint()(WT)
                         WT = tf.clip_by_value(WT, 0.0, 10.0)
@@ -1108,6 +1118,9 @@ class RMTPP_DECRNN:
 
         time_pred_last = time_in_seq[:, -1]
         print(all_decoder_states.shape)
+        if self.CONCAT_FINAL_ENC_STATE:
+            all_decoder_states = np.concatenate([all_decoder_states, np.tile(np.expand_dims(cur_state, axis=1), [1, self.DEC_LEN, 1])], axis=-1)
+
         if single_threaded:
             all_time_preds = [_quad_worker((idx, (state, t_last, tru_gap))) for idx, (state, t_last, tru_gap) in enumerate(zip(all_decoder_states, time_pred_last, plt_tru_gaps))]
         else:
