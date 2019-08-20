@@ -382,7 +382,7 @@ class RMTPP_DECRNN:
                                 tf.matmul(ones_2d, self.bs),
                                 name='s_t'
                             )
-                            new_state_ = tf.layers.dense(new_state,
+                            new_state = tf.layers.dense(new_state,
                                                         self.HIDDEN_LAYER_SIZE,
                                                         name='hidden_layer_1',
                                                         kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed))
