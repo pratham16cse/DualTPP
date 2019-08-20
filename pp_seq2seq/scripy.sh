@@ -86,7 +86,7 @@ command="python3.6 \
 	 --stop-criteria per_epoch_val_err \
 	 --epsilon 0.1 \
 	 --normalization average_per_seq
-	 --init-zero-dec-state \
+	 --no-init-zero-dec-state \
          --no-concat-final-enc-state \
 	 >>$print_dump"
 
