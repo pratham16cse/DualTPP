@@ -28,31 +28,46 @@ if [ -d "Outputs/Experiment_"$last_commit_id ]; then
     if [ -d "Outputs/Experiment_"$last_commit_id"/"$dataset_name ]; then
         if [ -d "Outputs/Experiment_"$last_commit_id"/"$dataset_name"/"$constraints ]; then
 	    if [ -d "Outputs/Experiment_"$last_commit_id"/"$dataset_name"/"$constraints"/"$alg_name ]; then
-            echo "Outputs/Experiment_"$last_commit_id"/"$dataset_name"/"$constraints"/"$alg_name "already exists." 1>&2
-#            echo "Exiting . . ." 1>&2
-#	    if [ $stashed==1 ]; then
+              echo "Outputs/Experiment_"$last_commit_id"/"$dataset_name"/"$constraints"/"$alg_name "already exists." 1>&2
+	      config_ids=(`ls "Outputs/Experiment_"$last_commit_id"/"$dataset_name"/"$constraints"/"$alg_name`)
+	      max_id=${config_ids[0]}
+	      echo ${config_ids[@]}
+	      for n in "${config_ids[@]}" ; do
+	              #echo $n
+	              ((n > max_id)) && max_id=$n
+	      done
+	      new_id=$(( $max_id+1 ))
+#              echo "Exiting . . ." 1>&2
+#	      if [ $stashed==1 ]; then
 #                git stash pop
-#            fi
-#            exit 1
-             else
-                 mkdir "Outputs/Experiment_"$last_commit_id"/"$dataset_name"/"$constraints"/"$alg_name
-	     fi
+#              fi
+#              exit 1
+            else
+                mkdir "Outputs/Experiment_"$last_commit_id"/"$dataset_name"/"$constraints"/"$alg_name
+		new_id=1
+	    fi
         else
             mkdir "Outputs/Experiment_"$last_commit_id"/"$dataset_name"/"$constraints
             mkdir "Outputs/Experiment_"$last_commit_id"/"$dataset_name"/"$constraints"/"$alg_name
+	    new_id=1
         fi
     else
         mkdir "Outputs/Experiment_"$last_commit_id"/"$dataset_name
         mkdir "Outputs/Experiment_"$last_commit_id"/"$dataset_name"/"$constraints
         mkdir "Outputs/Experiment_"$last_commit_id"/"$dataset_name"/"$constraints"/"$alg_name
+	new_id=1
     fi
 else
     mkdir "Outputs/Experiment_"$last_commit_id
     mkdir "Outputs/Experiment_"$last_commit_id"/"$dataset_name
     mkdir "Outputs/Experiment_"$last_commit_id"/"$dataset_name"/"$constraints
     mkdir "Outputs/Experiment_"$last_commit_id"/"$dataset_name"/"$constraints"/"$alg_name
+    mkdir "Outputs/Experiment_"$last_commit_id"/"$dataset_name"/"$constraints"/"$alg_name
+    new_id=1
 fi
-output_dir="Outputs/Experiment_"$last_commit_id"/"$dataset_name"/"$constraints"/"$alg_name
+output_dir="Outputs/Experiment_"$last_commit_id"/"$dataset_name"/"$constraints"/"$alg_name"/"$new_id
+echo $new_id
+mkdir $output_dir
 # ----- #
 
 # ----- Create save_dir and summary_dir ----- #
@@ -98,6 +113,7 @@ if [ "$constraints" != "default" ]; then
 	command=$command" --constraints "$constraints
 fi
 
+echo $command >>$output_dir"/command.sh"
 eval $command
 
 #python3.6 \
