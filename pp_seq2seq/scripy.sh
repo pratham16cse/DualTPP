@@ -37,11 +37,6 @@ if [ -d "Outputs/Experiment_"$last_commit_id ]; then
 	              ((n > max_id)) && max_id=$n
 	      done
 	      new_id=$(( $max_id+1 ))
-#              echo "Exiting . . ." 1>&2
-#	      if [ $stashed==1 ]; then
-#                git stash pop
-#              fi
-#              exit 1
             else
                 mkdir "Outputs/Experiment_"$last_commit_id"/"$dataset_name"/"$constraints"/"$alg_name
 		new_id=1
@@ -100,18 +95,18 @@ command="python3.6 \
 	 --patience 0 \
 	 --stop-criteria per_epoch_val_err \
 	 --epsilon 0.1 \
-	 --normalization average_per_seq
-	 --no-init-zero-dec-state \
-         --no-concat-final-enc-state \
-	 >>$print_dump"
-
-#if [[ "$dataset_name" == *"data_bookorder"* ]]; then
-#	command=$command" --normalization average"
-#fi
+	 --normalization average_per_seq"
 
 if [ "$constraints" != "default" ]; then
 	command=$command" --constraints "$constraints
 fi
+
+if [[ "$alg_name" == "rmtpp_decrnn"* ]]; then
+	command=$command" --init-zero-dec-state"
+	command=$command" --concat-final-enc-state"
+fi
+
+command=$command" >>$print_dump"
 
 echo $command >>$output_dir"/command.sh"
 eval $command
