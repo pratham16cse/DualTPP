@@ -151,6 +151,8 @@ def read_seq2seq_data(event_train_file, event_dev_file, event_test_file,
         timeTestIn, testAvgGaps = generate_shifted_seq(timeTestIn, enc_len)
         minTime, maxTime = 0, 1
 
+    timeTrainIn, timeTrainOut = timeTrain[:, :enc_len], timeTrain[:, enc_len:]
+
     eventTrainIn = [x[:-1] for x in eventTrain]
     eventTrainOut = [x[1:] for x in eventTrain]
     timeTrainIn = [[(y - minTime) / (maxTime - minTime) for y in x[:-1]] for x in timeTrain]
