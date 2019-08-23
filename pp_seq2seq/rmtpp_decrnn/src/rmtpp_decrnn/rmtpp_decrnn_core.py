@@ -49,6 +49,7 @@ def_opts = Deco.Options(
     share_dec_params=True,
     init_zero_dec_state=True,
     concat_final_enc_state=True,
+    extra_dec_layer=True,
 
     wt_hparam=1.0,
 
@@ -103,7 +104,7 @@ class RMTPP_DECRNN:
                  save_dir, decay_steps, decay_rate,
                  device_gpu, device_cpu, summary_dir, cpu_only, constraints,
                  patience, stop_criteria, epsilon, share_dec_params,
-                 init_zero_dec_state, concat_final_enc_state,
+                 init_zero_dec_state, concat_final_enc_state, extra_dec_layer,
                  Wt, Wem, Wh, bh, Ws, bs, wt, Wy, Vy, Vt, Vw, bk, bt, bw, wt_hparam):
         self.HIDDEN_LAYER_SIZE = hidden_layer_size
         self.BATCH_SIZE = batch_size
@@ -135,6 +136,7 @@ class RMTPP_DECRNN:
         self.SHARE_DEC_PARAMS = share_dec_params
         self.INIT_ZERO_DEC_STATE = init_zero_dec_state
         self.CONCAT_FINAL_ENC_STATE = concat_final_enc_state
+        self.EXTRA_DEC_LAYER = extra_dec_layer
 
         if self.CONCAT_FINAL_ENC_STATE:
             self.DEC_STATE_SIZE = 2 * self.HIDDEN_LAYER_SIZE
@@ -382,10 +384,11 @@ class RMTPP_DECRNN:
                                 tf.matmul(ones_2d, self.bs),
                                 name='s_t'
                             )
-                            new_state = tf.layers.dense(new_state,
-                                                        self.HIDDEN_LAYER_SIZE,
-                                                        name='hidden_layer_1',
-                                                        kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed))
+                            if self.EXTRA_DEC_LAYER:
+                                new_state = tf.layers.dense(new_state,
+                                                            self.HIDDEN_LAYER_SIZE,
+                                                            name='hidden_layer_1',
+                                                            kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed))
                             # if self.CONCAT_FINAL_ENC_STATE:
                             #     new_state = tf.concat([new_state_, self.final_state], axis=-1)
                             # else:
