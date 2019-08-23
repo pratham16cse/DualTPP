@@ -51,19 +51,19 @@ def_opts = Deco.Options(
     embed_size=__EMBED_SIZE,
     Wem=lambda num_categories: np.random.RandomState(42).randn(num_categories, __EMBED_SIZE) * 0.01,
 
-    Wt=lambda hidden_layer_size: np.random.randn(1, hidden_layer_size),
-    Wh=lambda hidden_layer_size: np.random.randn(hidden_layer_size) * np.sqrt(1.0/hidden_layer_size),
-    bh=lambda hidden_layer_size: np.random.randn(1, hidden_layer_size) * np.sqrt(1.0/hidden_layer_size),
-    Ws=lambda hidden_layer_size: np.random.randn(hidden_layer_size) * np.sqrt(1.0/hidden_layer_size),
-    bs=lambda hidden_layer_size: np.random.randn(1, hidden_layer_size) * np.sqrt(1.0/hidden_layer_size),
+    Wt=lambda hidden_layer_size: 0.001*np.ones((1, hidden_layer_size)),
+    Wh=lambda hidden_layer_size: 0.001*np.ones((hidden_layer_size)),
+    bh=lambda hidden_layer_size: 0.001*np.ones((1, hidden_layer_size)),
+    Ws=lambda hidden_layer_size: 0.001*np.ones((hidden_layer_size)),
+    bs=lambda hidden_layer_size: 0.001*np.ones((1, hidden_layer_size)),
     wt=1.0,
-    Wy=lambda hidden_layer_size: np.random.randn(__EMBED_SIZE, hidden_layer_size) * np.sqrt(1.0/__EMBED_SIZE),
-    Vy=lambda hidden_layer_size, num_categories: np.random.randn(hidden_layer_size, num_categories) * np.sqrt(1.0/hidden_layer_size),
-    Vt=lambda hidden_layer_size, decoder_length: np.random.randn(decoder_length, hidden_layer_size) * np.sqrt(1.0/hidden_layer_size*decoder_length),
-    Vw=lambda hidden_layer_size, decoder_length: np.random.randn(decoder_length, hidden_layer_size) * np.sqrt(1.0/hidden_layer_size*decoder_length),
-    bt=lambda decoder_length: np.random.randn(decoder_length) * np.log(1.0/decoder_length), # bt is provided by the base_rate
-    bw=lambda decoder_length: np.random.randn(decoder_length) * np.log(1.0/decoder_length), # bw is provided by the base_rate
-    bk=lambda hidden_layer_size, num_categories: np.random.randn(1, num_categories) * np.sqrt(1.0/hidden_layer_size),
+    Wy=lambda hidden_layer_size: 0.001*np.ones((__EMBED_SIZE, hidden_layer_size)),
+    Vy=lambda hidden_layer_size, num_categories: 0.001*np.ones((hidden_layer_size, num_categories)),
+    Vt=lambda hidden_layer_size, decoder_length: 0.001*np.ones((decoder_length, hidden_layer_size)),
+    Vw=lambda hidden_layer_size, decoder_length: 0.001*np.ones((decoder_length, hidden_layer_size)),
+    bt=lambda decoder_length: 0.001*np.ones((decoder_length)), # bt is provided by the base_rate
+    bw=lambda decoder_length: 0.001*np.ones((decoder_length)), # bw is provided by the base_rate
+    bk=lambda hidden_layer_size, num_categories: 0.001*np.ones((1, num_categories)),
 )
 
 
