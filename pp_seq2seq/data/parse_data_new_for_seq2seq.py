@@ -8,7 +8,7 @@ import matplotlib
 matplotlib.use('agg')
 import matplotlib.pyplot as plt
 from itertools import chain
-from collections import Counter
+from collections import Counter, OrderedDict
 from operator import itemgetter
 import pandas as pd
 #from preprocess_rmtpp_data import preprocess
@@ -64,6 +64,38 @@ def print_dataset_stats_table_format(dataset_name, train_data, dev_data, test_da
 
     print(str(len(train_seq_lens))+' & '+str(len(dev_seq_lens))+' & '+str(len(test_seq_lens)))
 
+def create_superclasses(events, num_classes=0):
+    if num_classes == 0: # Do not create superclasses
+        return events
+    events_new = list()
+    N = len(events)
+    C = len(np.unique(events))
+    threshold = int(N / num_classes)
+
+    events_counter = OrderedDict(sorted(Counter(events).items(), key=itemgetter(1), reverse=True))
+    #print(events_counter)
+
+    cls2supercls = dict()
+    new_super_cls = 0
+    removed_classes = dict()
+    while len(removed_classes) < C:
+        class_cardinality = 0
+        new_super_cls += 1
+        for class_, freq in events_counter.items():
+            if removed_classes.get(class_, -1) == -1:
+                if class_cardinality < threshold:
+                    cls2supercls[class_] = new_super_cls
+                    class_cardinality += freq
+                    removed_classes[class_] = True
+                else:
+                    break
+
+    events_new = [cls2supercls[event] for event in events]
+
+    print(Counter(events_new))
+
+    return events_new
+
 # def generate_norm_seq(sequences, check=0):
 #     gap_seqs = sequences[:,1:]-sequences[:,:-1]
 #     avg_gaps = np.average(gap_seqs, axis=1) 
@@ -106,7 +138,8 @@ def preprocess(raw_dataset_name,
                event_dev, time_dev,
                event_test, time_test,
                encoder_length, decoder_length,
-               train_step_length=None, dev_step_length=None, test_step_length=None):
+               train_step_length=None, dev_step_length=None, test_step_length=None,
+               num_superclasses=0):
 
     sequence_length = encoder_length + decoder_length
 
@@ -207,7 +240,10 @@ def preprocess(raw_dataset_name,
 
     dataset_name = dataset_name if dataset_name[-1]!='/' else dataset_name[:-1]
     dataset_name = dataset_name + '_' + str(encoder_length) + '_' + str(decoder_length) \
-                   + '_' + str(train_step_length) + '_' + str(dev_step_length) + '_' + str(test_step_length)
+                   + '_' + str(train_step_length) + '_' + str(dev_step_length) + '_' + str(test_step_length) \
+
+    if num_superclasses > 0:
+        dataset_name = dataset_name + '_' + str(num_superclasses)
 
     if not os.path.isdir(dataset_name):
         os.mkdir(dataset_name)
@@ -356,8 +392,12 @@ def main():
     train_step_length = int(sys.argv[5])
     dev_step_length = int(sys.argv[6])
     test_step_length = int(sys.argv[7])
+    num_superclasses = int(sys.argv[8])
     sequence_length = encoder_length + decoder_length
-    output_path = 'NewDataParsed'
+    if num_superclasses == 0:
+        output_path = 'NewDataParsed'
+    else:
+        output_path = 'NewDataParsedSuperClasses'
     
 
     data_path = dataset_path
@@ -380,6 +420,8 @@ def main():
             crnt_id += 1
 
     eve = [eve2id[e] for e in eve]
+
+    eve = create_superclasses(eve)
 
     total = len(lst)
 
@@ -458,7 +500,8 @@ def main():
                event_dev, time_dev,
                event_test, time_test,
                encoder_length, decoder_length,
-               train_step_length, dev_step_length, test_step_length)
+               train_step_length, dev_step_length, test_step_length,
+               num_superclasses)
 
 if __name__ == '__main__':
     main()
