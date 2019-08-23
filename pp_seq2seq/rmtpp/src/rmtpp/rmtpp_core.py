@@ -127,15 +127,9 @@ class RMTPP:
         if self.STOP_CRITERIA == 'epsilon':
             assert self.EPSILON > 0.0
 
-        self.SHARE_DEC_PARAMS = share_dec_params
-        self.INIT_ZERO_DEC_STATE = init_zero_dec_state
-        self.CONCAT_FINAL_ENC_STATE = concat_final_enc_state
-        self.EXTRA_DEC_LAYER = extra_dec_layer
 
-        if self.CONCAT_FINAL_ENC_STATE:
+        if True:
             self.DEC_STATE_SIZE = 2 * self.HIDDEN_LAYER_SIZE
-        else:
-            self.DEC_STATE_SIZE = self.HIDDEN_LAYER_SIZE
 
         self.sess = sess
         self.seed = seed
@@ -247,9 +241,9 @@ class RMTPP:
 
                     if True:
                         print('Always Sharing pseudo-Decoder Parameters')
-                        self.Vt = tf.transpose(self.Vt[0:1, :], [1, 0])
+                        self.Vt = tf.transpose(self.Vt[0:1, :self.HIDDEN_LAYER_SIZE], [1, 0])
                         self.bt = self.bt[:, 0:1]
-                        self.Vw = tf.transpose(self.Vw[0:1, :], [1, 0])
+                        self.Vw = tf.transpose(self.Vw[0:1, :self.HIDDEN_LAYER_SIZE], [1, 0])
                         self.bw = self.bw[:, 0:1]
 
                 self.all_vars = [self.Wt, self.Wem, self.Wh, self.bh, self.Ws, self.bs,
