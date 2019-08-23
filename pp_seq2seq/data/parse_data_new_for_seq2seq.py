@@ -66,8 +66,8 @@ def print_dataset_stats_table_format(dataset_name, train_data, dev_data, test_da
 
 def create_superclasses(events, num_classes=0):
     if num_classes == 0: # Do not create superclasses
+        print('No Superclasses')
         return events
-    events_new = list()
     N = len(events)
     C = len(np.unique(events))
     threshold = int(N / num_classes)
@@ -421,7 +421,8 @@ def main():
 
     eve = [eve2id[e] for e in eve]
 
-    eve = create_superclasses(eve)
+    eve = create_superclasses(eve, num_classes=num_superclasses)
+    #print(eve)
 
     total = len(lst)
 
