@@ -96,6 +96,28 @@ def create_superclasses(events, num_classes=0):
 
     return events_new
 
+def group_less_active_classes(events, keep_classes=0):
+    if keep_classes == 0:
+        print('No Superclasses')
+        return events
+
+    events_counter = OrderedDict(sorted(Counter(events).items(), key=itemgetter(1), reverse=True))
+    #print(events_counter)
+
+    cls2supercls = dict()
+    new_super_cls = 0
+    removed_classes = dict()
+    for i, (class_, _) in enumerate(events_counter.items()):
+        if i <= keep_classes:
+            new_super_cls += 1
+        cls2supercls[class_] = new_super_cls
+
+    events_new = [cls2supercls[event] for event in events]
+
+    print(Counter(events_new))
+
+    return events_new
+
 # def generate_norm_seq(sequences, check=0):
 #     gap_seqs = sequences[:,1:]-sequences[:,:-1]
 #     avg_gaps = np.average(gap_seqs, axis=1) 
@@ -139,7 +161,7 @@ def preprocess(raw_dataset_name,
                event_test, time_test,
                encoder_length, decoder_length,
                train_step_length=None, dev_step_length=None, test_step_length=None,
-               num_superclasses=0):
+               keep_classes=0):
 
     sequence_length = encoder_length + decoder_length
 
@@ -242,8 +264,8 @@ def preprocess(raw_dataset_name,
     dataset_name = dataset_name + '_' + str(encoder_length) + '_' + str(decoder_length) \
                    + '_' + str(train_step_length) + '_' + str(dev_step_length) + '_' + str(test_step_length) \
 
-    if num_superclasses > 0:
-        dataset_name = dataset_name + '_' + str(num_superclasses)
+    dataset_name = dataset_name + '_' + str(keep_classes)
+
 
     if not os.path.isdir(dataset_name):
         os.mkdir(dataset_name)
@@ -392,12 +414,9 @@ def main():
     train_step_length = int(sys.argv[5])
     dev_step_length = int(sys.argv[6])
     test_step_length = int(sys.argv[7])
-    num_superclasses = int(sys.argv[8])
+    keep_classes = int(sys.argv[8])
     sequence_length = encoder_length + decoder_length
-    if num_superclasses == 0:
-        output_path = 'NewDataParsed'
-    else:
-        output_path = 'NewDataParsedSuperClasses'
+    output_path = 'NewDataParsed'
     
 
     data_path = dataset_path
@@ -421,7 +440,7 @@ def main():
 
     eve = [eve2id[e] for e in eve]
 
-    eve = create_superclasses(eve, num_classes=num_superclasses)
+    eve = group_less_active_classes(eve, keep_classes=keep_classes)
     #print(eve)
 
     total = len(lst)
@@ -502,7 +521,7 @@ def main():
                event_test, time_test,
                encoder_length, decoder_length,
                train_step_length, dev_step_length, test_step_length,
-               num_superclasses)
+               keep_classes)
 
 if __name__ == '__main__':
     main()
