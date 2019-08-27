@@ -49,11 +49,12 @@ def_opts = rmtpp_decrnn.rmtpp_decrnn_core.def_opts
 @click.option('--init-zero-dec-state/--no-init-zero-dec-state', 'init_zero_dec_state', help='Concatenate final encoder state with decoder state at each step', default=True)
 @click.option('--concat-final-enc-state/--no-concat-final-enc-state', 'concat_final_enc_state', help='Concatenate final encoder state with decoder state at each step', default=True)
 @click.option('--extra-dec-layer/--no-extra-dec-layer', 'extra_dec_layer', help='Use extra layer on top of decoder state before final encoder state concat', default=True)
+@click.option('--concat-before-dec-update/--no-concat-before-dec-update', 'concat_before_dec_update', help='Concatenate final encoder state before updating decoder state', default=False)
 def cmd(dataset_name, alg_name, dataset_path,
         event_train_file, time_train_file, event_dev_file, time_dev_file, event_test_file, time_test_file,
         save_dir, summary_dir, num_epochs, restart, train_eval, test_eval, scale,
         batch_size, bptt, decoder_length, learning_rate, cpu_only, normalization, constraints,
-        patience, stop_criteria, epsilon, share_dec_params, init_zero_dec_state, concat_final_enc_state, extra_dec_layer):
+        patience, stop_criteria, epsilon, share_dec_params, init_zero_dec_state, concat_final_enc_state, extra_dec_layer, concat_before_dec_update):
     """Read data from EVENT_TRAIN_FILE, TIME_TRAIN_FILE and try to predict the values in EVENT_TEST_FILE, TIME_TEST_FILE."""
 
     data = rmtpp_decrnn.utils.read_seq2seq_data(
@@ -103,6 +104,7 @@ def cmd(dataset_name, alg_name, dataset_path,
             init_zero_dec_state=init_zero_dec_state,
             concat_final_enc_state=concat_final_enc_state,
             extra_dec_layer=extra_dec_layer,
+            concat_before_dec_update=concat_before_dec_update,
             _opts=rmtpp_decrnn.rmtpp_decrnn_core.def_opts
         )
 
