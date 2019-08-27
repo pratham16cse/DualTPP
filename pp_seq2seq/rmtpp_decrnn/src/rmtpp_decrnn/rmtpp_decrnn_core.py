@@ -392,7 +392,13 @@ class RMTPP_DECRNN:
                                 new_state = tf.layers.dense(new_state,
                                                             self.HIDDEN_LAYER_SIZE,
                                                             name='hidden_layer_1',
-                                                            kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed))
+                                                            kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed),
+                                                            activation=tf.nn.relu)
+                                new_state = tf.layers.dense(new_state,
+                                                            self.HIDDEN_LAYER_SIZE,
+                                                            name='hidden_layer_2',
+                                                            kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed),
+                                                            activation=tf.nn.relu)
                             # if self.CONCAT_FINAL_ENC_STATE:
                             #     new_state = tf.concat([new_state_, self.final_state], axis=-1)
                             # else:
