@@ -51,19 +51,19 @@ def_opts = Deco.Options(
     embed_size=__EMBED_SIZE,
     Wem=lambda num_categories: np.random.RandomState(42).randn(num_categories, __EMBED_SIZE) * 0.01,
 
-    Wt=lambda hidden_layer_size: np.random.randn(1, hidden_layer_size),
-    Wh=lambda hidden_layer_size: np.random.randn(hidden_layer_size) * np.sqrt(1.0/hidden_layer_size),
-    bh=lambda hidden_layer_size: np.random.randn(1, hidden_layer_size) * np.sqrt(1.0/hidden_layer_size),
-    Ws=lambda hidden_layer_size: np.random.randn(hidden_layer_size) * np.sqrt(1.0/hidden_layer_size),
-    bs=lambda hidden_layer_size: np.random.randn(1, hidden_layer_size) * np.sqrt(1.0/hidden_layer_size),
+    Wt=lambda hidden_layer_size: 0.001*np.ones((1, hidden_layer_size)),
+    Wh=lambda hidden_layer_size: 0.001*np.ones((hidden_layer_size)),
+    bh=lambda hidden_layer_size: 0.001*np.ones((1, hidden_layer_size)),
+    Ws=lambda hidden_layer_size: 0.001*np.ones((hidden_layer_size)),
+    bs=lambda hidden_layer_size: 0.001*np.ones((1, hidden_layer_size)),
     wt=1.0,
-    Wy=lambda hidden_layer_size: np.random.randn(__EMBED_SIZE, hidden_layer_size) * np.sqrt(1.0/__EMBED_SIZE),
-    Vy=lambda hidden_layer_size, num_categories: np.random.randn(hidden_layer_size, num_categories) * np.sqrt(1.0/hidden_layer_size),
-    Vt=lambda hidden_layer_size: np.random.randn(hidden_layer_size, 1) * np.sqrt(1.0/hidden_layer_size),
-    Vw=lambda hidden_layer_size: np.random.randn(hidden_layer_size, 1) * np.sqrt(1.0/hidden_layer_size),
-    bt=np.log(1.0), # bt is provided by the base_rate
-    bw=np.log(1.0), # bw is provided by the base_rate
-    bk=lambda hidden_layer_size, num_categories: np.random.randn(1, num_categories) * np.sqrt(1.0/hidden_layer_size),
+    Wy=lambda hidden_layer_size: 0.001*np.ones((__EMBED_SIZE, hidden_layer_size)),
+    Vy=lambda hidden_layer_size, num_categories: 0.001*np.ones((hidden_layer_size, num_categories)),
+    Vt=lambda hidden_layer_size, decoder_length: 0.001*np.ones((decoder_length, hidden_layer_size)),
+    Vw=lambda hidden_layer_size, decoder_length: 0.001*np.ones((decoder_length, hidden_layer_size)),
+    bt=lambda decoder_length: 0.001*np.ones((decoder_length)), # bt is provided by the base_rate
+    bw=lambda decoder_length: 0.001*np.ones((decoder_length)), # bw is provided by the base_rate
+    bk=lambda hidden_layer_size, num_categories: 0.001*np.ones((1, num_categories)),
 )
 
 
@@ -126,6 +126,10 @@ class RMTPP:
         self.EPSILON = epsilon
         if self.STOP_CRITERIA == 'epsilon':
             assert self.EPSILON > 0.0
+
+
+        if True:
+            self.DEC_STATE_SIZE = 2 * self.HIDDEN_LAYER_SIZE
 
         self.sess = sess
         self.seed = seed
@@ -219,22 +223,28 @@ class RMTPP:
                     self.Vy = tf.get_variable(name='Vy', shape=(self.HIDDEN_LAYER_SIZE, self.NUM_CATEGORIES),
                                               dtype=self.FLOAT_TYPE,
                                               initializer=tf.constant_initializer(Vy(self.HIDDEN_LAYER_SIZE, self.NUM_CATEGORIES)))
-                    self.Vt = tf.get_variable(name='Vt', shape=(self.HIDDEN_LAYER_SIZE, 1),
+                    self.Vt = tf.get_variable(name='Vt', shape=(self.DEC_LEN, self.DEC_STATE_SIZE),
                                               dtype=self.FLOAT_TYPE,
-                                              initializer=tf.constant_initializer(Vt(self.HIDDEN_LAYER_SIZE)))
-                    self.bt = tf.get_variable(name='bt', shape=(1, 1),
+                                              initializer=tf.constant_initializer(Vt(self.DEC_STATE_SIZE, self.DEC_LEN)))
+                    self.bt = tf.get_variable(name='bt', shape=(1, self.DEC_LEN),
                                               dtype=self.FLOAT_TYPE,
-                                              initializer=tf.constant_initializer(bt))
+                                              initializer=tf.constant_initializer(bt(self.DEC_LEN)))
                     self.bk = tf.get_variable(name='bk', shape=(1, self.NUM_CATEGORIES),
                                               dtype=self.FLOAT_TYPE,
-                                              initializer=tf.constant_initializer(bk(self.HIDDEN_LAYER_SIZE, num_categories)))
-                    self.Vw = tf.get_variable(name='Vw', shape=(self.HIDDEN_LAYER_SIZE, 1),
+                                              initializer=tf.constant_initializer(bk(self.DEC_STATE_SIZE, num_categories)))
+                    self.Vw = tf.get_variable(name='Vw', shape=(self.DEC_LEN, self.DEC_STATE_SIZE),
                                               dtype=self.FLOAT_TYPE,
-                                              initializer=tf.constant_initializer(Vw(self.HIDDEN_LAYER_SIZE)))
-                    self.bw = tf.get_variable(name='bw', shape=(1, 1),
+                                              initializer=tf.constant_initializer(Vw(self.DEC_STATE_SIZE, self.DEC_LEN)))
+                    self.bw = tf.get_variable(name='bw', shape=(1, self.DEC_LEN),
                                               dtype=self.FLOAT_TYPE,
-                                              initializer=tf.constant_initializer(bw))
+                                              initializer=tf.constant_initializer(bw(self.DEC_LEN)))
 
+                    if True:
+                        print('Always Sharing pseudo-Decoder Parameters')
+                        self.Vt = tf.transpose(self.Vt[0:1, :self.HIDDEN_LAYER_SIZE], [1, 0])
+                        self.bt = self.bt[:, 0:1]
+                        self.Vw = tf.transpose(self.Vw[0:1, :self.HIDDEN_LAYER_SIZE], [1, 0])
+                        self.bw = self.bw[:, 0:1]
 
                 self.all_vars = [self.Wt, self.Wem, self.Wh, self.bh, self.Ws, self.bs,
                                  self.wt, self.Wy, self.Vy, self.Vt, self.bt, self.bk, self.Vw, self.bw]
