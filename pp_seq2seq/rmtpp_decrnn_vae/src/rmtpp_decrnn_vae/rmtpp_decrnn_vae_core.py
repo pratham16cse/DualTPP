@@ -46,28 +46,55 @@ def_opts = Deco.Options(
     stop_criteria='per_epoch_val_err',
     epsilon=0.0,
 
+    share_dec_params=True,
+    init_fin_enc_state = False,
+    init_latent_vector=True,
+    extra_dec_layer=True,
+    concat_final_enc_state=False,
+    concat_final_enc_state_z_hat=True, 
+    many_sampling=True, 
+    pass_mean=False,
+
     wt_hparam=1.0,
 
     embed_size=__EMBED_SIZE,
     Wem=lambda num_categories: np.random.RandomState(42).randn(num_categories, __EMBED_SIZE) * 0.01,
 
-    Wt=lambda hidden_layer_size: np.random.randn(1, hidden_layer_size),
-    Wh=lambda hidden_layer_size: np.random.randn(hidden_layer_size) * np.sqrt(1.0/hidden_layer_size),
-    bh=lambda hidden_layer_size: np.random.randn(1, hidden_layer_size) * np.sqrt(1.0/hidden_layer_size),
-    Wtd=lambda hidden_layer_size: np.random.randn(1, hidden_layer_size),
-    Whd=lambda hidden_layer_size: np.random.randn(hidden_layer_size) * np.sqrt(1.0/hidden_layer_size),
-    bhd=lambda hidden_layer_size: np.random.randn(1, hidden_layer_size) * np.sqrt(1.0/hidden_layer_size),
-    Ws=lambda hidden_layer_size: np.random.randn(hidden_layer_size) * np.sqrt(1.0/hidden_layer_size),
-    bs=lambda hidden_layer_size: np.random.randn(1, hidden_layer_size) * np.sqrt(1.0/hidden_layer_size),
+    Wt=lambda hidden_layer_size: 0.001*np.ones((1, hidden_layer_size)),
+    Wh=lambda hidden_layer_size: 0.001*np.ones((hidden_layer_size)),
+    bh=lambda hidden_layer_size: 0.001*np.ones((1, hidden_layer_size)),
+    Wtd=lambda hidden_layer_size: 0.001*np.ones((1, hidden_layer_size)),
+    Whd=lambda hidden_layer_size: 0.001*np.ones((hidden_layer_size)),
+    bhd=lambda hidden_layer_size: 0.001*np.ones((1, hidden_layer_size)),
+    Ws=lambda hidden_layer_size: 0.001*np.ones((hidden_layer_size)),
+    bs=lambda hidden_layer_size: 0.001*np.ones((1, hidden_layer_size)),
     wt=1.0,
-    Wy=lambda hidden_layer_size: np.random.randn(__EMBED_SIZE, hidden_layer_size) * np.sqrt(1.0/__EMBED_SIZE),
-    Wyd=lambda hidden_layer_size: np.random.randn(__EMBED_SIZE, hidden_layer_size) * np.sqrt(1.0/__EMBED_SIZE),
-    Vy=lambda hidden_layer_size, num_categories: np.random.randn(hidden_layer_size, num_categories) * np.sqrt(1.0/hidden_layer_size),
-    Vt=lambda hidden_layer_size: np.random.randn(hidden_layer_size, 1) * np.sqrt(1.0/hidden_layer_size),
-    Vw=lambda hidden_layer_size: np.random.randn(hidden_layer_size, 1) * np.sqrt(1.0/hidden_layer_size),
-    bt=np.log(1.0), # bt is provided by the base_rate
-    bw=np.log(1.0), # bw is provided by the base_rate
-    bk=lambda hidden_layer_size, num_categories: np.random.randn(1, num_categories) * np.sqrt(1.0/hidden_layer_size),
+    Wy=lambda hidden_layer_size: 0.001*np.ones((__EMBED_SIZE, hidden_layer_size)),
+    Wyd=lambda hidden_layer_size: 0.001*np.ones((__EMBED_SIZE, hidden_layer_size)),
+    Vy=lambda hidden_layer_size, num_categories: 0.001*np.ones((hidden_layer_size, num_categories)),
+    Vt=lambda hidden_layer_size, decoder_length: 0.001*np.ones((decoder_length, hidden_layer_size)),
+    Vw=lambda hidden_layer_size, decoder_length: 0.001*np.ones((decoder_length, hidden_layer_size)),
+    bt=lambda decoder_length: 0.001*np.ones((decoder_length)), # bt is provided by the base_rate
+    bw=lambda decoder_length: 0.001*np.ones((decoder_length)), # bw is provided by the base_rate
+    bk=lambda hidden_layer_size, num_categories: 0.001*np.ones((1, num_categories)),
+
+    # Wt=lambda hidden_layer_size: np.random.randn(1, hidden_layer_size),
+    # Wh=lambda hidden_layer_size: np.random.randn(hidden_layer_size) * np.sqrt(1.0/hidden_layer_size),
+    # bh=lambda hidden_layer_size: np.random.randn(1, hidden_layer_size) * np.sqrt(1.0/hidden_layer_size),
+    # Wtd=lambda hidden_layer_size: np.random.randn(1, hidden_layer_size),
+    # Whd=lambda hidden_layer_size: np.random.randn(hidden_layer_size) * np.sqrt(1.0/hidden_layer_size),
+    # bhd=lambda hidden_layer_size: np.random.randn(1, hidden_layer_size) * np.sqrt(1.0/hidden_layer_size),
+    # Ws=lambda hidden_layer_size: np.random.randn(hidden_layer_size) * np.sqrt(1.0/hidden_layer_size),
+    # bs=lambda hidden_layer_size: np.random.randn(1, hidden_layer_size) * np.sqrt(1.0/hidden_layer_size),
+    # wt=1.0,
+    # Wy=lambda hidden_layer_size: np.random.randn(__EMBED_SIZE, hidden_layer_size) * np.sqrt(1.0/__EMBED_SIZE),
+    # Wyd=lambda hidden_layer_size: np.random.randn(__EMBED_SIZE, hidden_layer_size) * np.sqrt(1.0/__EMBED_SIZE),
+    # Vy=lambda hidden_layer_size, num_categories: np.random.randn(hidden_layer_size, num_categories) * np.sqrt(1.0/hidden_layer_size),
+    # Vt=lambda hidden_layer_size, decoder_length: np.random.randn(decoder_length, hidden_layer_size) * np.sqrt(1.0/hidden_layer_size*decoder_length),
+    # Vw=lambda hidden_layer_size, decoder_length: np.random.randn(decoder_length, hidden_layer_size) * np.sqrt(1.0/hidden_layer_size*decoder_length),
+    # bt=lambda decoder_length: np.random.randn(decoder_length) * np.log(1.0/decoder_length), # bt is provided by the base_rate
+    # bw=lambda decoder_length: np.random.randn(decoder_length) * np.log(1.0/decoder_length), # bw is provided by the base_rate
+    # bk=lambda hidden_layer_size, num_categories: np.random.randn(1, num_categories) * np.sqrt(1.0/hidden_layer_size),
 )
 
 
@@ -102,7 +129,9 @@ class RMTPP_DECRNN_VAE:
                  float_type, bptt, decoder_length, seed, scope, alg_name,
                  save_dir, decay_steps, decay_rate,
                  device_gpu, device_cpu, summary_dir, cpu_only, constraints,
-                 patience, stop_criteria, epsilon,
+                 patience, stop_criteria, epsilon, share_dec_params,
+                 init_fin_enc_state, init_latent_vector, concat_final_enc_state, extra_dec_layer,
+                 concat_final_enc_state_z_hat, many_sampling, pass_mean,
                  Wt, Wem, Wh, bh, Ws, bs, wt, Wy, Wtd, Whd, bhd, Wyd, Vy, Vt, Vw, bk, bt, bw, wt_hparam):
         self.HIDDEN_LAYER_SIZE = hidden_layer_size
         self.BATCH_SIZE = batch_size
@@ -131,20 +160,47 @@ class RMTPP_DECRNN_VAE:
         if self.STOP_CRITERIA == 'epsilon':
             assert self.EPSILON > 0.0
 
+        self.SHARE_DEC_PARAMS = share_dec_params
+        self.INIT_FIN_ENC_STATE = init_fin_enc_state
+        self.INIT_LATENT_VECTOR = init_latent_vector
+        self.EXTRA_DEC_LAYER = extra_dec_layer
+
+        self.CONCAT_FINAL_ENC_STATE = concat_final_enc_state
+        self.CONCAT_FINAL_ENC_STATE_Z_HAT = concat_final_enc_state_z_hat
+        self.MANY_SAMPLING = many_sampling
+        self.PASS_MEAN = pass_mean
+
+        self.DEC_STATE_SIZE = self.HIDDEN_LAYER_SIZE
+        # if self.CONCAT_FINAL_ENC_STATE_Z_HAT:
+        #     self.DEC_STATE_SIZE = 3 * self.HIDDEN_LAYER_SIZE
+        # elif self.CONCAT_FINAL_ENC_STATE:
+        #     self.DEC_STATE_SIZE = 2 * self.HIDDEN_LAYER_SIZE
+        # else:
+        #     self.DEC_STATE_SIZE = self.HIDDEN_LAYER_SIZE
+        
+        print('self.SHARE_DEC_PARAMS', self.SHARE_DEC_PARAMS)
+        print('self.EXTRA_DEC_LAYER', self.EXTRA_DEC_LAYER)
+        print('self.INIT_FIN_ENC_STATE', self.INIT_FIN_ENC_STATE)
+        print('self.INIT_LATENT_VECTOR', self.INIT_LATENT_VECTOR)
+        print('self.CONCAT_FINAL_ENC_STATE', self.CONCAT_FINAL_ENC_STATE)
+        print('self.CONCAT_FINAL_ENC_STATE_Z_HAT', self.CONCAT_FINAL_ENC_STATE_Z_HAT)
+        print('self.MANY_SAMPLING', self.MANY_SAMPLING)
+        print('self.PASS_MEAN', self.PASS_MEAN)
+
+        assert self.INIT_LATENT_VECTOR != self.INIT_FIN_ENC_STATE
+        
         self.sess = sess
         self.seed = seed
         self.last_epoch = 0
 
         self.sample_num = 30
-        self.pass_mean = False
-        self.sampled = True
 
         self.rs = np.random.RandomState(seed + 42)
         np.random.seed(42)
 
         def get_wt_constraint():
             if self.CONSTRAINTS == 'default':
-                return lambda x: tf.clip_by_value(x, 1e-5, np.inf)
+                return lambda x: tf.clip_by_value(x, 1e-5, 20.0)
             elif self.CONSTRAINTS == 'c1':
                 return lambda x: tf.clip_by_value(x, 1.0, np.inf)
             elif self.CONSTRAINTS == 'c2':
@@ -251,22 +307,31 @@ class RMTPP_DECRNN_VAE:
                     self.Vy = tf.get_variable(name='Vy', shape=(self.HIDDEN_LAYER_SIZE, self.NUM_CATEGORIES),
                                               dtype=self.FLOAT_TYPE,
                                               initializer=tf.constant_initializer(Vy(self.HIDDEN_LAYER_SIZE, self.NUM_CATEGORIES)))
-                    self.Vt = tf.get_variable(name='Vt', shape=(self.HIDDEN_LAYER_SIZE, 1),
+                    
+                    self.Vt = tf.get_variable(name='Vt', shape=(self.DEC_LEN, self.DEC_STATE_SIZE),
                                               dtype=self.FLOAT_TYPE,
-                                              initializer=tf.constant_initializer(Vt(self.HIDDEN_LAYER_SIZE)))
-                    self.bt = tf.get_variable(name='bt', shape=(1, 1),
+                                              initializer=tf.constant_initializer(Vt(self.DEC_STATE_SIZE, self.DEC_LEN)))
+                    self.bt = tf.get_variable(name='bt', shape=(1, self.DEC_LEN),
                                               dtype=self.FLOAT_TYPE,
-                                              initializer=tf.constant_initializer(bt))
+                                              initializer=tf.constant_initializer(bt(self.DEC_LEN)))
                     self.bk = tf.get_variable(name='bk', shape=(1, self.NUM_CATEGORIES),
                                               dtype=self.FLOAT_TYPE,
-                                              initializer=tf.constant_initializer(bk(self.HIDDEN_LAYER_SIZE, num_categories)))
-                    self.Vw = tf.get_variable(name='Vw', shape=(self.HIDDEN_LAYER_SIZE, 1),
+                                              initializer=tf.constant_initializer(bk(self.DEC_STATE_SIZE, num_categories)))
+                    self.Vw = tf.get_variable(name='Vw', shape=(self.DEC_LEN, self.DEC_STATE_SIZE),
                                               dtype=self.FLOAT_TYPE,
-                                              initializer=tf.constant_initializer(Vw(self.HIDDEN_LAYER_SIZE)))
-                    self.bw = tf.get_variable(name='bw', shape=(1, 1),
+                                              initializer=tf.constant_initializer(Vw(self.DEC_STATE_SIZE, self.DEC_LEN)))
+                    self.bw = tf.get_variable(name='bw', shape=(1, self.DEC_LEN),
                                               dtype=self.FLOAT_TYPE,
-                                              initializer=tf.constant_initializer(bw))
+                                              initializer=tf.constant_initializer(bw(self.DEC_LEN)))
 
+                    if self.SHARE_DEC_PARAMS:
+                        print('Sharing Decoder Parameters')
+                        self.Vt = tf.tile(self.Vt[0:1, :], [self.DEC_LEN, 1])
+                        self.bt = tf.tile(self.bt[:, 0:1], [1, self.DEC_LEN])
+                        self.Vw = tf.tile(self.Vw[0:1, :], [self.DEC_LEN, 1])
+                        self.bw = tf.tile(self.bw[:, 0:1], [1, self.DEC_LEN])
+                    else:
+                        print('NOT Sharing Decoder Parameters')
 
                 self.all_vars = [self.Wt, self.Wem, self.Wh, self.bh, self.Wtd, self.Whd, self.bhd, self.Ws, self.bs,
                                  self.wt, self.Wy, self.Wyd, self.Vy, self.Vt, self.bt, self.bk, self.Vw, self.bw]
@@ -280,7 +345,7 @@ class RMTPP_DECRNN_VAE:
                 # RNNcell = RNN_CELL_TYPE(HIDDEN_LAYER_SIZE)
 
                 # Initial state for GRU cells
-                self.initial_state = state = tf.zeros([self.inf_batch_size, self.HIDDEN_LAYER_SIZE],
+                self.initial_state = state = s_state = tf.zeros([self.inf_batch_size, self.HIDDEN_LAYER_SIZE],
                                                       dtype=self.FLOAT_TYPE,
                                                       name='initial_state')
                 self.initial_time = last_time = tf.zeros((self.inf_batch_size,),
@@ -343,11 +408,14 @@ class RMTPP_DECRNN_VAE:
                     self.mu, self.sigma, self.latent_vector_q_min = self.computing_mu_s(self.final_state, name='encoder_q')
                     distribution_a = tf.distributions.Normal(loc=self.mu, scale=self.sigma)
 
+                    #TODO: Add flag
+                    self.latent_vector_encoder = self.sampling(self.mu, self.sigma, self.sample_num)
+                    self.latent_vector_q_min = tf.reduce_sum(self.latent_vector_encoder, axis=1)
                 #----------- Encoder End ----------#
 
 
                 #----------- d Decoder Begin ----------#
-                if self.pass_mean:
+                if self.PASS_MEAN:
                     self.latent_vector_q_min = self.mu
 
                 state_d = self.latent_vector_q_min
@@ -382,7 +450,8 @@ class RMTPP_DECRNN_VAE:
                     self.final_state_d_dec = self.hidden_states_d_dec[-1]
 
                     encod_decod_out = tf.concat([self.final_state_d_dec, self.final_state], axis=-1)
-                    self.encod_decod_out_state = tf.layers.dense(encod_decod_out, self.HIDDEN_LAYER_SIZE)
+                    self.encod_decod_out_state = tf.layers.dense(encod_decod_out, self.HIDDEN_LAYER_SIZE,
+                                                 kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed))
 
                     #TODO: concate with encoder final state
                     self.mu_d, self.sigma_d, self.latent_vector_q_dot = self.computing_mu_s(self.encod_decod_out_state, name='decoder_q')
@@ -394,22 +463,32 @@ class RMTPP_DECRNN_VAE:
                 KL_divergence_val = tf.reduce_sum(KL_divergence_val, 1)
                 self.KL_divergence = tf.reduce_mean(KL_divergence_val)
 
-                self.h_m_z_hat = tf.concat([self.final_state, self.latent_vector_q_min], axis=-1)
+                if self.CONCAT_FINAL_ENC_STATE_Z_HAT:
+                    self.h_m_z_hat = tf.concat([self.final_state, self.latent_vector_q_min], axis=-1)
+                elif self.CONCAT_FINAL_ENC_STATE:
+                    self.h_m_z_hat = self.final_state
+                else:
+                    self.h_m_z_hat = self.latent_vector_q_min
 
-                self.z_hat_lst = self.sampling(self.mu, self.sigma, self.sample_num)
-                final_state_num = tf.tile(tf.expand_dims(self.final_state, axis=1), [1, self.sample_num, 1])
-                self.h_m_z_hat_num = tf.concat([final_state_num, self.z_hat_lst], axis=-1)
+                if self.MANY_SAMPLING:
+                    self.z_hat_lst = self.sampling(self.mu, self.sigma, self.sample_num)
+                    final_state_num = tf.tile(tf.expand_dims(self.final_state, axis=1), [1, self.sample_num, 1])
+                    self.h_m_z_hat = tf.concat([final_state_num, self.z_hat_lst], axis=-1)
+
                 # self.h_m_z_hat_num = tf.concat([tf.expand_dims(self.final_state, axis=1), self.latent_vector_q_min], axis=1)
 
                 #----------- Decoder Begin ----------#
                 # TODO Does affine transformations (Wy) need to be different? Wt is not \
                   # required in the decoder
 
-                s_state = self.latent_vector_q_min
+                # s_state = self.latent_vector_q_min
+                if self.INIT_FIN_ENC_STATE:
+                    s_state = self.final_state
+                if self.INIT_LATENT_VECTOR:
+                    s_state = self.latent_vector_q_min
                 #s_state = tf.Print(s_state, [self.mode, tf.equal(self.mode, 1.0)], message='mode ')
                 self.decoder_states = []
                 self.merge_decoder_states = []
-                self.merge_decoder_states_num = []
 
                 with tf.name_scope('Decoder'):
                     for i in range(self.DEC_LEN):
@@ -453,30 +532,30 @@ class RMTPP_DECRNN_VAE:
                                 tf.matmul(ones_2d, self.bs),
                                 name='s_t'
                             )
+                            if self.EXTRA_DEC_LAYER:
+                                new_state = tf.layers.dense(new_state,
+                                                            self.HIDDEN_LAYER_SIZE,
+                                                            kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed))
                             s_state = new_state
 
+                            if self.MANY_SAMPLING:
+                                s_state_merge = tf.tile(tf.expand_dims(s_state, axis=1), [1, self.sample_num, 1])
+                            else:
+                                s_state_merge = s_state
+
                             merge_decoder_state = tf.layers.dense(
-                              tf.concat([s_state, self.h_m_z_hat], axis=-1)
-                              , self.HIDDEN_LAYER_SIZE)
-
-                            s_state_num = tf.tile(tf.expand_dims(s_state, axis=1), [1, self.sample_num, 1])
-                            merge_decoder_state_num = tf.layers.dense(
-                              tf.concat([s_state_num, self.h_m_z_hat_num], axis=-1)
-                              , self.HIDDEN_LAYER_SIZE)
-
+                              tf.concat([s_state_merge, self.h_m_z_hat], axis=-1)
+                              , self.HIDDEN_LAYER_SIZE
+                              , kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed))
 
                         self.decoder_states.append(s_state)
                         self.merge_decoder_states.append(merge_decoder_state)
-                        self.merge_decoder_states_num.append(merge_decoder_state_num)
 
                     self.event_preds = tf.stack(self.event_preds, axis=1)
 
                     # ------ Begin time-prediction ------ #
                     self.decoder_states = tf.stack(self.decoder_states, axis=1)
                     self.merge_decoder_states = tf.stack(self.merge_decoder_states, axis=1)
-                    self.merge_decoder_states_num = tf.stack(self.merge_decoder_states_num, axis=1)
-
-                    print('self.merge_decoder_states_num', self.merge_decoder_states_num)
 
                     times_out_prev = tf.concat([self.times_in[:, -1:], self.times_out[:, :-1]], axis=1)
 
@@ -487,12 +566,28 @@ class RMTPP_DECRNN_VAE:
                     base_intensity_bt = self.bt
                     base_intensity_bw = self.bw
 
-                    D = tf.squeeze(tf.tensordot(self.merge_decoder_states_num, self.Vt, axes=[[3],[0]]), axis=-1) + base_intensity_bt
+                    newVt = tf.tile(tf.expand_dims(self.Vt, axis=0), [tf.shape(self.decoder_states)[0], 1, 1]) 
+                    newVw = tf.tile(tf.expand_dims(self.Vw, axis=0), [tf.shape(self.decoder_states)[0], 1, 1]) 
+
+                    if self.MANY_SAMPLING:
+                        newVt = tf.tile(tf.expand_dims(newVt, axis=2), [1, 1, self.sample_num, 1])
+                        base_intensity_bt = tf.tile(tf.expand_dims(base_intensity_bt, axis=2), [1, 1, self.sample_num])
+                        D = tf.reduce_sum(self.merge_decoder_states*newVt, axis=3) + base_intensity_bt
+                    else:
+                        D = tf.reduce_sum(self.merge_decoder_states*newVt, axis=2) + base_intensity_bt
+
+                    # D = tf.squeeze(tf.tensordot(self.merge_decoder_states_num, self.Vt, axes=[[3],[0]]), axis=-1) + base_intensity_bt
                     D = get_D_constraint()(D)
 
                     #TODO: size of wt should be 1 or batch_size
                     if self.ALG_NAME in ['rmtpp_decrnn_vae_wcmpt', 'rmtpp_decrnn_vae_mode_wcmpt']:
-                        WT = tf.squeeze(tf.tensordot(self.merge_decoder_states_num, self.Vw, axes=[[3],[0]]), axis=-1) + base_intensity_bw
+                        if self.MANY_SAMPLING:
+                            newVw = tf.tile(tf.expand_dims(newVw, axis=2), [1, 1, self.sample_num, 1]) 
+                            base_intensity_bw = tf.tile(tf.expand_dims(base_intensity_bw, axis=2), [1, 1, self.sample_num])
+                            WT = tf.reduce_sum(self.merge_decoder_states*newVw, axis=3) + base_intensity_bw
+                        else:
+                            WT = tf.reduce_sum(self.merge_decoder_states*newVw, axis=2) + base_intensity_bw
+                        # WT = tf.squeeze(tf.tensordot(self.merge_decoder_states_num, self.Vw, axes=[[3],[0]]), axis=-1) + base_intensity_bw
                         WT = get_WT_constraint()(WT)
                         WT = tf.clip_by_value(WT, 0.0, 10.0)
                     elif self.ALG_NAME in ['rmtpp_decrnn_vae', 'rmtpp_decrnn_vae_mode']:
@@ -500,7 +595,11 @@ class RMTPP_DECRNN_VAE:
                     elif self.ALG_NAME in ['rmtpp_decrnn_vae_whparam', 'rmtpp_decrnn_vae_mode_whparam']:
                         WT = self.wt_hparam
 
-                    tile_gape = tf.tile(tf.expand_dims(gaps, axis=2), [1, 1, self.sample_num])
+                    if self.MANY_SAMPLING:
+                        tile_gape = tf.tile(tf.expand_dims(gaps, axis=2), [1, 1, self.sample_num])
+                    else:
+                        tile_gape = gaps
+
                     log_lambda_ = (D + (tile_gape * WT))
                     lambda_ = tf.exp(tf.minimum(ETH, log_lambda_), name='lambda_')
                     log_f_star = (log_lambda_
@@ -517,7 +616,7 @@ class RMTPP_DECRNN_VAE:
                     self.time_LLs = log_f_star
                     step_LLs = self.time_LLs + self.mark_LLs
 
-                    print(step_LLs)
+                    # print(step_LLs)
                     #step_LLs = self.mark_LLs
                     #step_LLs = self.time_LLs
 
@@ -595,6 +694,7 @@ class RMTPP_DECRNN_VAE:
                     variable_summaries(self.loss, name='loss')
                     variable_summaries(self.hidden_states, name='agg-hidden-states')
                     variable_summaries(self.decoder_states, name='agg-decoder-states')
+                    variable_summaries(self.merge_decoder_states, name='agg-merge-decoder-states')
                     variable_summaries(self.event_preds, name='agg-event-preds-softmax')
                     variable_summaries(self.time_LLs, name='agg-time-LL')
                     variable_summaries(self.mark_LLs, name='agg-mark-LL')
@@ -613,10 +713,12 @@ class RMTPP_DECRNN_VAE:
                 # self.check_nan = tf.add_check_numerics_ops()
 
     def computing_mu_s(self, rnn_output, name=""):
-        mean=tf.layers.dense(rnn_output, self.HIDDEN_LAYER_SIZE)
-        stddev = 1e-6 + tf.nn.softplus(tf.layers.dense(rnn_output, self.HIDDEN_LAYER_SIZE))
+        mean=tf.layers.dense(rnn_output, self.HIDDEN_LAYER_SIZE,
+                            kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed))
+        stddev = 1e-6 + tf.nn.softplus(tf.layers.dense(rnn_output, self.HIDDEN_LAYER_SIZE, 
+                            kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed)))
 
-        latent_vector = tf.add(mean , tf.matmul(stddev , tf.random_normal([stddev.get_shape().as_list()[1], stddev.get_shape().as_list()[1]], mean=0., stddev=1., dtype=tf.float32)), name=name)
+        latent_vector = tf.add(mean , tf.matmul(stddev , tf.random_normal([stddev.get_shape().as_list()[1], stddev.get_shape().as_list()[1]], mean=0., stddev=1., dtype=tf.float32, seed=self.seed)), name=name)
 
         # print('mean', mean)
         # print('stddev', stddev)
@@ -632,7 +734,7 @@ class RMTPP_DECRNN_VAE:
         mean_num = tf.reshape(tf.tile(mean, multiply), [tf.shape(mean)[0], multiply[0], self.HIDDEN_LAYER_SIZE])
         stddev_num = tf.reshape(tf.tile(sigma, multiply), [tf.shape(sigma)[0], multiply[0], self.HIDDEN_LAYER_SIZE])
 
-        latent_vector = tf.add(mean_num , tf.tensordot(stddev_num , tf.random_normal([stddev_num.get_shape().as_list()[2], stddev_num.get_shape().as_list()[2]], mean=0., stddev=1., dtype=tf.float32), axes=[[2],[0]]))
+        latent_vector = tf.add(mean_num , tf.tensordot(stddev_num , tf.random_normal([stddev_num.get_shape().as_list()[2], stddev_num.get_shape().as_list()[2]], mean=0., stddev=1., dtype=tf.float32, seed=self.seed), axes=[[2],[0]]))
         return latent_vector
 
     def initialize(self, finalize=False):
@@ -692,14 +794,20 @@ class RMTPP_DECRNN_VAE:
 
     def train(self, training_data, num_epochs=1,
               restart=False, check_nans=False, one_batch=False,
-              with_summaries=False, eval_train_data=False):
+              with_summaries=False, eval_train_data=False, stop_criteria=None, 
+              restore_path=None, dec_len_for_eval=0):
+        
+        # if dec_len_for_eval==0:
+        #     dec_len_for_eval=training_data['decoder_length']
+        if restore_path is None:
+            restore_path = self.SAVE_DIR
         """Train the model given the training data.
 
         If with_evals is an integer, then that many elements from the test set
         will be tested.
         """
         create_dir(self.SAVE_DIR)
-        ckpt = tf.train.get_checkpoint_state(self.SAVE_DIR)
+        ckpt = tf.train.get_checkpoint_state(restore_path)
 
         # TODO: Why does this create new nodes in the graph? Possibly memory leak?
         saver = tf.train.Saver(tf.global_variables())
@@ -711,6 +819,9 @@ class RMTPP_DECRNN_VAE:
         if ckpt and restart:
             print('Restoring from {}'.format(ckpt.model_checkpoint_path))
             saver.restore(self.sess, ckpt.model_checkpoint_path)
+
+        if stop_criteria is not None:
+            self.STOP_CRITERIA = stop_criteria
 
         train_event_in_seq = training_data['train_event_in_seq']
         train_time_in_seq = training_data['train_time_in_seq']
@@ -727,6 +838,7 @@ class RMTPP_DECRNN_VAE:
         idxes = list(range(len(train_event_in_seq)))
         n_batches = len(idxes) // self.BATCH_SIZE
 
+        print('Training with ', self.STOP_CRITERIA, 'stop_criteria and ', num_epochs, 'num_epochs')
         for epoch in range(self.last_epoch, self.last_epoch + num_epochs):
             self.rs.shuffle(idxes)
 
@@ -821,8 +933,15 @@ class RMTPP_DECRNN_VAE:
                                                                training_data['decoder_length'],
                                                                plt_tru_gaps,
                                                                single_threaded=True)
+                # dev_time_out_seq = training_data['dev_time_out_seq'] * (maxTime - minTime) + minTime
                 dev_time_preds = dev_time_preds * (maxTime - minTime) + minTime
-                dev_time_out_seq = training_data['dev_time_out_seq'] * (maxTime - minTime) + minTime
+                dev_time_out_seq = np.array(training_data['dev_actual_time_out_seq'])
+                dev_time_in_seq = training_data['dev_time_in_seq'] * (maxTime - minTime) + minTime
+                gaps = dev_time_preds - np.concatenate([dev_time_in_seq[:, -1:], dev_time_preds[:, :-1]], axis=-1)
+                unnorm_gaps = gaps * training_data['dev_avg_gaps']
+                unnorm_gaps = np.cumsum(unnorm_gaps, axis=1)
+                dev_time_preds = unnorm_gaps + training_data['dev_actual_time_in_seq']
+
                 dev_mae, dev_total_valid, dev_acc = self.eval(dev_time_preds, dev_time_out_seq,
                                                               dev_event_preds, training_data['dev_event_out_seq'])
                 print('DEV: MAE = {:.5f}; valid = {}, ACC = {:.5f}'.format(
@@ -836,14 +955,26 @@ class RMTPP_DECRNN_VAE:
                                                                  plt_tru_gaps,
                                                                  single_threaded=True)
                 test_time_preds = test_time_preds * (maxTime - minTime) + minTime
-                test_time_out_seq = training_data['test_time_out_seq'] * (maxTime - minTime) + minTime
+                # test_time_out_seq = training_data['test_time_out_seq'] * (maxTime - minTime) + minTime
+                test_time_out_seq = np.array(training_data['test_actual_time_out_seq'])
                 test_time_in_seq = training_data['test_time_in_seq'] * (maxTime - minTime) + minTime
                 gaps = test_time_preds - np.concatenate([test_time_in_seq[:, -1:], test_time_preds[:, :-1]], axis=-1)
-                tru_gaps = test_time_out_seq - np.concatenate([test_time_in_seq[:, -1:], test_time_out_seq[:, :-1]], axis=1)
+                tru_gaps = test_time_out_seq - np.concatenate([training_data['test_actual_time_in_seq'], test_time_out_seq[:, :-1]], axis=1)
+                unnorm_true_gaps = tru_gaps * training_data['test_avg_gaps']                
+                unnorm_gaps = gaps * training_data['test_avg_gaps']
+                unnorm_gaps = np.cumsum(unnorm_gaps, axis=1)
+                test_time_preds = unnorm_gaps + training_data['test_actual_time_in_seq']
+
                 print('Predicted gaps')
                 print(gaps)
+
+                print('UnNormed Predicted gaps')
+                print(unnorm_gaps)
                 print('True gaps')
                 print(tru_gaps)
+
+                print('UnNormed True gaps')
+                print(unnorm_true_gaps)
                 test_mae, test_total_valid, test_acc = self.eval(test_time_preds, test_time_out_seq,
                                                                  test_event_preds, training_data['test_event_out_seq'])
                 print('TEST: MAE = {:.5f}; valid = {}, ACC = {:.5f}'.format(
@@ -880,7 +1011,8 @@ class RMTPP_DECRNN_VAE:
                 break
 
         # Remember how many epochs we have trained.
-        self.last_epoch += num_epochs
+        if num_epochs>0:
+            self.last_epoch += num_epochs
 
         if self.STOP_CRITERIA == 'epsilon':
             print('w:', self.sess.run(self.wt).tolist())
@@ -892,14 +1024,16 @@ class RMTPP_DECRNN_VAE:
                 print('Running evaluation on dev, test: ...')
 
             if eval_train_data: 
+                assert 1==0
+                #Not yet Implemented
                 plt_time_out_seq = training_data['train_time_out_seq']
-                plt_tru_gaps = plt_time_out_seq - np.concatenate([training_data['train_time_in_seq'][:, -1:], plt_time_out_seq[:, :-1]], axis=1)
+                plt_tru_gaps = plt_time_out_seq[:,:dec_len_for_eval] - np.concatenate([training_data['train_time_in_seq'][:, -1:], plt_time_out_seq[:, :dec_len_for_eval-1]], axis=1)
                 train_time_preds, train_event_preds = self.predict(training_data['train_event_in_seq'],
                                                                training_data['train_time_in_seq'],
                                                                training_data['decoder_length'],
                                                                plt_tru_gaps,
                                                                single_threaded=True)
-                train_time_preds = train_time_preds * (maxTime - minTime) + minTime
+                train_time_preds = train_time_preds[:,:dec_len_for_eval] * (maxTime - minTime) + minTime
                 train_time_out_seq = training_data['train_time_out_seq'] * (maxTime - minTime) + minTime
                 train_mae, train_total_valid, train_acc = self.eval(train_time_preds, train_time_out_seq,
                                                               train_event_preds, training_data['train_event_out_seq'])
@@ -908,43 +1042,55 @@ class RMTPP_DECRNN_VAE:
             else:
                 train_mae, train_acc, train_time_preds, train_event_preds = None, None, np.array([]), np.array([])
 
+
             plt_time_out_seq = training_data['dev_time_out_seq']
-            plt_tru_gaps = plt_time_out_seq - np.concatenate([training_data['dev_time_in_seq'][:, -1:], plt_time_out_seq[:, :-1]], axis=1)
+            plt_tru_gaps = plt_time_out_seq[:,:dec_len_for_eval] - np.concatenate([training_data['dev_time_in_seq'][:, -1:], plt_time_out_seq[:, :dec_len_for_eval-1]], axis=1)
             dev_time_preds, dev_event_preds = self.predict(training_data['dev_event_in_seq'],
                                                            training_data['dev_time_in_seq'],
                                                            training_data['decoder_length'],
                                                            plt_tru_gaps,
                                                            single_threaded=True)
-            dev_time_preds = dev_time_preds * (maxTime - minTime) + minTime
-            dev_time_out_seq = training_data['dev_time_out_seq'] * (maxTime - minTime) + minTime
+            dev_time_preds = dev_time_preds[:,:dec_len_for_eval] * (maxTime - minTime) + minTime
+            dev_time_out_seq = np.array(training_data['dev_actual_time_out_seq'])[:,:dec_len_for_eval]
+            dev_time_in_seq = training_data['dev_time_in_seq'] * (maxTime - minTime) + minTime
+            gaps = dev_time_preds - np.concatenate([dev_time_in_seq[:, -1:], dev_time_preds[:, :-1]], axis=-1)
+            unnorm_gaps = gaps * training_data['dev_avg_gaps']
+            unnorm_gaps = np.cumsum(unnorm_gaps, axis=1)
+            dev_time_preds = unnorm_gaps + training_data['dev_actual_time_in_seq']
+            
             dev_mae, dev_total_valid, dev_acc = self.eval(dev_time_preds, dev_time_out_seq,
                                                           dev_event_preds, training_data['dev_event_out_seq'])
             print('DEV: MAE = {:.5f}; valid = {}, ACC = {:.5f}'.format(
                 dev_mae, dev_total_valid, dev_acc))
 
             plt_time_out_seq = training_data['test_time_out_seq']
-            plt_tru_gaps = plt_time_out_seq - np.concatenate([training_data['test_time_in_seq'][:, -1:], plt_time_out_seq[:, :-1]], axis=1)
+            plt_tru_gaps = plt_time_out_seq[:,:dec_len_for_eval] - np.concatenate([training_data['test_time_in_seq'][:, -1:], plt_time_out_seq[:, :dec_len_for_eval-1]], axis=1)
             test_time_preds, test_event_preds = self.predict(training_data['test_event_in_seq'],
                                                              training_data['test_time_in_seq'],
                                                              training_data['decoder_length'],
                                                              plt_tru_gaps,
                                                              single_threaded=True)
-            test_time_preds = test_time_preds * (maxTime - minTime) + minTime
-            test_time_out_seq = training_data['test_time_out_seq'] * (maxTime - minTime) + minTime
+            test_time_preds = test_time_preds[:,:dec_len_for_eval] * (maxTime - minTime) + minTime
+            test_time_out_seq = np.array(training_data['test_actual_time_out_seq'])[:,:dec_len_for_eval]
             test_time_in_seq = training_data['test_time_in_seq'] * (maxTime - minTime) + minTime
             gaps = test_time_preds - np.concatenate([test_time_in_seq[:, -1:], test_time_preds[:, :-1]], axis=-1)
-            tru_gaps = test_time_out_seq - np.concatenate([test_time_in_seq[:, -1:], test_time_out_seq[:, :-1]], axis=1)
-            print('Predicted gaps')
-            print(gaps)
-            print('True gaps')
-            print(tru_gaps)
+            unnorm_gaps = gaps * training_data['test_avg_gaps']
+            unnorm_gaps = np.cumsum(unnorm_gaps, axis=1)
+            tru_gaps = test_time_out_seq - np.concatenate([training_data['test_actual_time_in_seq'], test_time_out_seq[:, :-1]], axis=1)
+            test_time_preds = unnorm_gaps + training_data['test_actual_time_in_seq']
+
+            # print('UnNormed Predicted gaps')
+            # print(unnorm_gaps)
+            # print('True gaps')
+            # print(tru_gaps)
+            
             test_mae, test_total_valid, test_acc = self.eval(test_time_preds, test_time_out_seq,
                                                              test_event_preds, training_data['test_event_out_seq'])
             print('TEST: MAE = {:.5f}; valid = {}, ACC = {:.5f}'.format(
                 test_mae, test_total_valid, test_acc))
 
             if dev_mae < best_dev_mae:
-                best_epoch = epoch
+                best_epoch = -1
                 best_train_mae, best_dev_mae, best_test_mae = train_mae, dev_mae, test_mae
                 best_train_acc, best_dev_acc, best_test_acc = train_acc, dev_acc, test_acc
                 best_train_event_preds, best_train_time_preds  = train_event_preds, train_time_preds
@@ -1054,7 +1200,7 @@ class RMTPP_DECRNN_VAE:
 
         def get_wt_constraint():
             if self.CONSTRAINTS == 'default':
-                return lambda x: tf.clip_by_value(x, 1e-5, np.inf)
+                return lambda x: tf.clip_by_value(x, 1e-5, 20.0)
             elif self.CONSTRAINTS == 'c1':
                 return lambda x: tf.clip_by_value(x, 1.0, np.inf)
             elif self.CONSTRAINTS == 'c2':
@@ -1102,16 +1248,14 @@ class RMTPP_DECRNN_VAE:
             self.mode: 0.0 #Test Mode
         }
 
-        all_encoder_states, all_decoder_states_processed, all_decoder_states_num_processed, all_event_preds, cur_state = self.sess.run(
-            [self.hidden_states, self.merge_decoder_states, self.merge_decoder_states_num, self.event_preds, self.final_state],
+        all_encoder_states, all_decoder_states_processed, all_event_preds, cur_state = self.sess.run(
+            [self.hidden_states, self.merge_decoder_states, self.event_preds, self.final_state],
             feed_dict=feed_dict
         )
         all_event_preds = np.argmax(all_event_preds, axis=-1) + 1
         all_event_preds = np.transpose(all_event_preds)
 
         all_decoder_states = all_decoder_states_processed
-        if self.sampled:
-            all_decoder_states = all_decoder_states_num_processed
 
         print('all_decoder_states', np.shape(all_decoder_states))
 
@@ -1127,16 +1271,12 @@ class RMTPP_DECRNN_VAE:
             #print(np.matmul(all_decoder_states, Vt) + bt)
             for pred_idx, s_i in enumerate(all_decoder_states):
                 t_last = time_pred_last if pred_idx==0 else preds_i[-1]
-                D = (np.dot(s_i, Vt) + bt).reshape(-1)
+                D = (np.dot(s_i, Vt[pred_idx,:]) + bt[:,pred_idx]).reshape(-1)
                 D = np.clip(D, np.ones_like(D)*-50.0, np.ones_like(D)*50.0)
                 D = get_D_constraint()(D)
                 c_ = np.exp(np.maximum(D, np.ones_like(D)*-87.0))
-
-                # print('pred_idx', pred_idx)
-                # print('c_', c_, np.shape(c_))
-
                 if self.ALG_NAME in ['rmtpp_decrnn_vae_wcmpt', 'rmtpp_decrnn_vae_mode_wcmpt']:
-                    WT = (np.dot(s_i, Vw) + bw).reshape(-1)
+                    WT = (np.dot(s_i, Vw[pred_idx,:]) + bw[:,pred_idx]).reshape(-1)
                     WT = get_WT_constraint()(WT)
                     WT = np.clip(WT, 0.0, 10.0)
                 elif self.ALG_NAME in ['rmtpp_decrnn_vae', 'rmtpp_decrnn_vae_mode']:
