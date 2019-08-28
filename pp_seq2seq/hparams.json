@@ -85,12 +85,12 @@
 	},
 	"rmtpp_decrnn_vae":
 	{
-		"hidden_layer_size": [16, 32, 64, 128],
+		"hidden_layer_size": [16, 32, 64],
 		"wt_hparam": [1.0]
 	},
 	"rmtpp_decrnn_vae_wcmpt":
 	{
-		"hidden_layer_size": [16, 32, 64, 128],
+		"hidden_layer_size": [16, 32, 64],
 		"wt_hparam": [1.0]
 	},
 	"zero_pred":
