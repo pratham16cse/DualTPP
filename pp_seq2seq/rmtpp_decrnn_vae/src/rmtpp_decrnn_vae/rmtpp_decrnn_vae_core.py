@@ -193,7 +193,8 @@ class RMTPP_DECRNN_VAE:
         self.seed = seed
         self.last_epoch = 0
 
-        self.sample_num = 30
+        self.sample_num = 100
+        print('self.sample_num', self.sample_num)
 
         self.rs = np.random.RandomState(seed + 42)
         np.random.seed(42)
