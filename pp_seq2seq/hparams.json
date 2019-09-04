@@ -39,6 +39,11 @@
 		"hidden_layer_size": [16, 32, 64, 128],
 		"wt_hparam": [1.0]
 	},
+	"rmtpp_decrnn_truemarks":
+	{
+		"hidden_layer_size": [16, 32, 64, 128],
+		"wt_hparam": [1.0]
+	},
 	"rmtpp_decrnn_whparam":
 	{
 		"hidden_layer_size": [16, 32, 64, 128],
