@@ -389,7 +389,7 @@ class RMTPP_DECRNN:
                             if self.CONCAT_BEFORE_DEC_UPDATE:
                                 new_state = tf.concat([new_state, self.final_state], axis=-1)
                             if self.NUM_EXTRA_DEC_LAYER:
-                                names = ['hidden_layer_'+str(hl_id) for hl_id in range(1, self.NUM_CATEGORIES+1)]
+                                names = ['hidden_layer_'+str(hl_id) for hl_id in range(1, self.NUM_EXTRA_DEC_LAYER+1)]
                                 for name in names:
                                     new_state = tf.layers.dense(new_state,
                                                                 self.HIDDEN_LAYER_SIZE,

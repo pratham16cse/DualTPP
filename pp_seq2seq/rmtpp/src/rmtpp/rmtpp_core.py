@@ -312,7 +312,7 @@ class RMTPP:
                                 name='h_t'
                             )
                             if self.NUM_EXTRA_LAYER:
-                                names = ['hidden_layer_'+str(hl_id) for hl_id in range(1, self.NUM_CATEGORIES+1)]
+                                names = ['hidden_layer_'+str(hl_id) for hl_id in range(1, self.NUM_EXTRA_LAYER+1)]
                                 for name in names:
                                     new_state = tf.layers.dense(new_state,
                                                                 self.HIDDEN_LAYER_SIZE,
