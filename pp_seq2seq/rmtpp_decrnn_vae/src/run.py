@@ -27,6 +27,7 @@ def_opts = rmtpp_decrnn_vae.rmtpp_decrnn_vae_core.def_opts
 @click.argument('time_dev_file')
 @click.argument('event_test_file')
 @click.argument('time_test_file')
+@click.option('--dataset_path', 'dataset_path', help='Dataset path.', default=None)
 @click.option('--summary', 'summary_dir', help='Which folder to save summaries to.', default=None)
 @click.option('--save', 'save_dir', help='Which folder to save checkpoints to.', default=None)
 @click.option('--epochs', 'num_epochs', help='How many epochs to train for.', default=1)
@@ -44,12 +45,23 @@ def_opts = rmtpp_decrnn_vae.rmtpp_decrnn_vae_core.def_opts
 @click.option('--patience', 'patience', help='Number of epochs to wait before applying stop_criteria for training', default=0)
 @click.option('--stop-criteria', 'stop_criteria', help='Stopping criteria: per_epoch_val_err or epsilon', default=None)
 @click.option('--epsilon', 'epsilon', help='threshold for epsilon-stopping-criteria', default=0.0)
-def cmd(dataset_name, alg_name,
+@click.option('--share-dec-params/--no-share-dec-params', 'share_dec_params', help='Share/not share decoder parameters', default=True)
+@click.option('--init-zero-dec-state/--no-init-zero-dec-state', 'init_zero_dec_state', help='initialize s_i with zeros', default=False)
+@click.option('--init-latent-vector/--no-init-latent-vector', 'init_latent_vector', help='initialize s_i with latent vector', default=True)
+@click.option('--init-init-fin-enc-state/--no-init-fin-enc-state', 'init_fin_enc_state', help='initialize s_i with final state h_m', default=False)
+@click.option('--concat-final-enc-state/--no-concat-final-enc-state', 'concat_final_enc_state', help='Concatenate final encoder state with decoder state at each step', default=False)
+@click.option('--concat-final-enc-state-z-hat/--no-concat-final-enc-state-z-hat', 'concat_final_enc_state_z_hat', help='Concatenate final encoder state and z hat with decoder state at each step', default=True)
+@click.option('--extra-dec-layer/--no-extra-dec-layer', 'extra_dec_layer', help='Use extra layer on top of decoder state before final encoder state concat', default=True)
+@click.option('--pass-mean/--no-pass-mean', 'pass_mean', help='Pass mean as to initialize s_i', default=False)
+@click.option('--many-sampling/--no-many-sampling', 'many_sampling', help='Pass mean as to initialize s_i', default=True)
+def cmd(dataset_name, alg_name, dataset_path,
         event_train_file, time_train_file, event_dev_file, time_dev_file, event_test_file, time_test_file,
         save_dir, summary_dir, num_epochs, restart, train_eval, test_eval, scale,
         batch_size, bptt, decoder_length, learning_rate, cpu_only, normalization, constraints,
-        patience, stop_criteria, epsilon):
+        concat_final_enc_state_z_hat, many_sampling, pass_mean, init_latent_vector, init_fin_enc_state,
+        patience, stop_criteria, epsilon, share_dec_params, init_zero_dec_state, concat_final_enc_state, extra_dec_layer):
     """Read data from EVENT_TRAIN_FILE, TIME_TRAIN_FILE and try to predict the values in EVENT_TEST_FILE, TIME_TEST_FILE."""
+
     data = rmtpp_decrnn_vae.utils.read_seq2seq_data(
         event_train_file=event_train_file,
         event_dev_file=event_dev_file,
@@ -58,8 +70,10 @@ def cmd(dataset_name, alg_name,
         time_dev_file=time_dev_file,
         time_test_file=time_test_file,
         normalization=normalization,
+        dataset_path=dataset_path
     )
 
+    print('scaling with ', scale)
     data['train_time_out_seq'] /= scale
     data['train_time_in_seq'] /= scale
     data['dev_time_out_seq'] /= scale
@@ -68,7 +82,7 @@ def cmd(dataset_name, alg_name,
     data['test_time_in_seq'] /= scale
 
 
-    def hyperparameter_worker(params):
+    def model_creator(params):
         tf.reset_default_graph()
         sess = tf.Session()
 
@@ -92,16 +106,30 @@ def cmd(dataset_name, alg_name,
             patience=patience,
             stop_criteria=stop_criteria,
             epsilon=epsilon,
+            share_dec_params=share_dec_params,
+            init_fin_enc_state=init_fin_enc_state,
+            init_latent_vector=init_latent_vector,
+            extra_dec_layer=extra_dec_layer,
+            concat_final_enc_state=concat_final_enc_state,
+            concat_final_enc_state_z_hat=concat_final_enc_state_z_hat,
+            many_sampling=many_sampling,
+            pass_mean=pass_mean,
             _opts=rmtpp_decrnn_vae.rmtpp_decrnn_vae_core.def_opts
         )
 
+        return rmtpp_decrnn_vae_mdl
+
+    def hyperparameter_worker(params, rmtpp_decrnn_vae_mdl, dec_len, restore_path=None):
+        
+        hidden_layer_size, wt_hparam, restart, num_epochs, save_dir, train_eval = params
         # TODO: The finalize here has to be false because tf.global_variables()
         # creates a new graph node (why?). Hence, need to be extra careful while
         # saving the model.
         rmtpp_decrnn_vae_mdl.initialize(finalize=False)
         result = rmtpp_decrnn_vae_mdl.train(training_data=data, restart=restart,
                                         with_summaries=summary_dir is not None,
-                                        num_epochs=num_epochs, eval_train_data=train_eval)
+                                        num_epochs=num_epochs, eval_train_data=train_eval,
+                                        restore_path=restore_path, dec_len_for_eval=dec_len)
 
         with open('constraints.json', 'r') as fp:
             constraints_json = json.loads(fp.read())
@@ -110,52 +138,71 @@ def cmd(dataset_name, alg_name,
         # del rmtpp_mdl
         return result
 
-    if os.path.isfile(save_dir+'/result.json'):
-        print('Model already trained, stored, restoring . . .')
-        with open(os.path.join(save_dir)+'/result.json', 'r') as fp:
-            result = json.loads(fp.read())
-        params = (result[param] for param in hparams[alg_name].keys())
-        result = hyperparameter_worker((result['hidden_layer_size'], result['wt_hparam'], True, 0, result['checkpoint_dir'], train_eval))
-    else:
-        # TODO(PD) Run hyperparameter tuning in parallel
-        #results  = pp.ProcessPool().map(hyperparameter_worker, hidden_layer_size_list)
-        results = []
-        for params in product(*hparams[alg_name].values()):
-            result = hyperparameter_worker(params + (False, num_epochs, save_dir, train_eval))
-            results.append(result)
-            # print(result['best_test_mae'], result['best_test_acc'])
+    decoder_length_run = [0, 1, 2, 3]
 
-        best_result_idx, _ = min(enumerate([result['best_dev_mae'] for result in results]), key=itemgetter(1))
-        best_result = results[best_result_idx]
-        for param in hparams[alg_name].keys(): assert param in best_result.keys() # Check whether all hyperparameters are stored
-        print('best test mae:', best_result['best_test_mae'])
-        if save_dir:
-            np.savetxt(os.path.join(save_dir)+'/test.pred.events.out.csv', best_result['best_test_event_preds'], delimiter=',')
-            np.savetxt(os.path.join(save_dir)+'/test.pred.times.out.csv', best_result['best_test_time_preds'], delimiter=',')
-            np.savetxt(os.path.join(save_dir)+'/test.gt.events.out.csv', data['test_event_out_seq'], delimiter=',')
-            np.savetxt(os.path.join(save_dir)+'/test.gt.times.out.csv', data['test_time_out_seq'], delimiter=',')
+    old_save_dir = save_dir
+    for dec_len in decoder_length_run:
+        save_dir = old_save_dir+'/'+str(dec_len)
+        if dec_len != decoder_length_run[0]:
+            num_epochs = -1
+            stop_criteria = 'epsilon'
 
-            np.savetxt(os.path.join(save_dir)+'/dev.pred.events.out.csv', best_result['best_dev_event_preds'], delimiter=',')
-            np.savetxt(os.path.join(save_dir)+'/dev.pred.times.out.csv', best_result['best_dev_time_preds'], delimiter=',')
-            np.savetxt(os.path.join(save_dir)+'/dev.gt.events.out.csv', data['dev_event_out_seq'], delimiter=',')
-            np.savetxt(os.path.join(save_dir)+'/dev.gt.times.out.csv', data['dev_time_out_seq'], delimiter=',')
+        if os.path.isfile(save_dir+'/result.json'):
+            print('Model already trained, stored, restoring . . .')
+            with open(os.path.join(save_dir)+'/result.json', 'r') as fp:
+                result = json.loads(fp.read())
+            params = (result[param] for param in hparams[alg_name].keys())
+            args = (result['hidden_layer_size'], result['wt_hparam'], True, 0, result['checkpoint_dir'], train_eval)
+            rmtpp_decrnn_vae_mdl = model_creator(args)
+            result = hyperparameter_worker(args, rmtpp_decrnn_vae_mdl, dec_len)
+        else:
+            # TODO(PD) Run hyperparameter tuning in parallel
+            #results  = pp.ProcessPool().map(hyperparameter_worker, hidden_layer_size_list)
+            results = []
+            for params in product(*hparams[alg_name].values()):
+                checkp_dir = old_save_dir+'/'+str(decoder_length_run[0])+'/hls_'+str(params[0])
+                state_restart=True
+                if dec_len==decoder_length_run[0]:
+                    checkp_dir=None
+                    state_restart = False
+                print("check dir ", checkp_dir)
+                args = params + (state_restart, num_epochs, save_dir, train_eval)
+                rmtpp_decrnn_vae_mdl = model_creator(args)
+                result = hyperparameter_worker(args, rmtpp_decrnn_vae_mdl, dec_len, checkp_dir)
+                results.append(result)
+                # print(result['best_test_mae'], result['best_test_acc'])
 
-            for result in results:
-                del result['best_train_event_preds'], result['best_train_time_preds'], \
-                        result['best_dev_event_preds'], result['best_dev_time_preds'], \
-                        result['best_test_event_preds'], result['best_test_time_preds']
-            with open(os.path.join(save_dir)+'/result.json', 'w') as fp:
-                best_result_json = json.dumps(best_result, indent=4)
-                fp.write(best_result_json)
-            with open(os.path.join(save_dir)+'/all_results.json', 'w') as fp:
-                all_results_json = json.dumps(results, indent=4)
-                fp.write(all_results_json)
+            best_result_idx, _ = min(enumerate([result['best_dev_mae'] for result in results]), key=itemgetter(1))
+            best_result = results[best_result_idx]
+            for param in hparams[alg_name].keys(): assert param in best_result.keys() # Check whether all hyperparameters are stored
+            print('best test mae:', best_result['best_test_mae'])
+            if save_dir:
+                np.savetxt(os.path.join(save_dir)+'/test.pred.events.out.csv', best_result['best_test_event_preds'], delimiter=',')
+                np.savetxt(os.path.join(save_dir)+'/test.pred.times.out.csv', best_result['best_test_time_preds'], delimiter=',')
+                np.savetxt(os.path.join(save_dir)+'/test.gt.events.out.csv', data['test_event_out_seq'], delimiter=',')
+                np.savetxt(os.path.join(save_dir)+'/test.gt.times.out.csv', data['test_time_out_seq'], delimiter=',')
 
-            plt.plot(best_result['train_loss_list'])
-            plt.ylabel('train_loss')
-            plt.xlabel('epoch')
-            plt.savefig(os.path.join(save_dir, 'train_loss.png'))
-            plt.close()
+                np.savetxt(os.path.join(save_dir)+'/dev.pred.events.out.csv', best_result['best_dev_event_preds'], delimiter=',')
+                np.savetxt(os.path.join(save_dir)+'/dev.pred.times.out.csv', best_result['best_dev_time_preds'], delimiter=',')
+                np.savetxt(os.path.join(save_dir)+'/dev.gt.events.out.csv', data['dev_event_out_seq'], delimiter=',')
+                np.savetxt(os.path.join(save_dir)+'/dev.gt.times.out.csv', data['dev_time_out_seq'], delimiter=',')
+
+                for result in results:
+                    del result['best_train_event_preds'], result['best_train_time_preds'], \
+                            result['best_dev_event_preds'], result['best_dev_time_preds'], \
+                            result['best_test_event_preds'], result['best_test_time_preds']
+                with open(os.path.join(save_dir)+'/result.json', 'w') as fp:
+                    best_result_json = json.dumps(best_result, indent=4)
+                    fp.write(best_result_json)
+                with open(os.path.join(save_dir)+'/all_results.json', 'w') as fp:
+                    all_results_json = json.dumps(results, indent=4)
+                    fp.write(all_results_json)
+
+                plt.plot(best_result['train_loss_list'])
+                plt.ylabel('train_loss')
+                plt.xlabel('epoch')
+                plt.savefig(os.path.join(save_dir, 'train_loss.png'))
+                plt.close()
 
 
 if __name__ == '__main__':
