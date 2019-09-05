@@ -46,6 +46,8 @@ def_opts = Deco.Options(
     stop_criteria='per_epoch_val_err',
     epsilon=0.0,
 
+    num_extra_layer=0,
+
     wt_hparam=1.0,
 
     embed_size=__EMBED_SIZE,
@@ -98,7 +100,7 @@ class RMTPP:
                  float_type, bptt, decoder_length, seed, scope, alg_name,
                  save_dir, decay_steps, decay_rate,
                  device_gpu, device_cpu, summary_dir, cpu_only, constraints,
-                 patience, stop_criteria, epsilon,
+                 patience, stop_criteria, epsilon, num_extra_layer,
                  Wt, Wem, Wh, bh, Ws, bs, wt, Wy, Vy, Vt, Vw, bk, bt, bw, wt_hparam):
         self.HIDDEN_LAYER_SIZE = hidden_layer_size
         self.BATCH_SIZE = batch_size
@@ -127,6 +129,7 @@ class RMTPP:
         if self.STOP_CRITERIA == 'epsilon':
             assert self.EPSILON > 0.0
 
+        self.NUM_EXTRA_LAYER = num_extra_layer
 
         if True:
             self.DEC_STATE_SIZE = 2 * self.HIDDEN_LAYER_SIZE
@@ -299,7 +302,7 @@ class RMTPP:
                         # need multiplication with tf.ones
                         type_delta_t = True
 
-                        with tf.name_scope('state_recursion'):
+                        with tf.variable_scope('state_recursion', reuse=tf.AUTO_REUSE):
                             new_state = tf.tanh(
                                 tf.matmul(state, self.Wh) +
                                 tf.matmul(events_embedded, self.Wy) +
@@ -308,6 +311,15 @@ class RMTPP:
                                 tf.matmul(ones_2d, self.bh),
                                 name='h_t'
                             )
+                            if self.NUM_EXTRA_LAYER:
+                                names = ['hidden_layer_'+str(hl_id) for hl_id in range(1, self.NUM_CATEGORIES+1)]
+                                for name in names:
+                                    new_state = tf.layers.dense(new_state,
+                                                                self.HIDDEN_LAYER_SIZE,
+                                                                name=name,
+                                                                kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed),
+                                                                activation=tf.nn.relu)
+
                             state = tf.where(self.events_in[:, i] > 0, new_state, state)
 
                         with tf.name_scope('loss_calc'):
