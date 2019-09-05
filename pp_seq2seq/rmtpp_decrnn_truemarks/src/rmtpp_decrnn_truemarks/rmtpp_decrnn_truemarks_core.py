@@ -1065,12 +1065,11 @@ class RMTPP_DECRNN:
             self.mode: 1.0 #Test Mode
         }
 
-        all_encoder_states, all_decoder_states, all_event_preds, cur_state = self.sess.run(
-            [self.hidden_states, self.decoder_states, self.event_preds, self.final_state],
+        all_encoder_states, all_decoder_states, cur_state = self.sess.run(
+            [self.hidden_states, self.decoder_states, self.final_state],
             feed_dict=feed_dict
         )
-        all_event_preds = np.argmax(all_event_preds, axis=-1) + 1
-        all_event_preds = np.transpose(all_event_preds)
+        all_event_preds = np.transpose(event_out_seq)
 
 
         # TODO: This calculation is completely ignoring the clipping which
