@@ -51,6 +51,7 @@ def_opts = Deco.Options(
     concat_final_enc_state=True,
     num_extra_dec_layer=0,
     concat_before_dec_update=False,
+    mark_triggers_time=True,
 
     wt_hparam=1.0,
 
@@ -106,6 +107,7 @@ class RMTPP_DECRNN:
                  device_gpu, device_cpu, summary_dir, cpu_only, constraints,
                  patience, stop_criteria, epsilon, share_dec_params,
                  init_zero_dec_state, concat_final_enc_state, num_extra_dec_layer, concat_before_dec_update,
+                 mark_triggers_time,
                  Wt, Wem, Wh, bh, Ws, bs, wt, Wy, Vy, Vt, Vw, bk, bt, bw, wt_hparam):
         self.HIDDEN_LAYER_SIZE = hidden_layer_size
         self.BATCH_SIZE = batch_size
@@ -139,6 +141,7 @@ class RMTPP_DECRNN:
         self.CONCAT_FINAL_ENC_STATE = concat_final_enc_state
         self.NUM_EXTRA_DEC_LAYER = num_extra_dec_layer
         self.CONCAT_BEFORE_DEC_UPDATE = concat_before_dec_update
+        self.MARK_TRIGGERS_TIME = mark_triggers_time
 
         if self.CONCAT_FINAL_ENC_STATE:
             self.DEC_STATE_SIZE = 2 * self.HIDDEN_LAYER_SIZE
@@ -347,6 +350,9 @@ class RMTPP_DECRNN:
                 with tf.name_scope('Decoder'):
                     for i in range(self.DEC_LEN):
 
+                        if not mark_triggers_time:
+                            self.decoder_states.append(s_state)
+
                         events_pred = tf.nn.softmax(
                             tf.minimum(ETH,
                                        tf.matmul(s_state, self.Vy) + ones_2d * self.bk),
@@ -403,7 +409,8 @@ class RMTPP_DECRNN:
 
                             s_state = new_state
 
-                        self.decoder_states.append(s_state)
+                        if mark_triggers_time:
+                            self.decoder_states.append(s_state)
 
                     self.event_preds = tf.stack(self.event_preds, axis=1)
 
