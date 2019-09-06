@@ -49,11 +49,13 @@ def_opts = Deco.Options(
     share_dec_params=True,
     init_fin_enc_state = False,
     init_latent_vector=True,
-    extra_dec_layer=True,
     concat_final_enc_state=False,
     concat_final_enc_state_z_hat=True, 
     many_sampling=True, 
     pass_mean=False,
+    number_of_sample=50,
+    num_extra_dec_layer=0,
+    concat_before_dec_update=False,
 
     wt_hparam=1.0,
 
@@ -130,8 +132,8 @@ class RMTPP_DECRNN_VAE:
                  save_dir, decay_steps, decay_rate,
                  device_gpu, device_cpu, summary_dir, cpu_only, constraints,
                  patience, stop_criteria, epsilon, share_dec_params,
-                 init_fin_enc_state, init_latent_vector, concat_final_enc_state, extra_dec_layer,
-                 concat_final_enc_state_z_hat, many_sampling, pass_mean,
+                 init_fin_enc_state, init_latent_vector, concat_final_enc_state, num_extra_dec_layer,
+                 concat_final_enc_state_z_hat, many_sampling, pass_mean, number_of_sample, concat_before_dec_update,
                  Wt, Wem, Wh, bh, Ws, bs, wt, Wy, Wtd, Whd, bhd, Wyd, Vy, Vt, Vw, bk, bt, bw, wt_hparam):
         self.HIDDEN_LAYER_SIZE = hidden_layer_size
         self.BATCH_SIZE = batch_size
@@ -163,12 +165,14 @@ class RMTPP_DECRNN_VAE:
         self.SHARE_DEC_PARAMS = share_dec_params
         self.INIT_FIN_ENC_STATE = init_fin_enc_state
         self.INIT_LATENT_VECTOR = init_latent_vector
-        self.EXTRA_DEC_LAYER = extra_dec_layer
 
         self.CONCAT_FINAL_ENC_STATE = concat_final_enc_state
         self.CONCAT_FINAL_ENC_STATE_Z_HAT = concat_final_enc_state_z_hat
         self.MANY_SAMPLING = many_sampling
         self.PASS_MEAN = pass_mean
+
+        self.NUM_EXTRA_DEC_LAYER = num_extra_dec_layer
+        self.CONCAT_BEFORE_DEC_UPDATE = concat_before_dec_update
 
         self.DEC_STATE_SIZE = self.HIDDEN_LAYER_SIZE
         # if self.CONCAT_FINAL_ENC_STATE_Z_HAT:
@@ -179,13 +183,14 @@ class RMTPP_DECRNN_VAE:
         #     self.DEC_STATE_SIZE = self.HIDDEN_LAYER_SIZE
         
         print('self.SHARE_DEC_PARAMS', self.SHARE_DEC_PARAMS)
-        print('self.EXTRA_DEC_LAYER', self.EXTRA_DEC_LAYER)
         print('self.INIT_FIN_ENC_STATE', self.INIT_FIN_ENC_STATE)
         print('self.INIT_LATENT_VECTOR', self.INIT_LATENT_VECTOR)
         print('self.CONCAT_FINAL_ENC_STATE', self.CONCAT_FINAL_ENC_STATE)
         print('self.CONCAT_FINAL_ENC_STATE_Z_HAT', self.CONCAT_FINAL_ENC_STATE_Z_HAT)
         print('self.MANY_SAMPLING', self.MANY_SAMPLING)
         print('self.PASS_MEAN', self.PASS_MEAN)
+        print('self.NUM_EXTRA_DEC_LAYER', self.NUM_EXTRA_DEC_LAYER)
+        print('self.CONCAT_BEFORE_DEC_UPDATE', self.CONCAT_BEFORE_DEC_UPDATE)
 
         assert self.INIT_LATENT_VECTOR != self.INIT_FIN_ENC_STATE
         
@@ -193,7 +198,7 @@ class RMTPP_DECRNN_VAE:
         self.seed = seed
         self.last_epoch = 0
 
-        self.sample_num = 100
+        self.sample_num = number_of_sample
         print('self.sample_num', self.sample_num)
 
         self.rs = np.random.RandomState(seed + 42)
@@ -410,8 +415,8 @@ class RMTPP_DECRNN_VAE:
                     distribution_a = tf.distributions.Normal(loc=self.mu, scale=self.sigma)
 
                     #TODO: Add flag
-                    self.latent_vector_encoder = self.sampling(self.mu, self.sigma, self.sample_num)
-                    self.latent_vector_q_min = tf.reduce_sum(self.latent_vector_encoder, axis=1)
+                    self.latent_vector_encoder = self.sampling(self.mu, self.sigma, 10*self.sample_num)
+                    self.latent_vector_q_min = tf.reduce_sum(self.latent_vector_encoder, axis=1)/(10*self.sample_num)
                 #----------- Encoder End ----------#
 
 
@@ -533,10 +538,17 @@ class RMTPP_DECRNN_VAE:
                                 tf.matmul(ones_2d, self.bs),
                                 name='s_t'
                             )
-                            if self.EXTRA_DEC_LAYER:
-                                new_state = tf.layers.dense(new_state,
-                                                            self.HIDDEN_LAYER_SIZE,
-                                                            kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed))
+                            if self.CONCAT_BEFORE_DEC_UPDATE:
+                                new_state = tf.concat([new_state, self.final_state], axis=-1)
+                            if self.NUM_EXTRA_DEC_LAYER:
+                                names = ['hidden_layer_relu_'+str(i)+'_'+str(hl_id) for hl_id in range(1, self.NUM_EXTRA_DEC_LAYER+1)]
+                                for name in names:
+                                    new_state = tf.layers.dense(new_state,
+                                                                self.HIDDEN_LAYER_SIZE,
+                                                                name=name,
+                                                                kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed),
+                                                                activation=tf.nn.relu)
+
                             s_state = new_state
 
                             if self.MANY_SAMPLING:
