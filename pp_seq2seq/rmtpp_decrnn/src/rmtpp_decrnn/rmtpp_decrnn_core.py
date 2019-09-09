@@ -769,7 +769,9 @@ class RMTPP_DECRNN:
                     true_gaps_plot = list(inp_tru_gaps) + list(true_gaps_plot)
                     pred_gaps_plot = list(inp_tru_gaps) + list(pred_gaps_plot)
 
-                    name_plot = "./plots/pred_plot_"+str(self.HIDDEN_LAYER_SIZE)+"_"+str(epoch)
+                    plot_dir = os.path.join(self.SAVE_DIR,'dev_plots')
+                    if not os.path.isdir(plot_dir): os.mkdir(plot_dir)
+                    name_plot = os.path.join(plot_dir, "pred_plot_"+str(self.HIDDEN_LAYER_SIZE)+"_"+str(epoch))
 
                     assert len(true_gaps_plot) == len(pred_gaps_plot)
 
@@ -817,7 +819,9 @@ class RMTPP_DECRNN:
                     true_gaps_plot = list(inp_tru_gaps) + list(true_gaps_plot)
                     pred_gaps_plot = list(inp_tru_gaps) + list(pred_gaps_plot)
 
-                    name_plot = "./plots/pred_plot_"+str(self.HIDDEN_LAYER_SIZE)+"_"+str(epoch)
+                    plot_dir = os.path.join(self.SAVE_DIR,'test_plots')
+                    if not os.path.isdir(plot_dir): os.mkdir(plot_dir)
+                    name_plot = os.path.join(plot_dir, "pred_plot_"+str(self.HIDDEN_LAYER_SIZE)+"_"+str(epoch))
 
                     assert len(true_gaps_plot) == len(pred_gaps_plot)
 

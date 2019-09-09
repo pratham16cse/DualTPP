@@ -692,7 +692,9 @@ class RMTPP:
                     true_gaps_plot = list(inp_tru_gaps) + list(true_gaps_plot)
                     pred_gaps_plot = list(inp_tru_gaps) + list(pred_gaps_plot)
 
-                    name_plot = "./plots/pred_plot_"+str(self.HIDDEN_LAYER_SIZE)+"_"+str(epoch)
+                    plot_dir = os.path.join(self.SAVE_DIR,'dev_plots')
+                    if not os.path.isdir(plot_dir): os.mkdir(plot_dir)
+                    name_plot = os.path.join(plot_dir, "pred_plot_"+str(self.HIDDEN_LAYER_SIZE)+"_"+str(epoch))
 
                     assert len(true_gaps_plot) == len(pred_gaps_plot)
 
@@ -706,7 +708,7 @@ class RMTPP:
                     ax1.scatter(list(range(len(true_gaps_plot))), true_gaps_plot, c='b', label='True gaps')
 
                     plt.savefig(name_plot)
-                
+
                 dev_mae, dev_total_valid, dev_acc = self.eval(dev_time_preds, dev_time_out_seq,
                                                               dev_event_preds, training_data['dev_event_out_seq'])
                 print('DEV: MAE = {:.5f}; valid = {}, ACC = {:.5f}'.format(
@@ -736,7 +738,9 @@ class RMTPP:
                     true_gaps_plot = list(inp_tru_gaps) + list(true_gaps_plot)
                     pred_gaps_plot = list(inp_tru_gaps) + list(pred_gaps_plot)
 
-                    name_plot = "./plots/pred_plot_"+str(self.HIDDEN_LAYER_SIZE)+"_"+str(epoch)
+                    plot_dir = os.path.join(self.SAVE_DIR,'test_plots')
+                    if not os.path.isdir(plot_dir): os.mkdir(plot_dir)
+                    name_plot = os.path.join(plot_dir, "pred_plot_"+str(self.HIDDEN_LAYER_SIZE)+"_"+str(epoch))
 
                     assert len(true_gaps_plot) == len(pred_gaps_plot)
 
@@ -757,7 +761,7 @@ class RMTPP:
                 print(unnorm_gaps)
                 print('True gaps')
                 print(tru_gaps)
-                
+
                 test_mae, test_total_valid, test_acc = self.eval(test_time_preds, test_time_out_seq,
                                                                  test_event_preds, training_data['test_event_out_seq'])
                 print('TEST: MAE = {:.5f}; valid = {}, ACC = {:.5f}'.format(
