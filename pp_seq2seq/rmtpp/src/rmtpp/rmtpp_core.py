@@ -130,6 +130,8 @@ class RMTPP:
             assert self.EPSILON > 0.0
 
         self.NUM_EXTRA_LAYER = num_extra_layer
+        self.PLOT_PRED_DEV = True
+        self.PLOT_PRED_TEST = False
 
         if True:
             self.DEC_STATE_SIZE = 2 * self.HIDDEN_LAYER_SIZE
@@ -678,8 +680,32 @@ class RMTPP:
                 dev_time_in_seq = training_data['dev_time_in_seq'] * (maxTime - minTime) + minTime
                 gaps = dev_time_preds - np.concatenate([dev_time_in_seq[:, -1:], dev_time_preds[:, :-1]], axis=-1)
                 unnorm_gaps = gaps * training_data['dev_avg_gaps']
-                unnorm_gaps = np.cumsum(unnorm_gaps, axis=1)
-                dev_time_preds = unnorm_gaps + training_data['dev_actual_time_in_seq']
+                dev_time_preds = np.cumsum(unnorm_gaps, axis=1) + training_data['dev_actual_time_in_seq']
+                tru_gaps = dev_time_out_seq - np.concatenate([training_data['dev_actual_time_in_seq'], dev_time_out_seq[:, :-1]], axis=1)
+
+                if self.PLOT_PRED_DEV:
+                    random_plot_number = 34
+                    true_gaps_plot = tru_gaps[random_plot_number,:]
+                    pred_gaps_plot = unnorm_gaps[random_plot_number,:]
+                    inp_tru_gaps = np.concatenate([training_data['dev_time_in_seq'][random_plot_number, 1:], training_data['dev_time_out_seq'][random_plot_number, :1]]) - training_data['dev_time_in_seq'][random_plot_number,:]
+                    inp_tru_gaps = inp_tru_gaps * training_data['dev_avg_gaps'][random_plot_number]
+                    true_gaps_plot = list(inp_tru_gaps) + list(true_gaps_plot)
+                    pred_gaps_plot = list(inp_tru_gaps) + list(pred_gaps_plot)
+
+                    name_plot = "./plots/pred_plot_"+str(self.HIDDEN_LAYER_SIZE)+"_"+str(epoch)
+
+                    assert len(true_gaps_plot) == len(pred_gaps_plot)
+
+                    fig_pred_gaps = plt.figure()
+                    ax1 = fig_pred_gaps.add_subplot(111)
+                    print("plotting")
+                    print(list(range(len(true_gaps_plot))))
+                    print(true_gaps_plot)
+                    print(pred_gaps_plot)
+                    ax1.scatter(list(range(len(pred_gaps_plot))), pred_gaps_plot, c='r', label='Pred gaps')
+                    ax1.scatter(list(range(len(true_gaps_plot))), true_gaps_plot, c='b', label='True gaps')
+
+                    plt.savefig(name_plot)
                 
                 dev_mae, dev_total_valid, dev_acc = self.eval(dev_time_preds, dev_time_out_seq,
                                                               dev_event_preds, training_data['dev_event_out_seq'])
@@ -697,11 +723,36 @@ class RMTPP:
                 test_time_out_seq = np.array(training_data['test_actual_time_out_seq'])
                 test_time_in_seq = training_data['test_time_in_seq'] * (maxTime - minTime) + minTime
                 gaps = test_time_preds - np.concatenate([test_time_in_seq[:, -1:], test_time_preds[:, :-1]], axis=-1)
+                tru_gaps = test_time_out_seq - np.concatenate([training_data['test_actual_time_in_seq'], test_time_out_seq[:, :-1]], axis=-1)
                 unnorm_gaps = gaps * training_data['test_avg_gaps']
-                unnorm_gaps = np.cumsum(unnorm_gaps, axis=1)
-                tru_gaps = test_time_out_seq - np.concatenate([training_data['test_actual_time_in_seq'], test_time_out_seq[:, :-1]], axis=1)
-                test_time_preds = unnorm_gaps + training_data['test_actual_time_in_seq']
+                test_time_preds = np.cumsum(unnorm_gaps, axis=1) + training_data['test_actual_time_in_seq']
 
+                if self.PLOT_PRED_TEST:
+                    random_plot_number = 34
+                    true_gaps_plot = tru_gaps[random_plot_number,:]
+                    pred_gaps_plot = unnorm_gaps[random_plot_number,:]
+                    inp_tru_gaps = np.concatenate([training_data['test_time_in_seq'][random_plot_number, 1:], training_data['test_time_out_seq'][random_plot_number, :1]]) - training_data['test_time_in_seq'][random_plot_number,:]
+                    inp_tru_gaps = inp_tru_gaps * training_data['test_avg_gaps'][random_plot_number]
+                    true_gaps_plot = list(inp_tru_gaps) + list(true_gaps_plot)
+                    pred_gaps_plot = list(inp_tru_gaps) + list(pred_gaps_plot)
+
+                    name_plot = "./plots/pred_plot_"+str(self.HIDDEN_LAYER_SIZE)+"_"+str(epoch)
+
+                    assert len(true_gaps_plot) == len(pred_gaps_plot)
+
+                    fig_pred_gaps = plt.figure()
+                    ax1 = fig_pred_gaps.add_subplot(111)
+                    print("plotting")
+                    print(list(range(len(true_gaps_plot))))
+                    print(true_gaps_plot)
+                    print(pred_gaps_plot)
+                    ax1.scatter(list(range(len(pred_gaps_plot))), pred_gaps_plot, c='r', label='Pred gaps')
+                    ax1.scatter(list(range(len(true_gaps_plot))), true_gaps_plot, c='b', label='True gaps')
+
+                    plt.savefig(name_plot)
+
+                print('Predicted gaps')
+                print(gaps)
                 print('UnNormed Predicted gaps')
                 print(unnorm_gaps)
                 print('True gaps')

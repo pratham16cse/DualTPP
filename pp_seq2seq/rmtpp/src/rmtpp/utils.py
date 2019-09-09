@@ -116,6 +116,8 @@ def read_seq2seq_data(event_train_file, event_dev_file, event_test_file,
     eventTrain = [in_seq + out_seq for in_seq, out_seq in zip(eventTrainIn, eventTrainOut)]
     # Similarly for time ...
     timeTrain = [in_seq + out_seq for in_seq, out_seq in zip(timeTrainIn, timeTrainOut)]
+    timeDev = [in_seq + out_seq for in_seq, out_seq in zip(timeDevIn, timeDevOut)]
+    timeTest = [in_seq + out_seq for in_seq, out_seq in zip(timeTestIn, timeTestOut)]
 
     # nb_samples = len(eventTrain)
     # max_seqlen = max(len(x) for x in eventTrain)
@@ -139,8 +141,8 @@ def read_seq2seq_data(event_train_file, event_dev_file, event_test_file,
             minTime = 0
         elif normalization == 'average_per_seq':
             timeTrain, trainAvgGaps = generate_norm_seq(timeTrain, enc_len)
-            timeDevIn, devAvgGaps = generate_norm_seq(timeDevIn, enc_len)
-            timeTestIn, testAvgGaps = generate_norm_seq(timeTestIn, enc_len)
+            timeDev, devAvgGaps = generate_norm_seq(timeDev, enc_len)
+            timeTest, testAvgGaps = generate_norm_seq(timeTest, enc_len)
             minTime, maxTime = 0, 1
         else:
             print('Normalization not found')
@@ -152,6 +154,8 @@ def read_seq2seq_data(event_train_file, event_dev_file, event_test_file,
         minTime, maxTime = 0, 1
 
     timeTrainIn, timeTrainOut = timeTrain[:, :enc_len], timeTrain[:, enc_len:]
+    timeDevIn, timeDevOut = timeDev[:, :enc_len], timeDev[:, enc_len:]
+    timeTestIn, timeTestOut = timeTest[:, :enc_len], timeTest[:, enc_len:]
 
     eventTrainIn = [x[:-1] for x in eventTrain]
     eventTrainOut = [x[1:] for x in eventTrain]
