@@ -682,6 +682,7 @@ class RMTPP_DECRNN:
             print("Starting epoch...", epoch)
             total_loss_prev = total_loss
             total_loss = 0.0
+            time_loss, mark_loss = 0.0, 0.0
 
             for batch_idx in range(n_batches):
                 batch_idxes = idxes[batch_idx * self.BATCH_SIZE:(batch_idx + 1) * self.BATCH_SIZE]
@@ -734,6 +735,8 @@ class RMTPP_DECRNN:
                                           feed_dict=feed_dict)
                 batch_loss = loss_
                 total_loss += batch_loss
+                time_loss += time_loss_
+                mark_loss += mark_loss_
                 if batch_idx % 10 == 0:
                     print('Loss during batch {} last BPTT = {:.3f}, lr = {:.5f}'
                           .format(batch_idx, batch_loss, self.sess.run(self.learning_rate)))
@@ -893,11 +896,11 @@ class RMTPP_DECRNN:
 
             # self.sess.run(self.increment_global_step)
             train_loss_list.append(total_loss)
-            train_time_loss_list.append(np.float64(time_loss_))
-            train_mark_loss_list.append(np.float64(mark_loss_))
+            train_time_loss_list.append(np.float64(time_loss))
+            train_mark_loss_list.append(np.float64(mark_loss))
             wt_list.append(self.sess.run(self.wt).tolist()[0][0])
             print('Loss on last epoch = {:.4f}, train_loss = {:.4f}, mark_loss = {:.4f}, new lr = {:.5f}, global_step = {}'
-                  .format(total_loss, np.float64(time_loss_), np.float64(mark_loss_),
+                  .format(total_loss, np.float64(time_loss), np.float64(mark_loss),
                           self.sess.run(self.learning_rate),
                           self.sess.run(self.global_step)))
 
