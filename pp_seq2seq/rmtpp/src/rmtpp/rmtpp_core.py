@@ -15,6 +15,8 @@ __HIDDEN_LAYER_SIZE = 16  # 64, 128, 256, 512, 1024
 epsilon = 0.1
 
 def_opts = Deco.Options(
+    hidden_layer_size=16,
+
     batch_size=64,          # 16, 32, 64
 
     learning_rate=0.1,      # 0.1, 0.01, 0.001
@@ -47,6 +49,7 @@ def_opts = Deco.Options(
     epsilon=0.0,
 
     num_extra_layer=0,
+    mark_loss=True,
 
     wt_hparam=1.0,
 
@@ -100,7 +103,7 @@ class RMTPP:
                  float_type, bptt, decoder_length, seed, scope, alg_name,
                  save_dir, decay_steps, decay_rate,
                  device_gpu, device_cpu, summary_dir, cpu_only, constraints,
-                 patience, stop_criteria, epsilon, num_extra_layer,
+                 patience, stop_criteria, epsilon, num_extra_layer, mark_loss,
                  Wt, Wem, Wh, bh, Ws, bs, wt, Wy, Vy, Vt, Vw, bk, bt, bw, wt_hparam):
         self.HIDDEN_LAYER_SIZE = hidden_layer_size
         self.BATCH_SIZE = batch_size
@@ -130,6 +133,7 @@ class RMTPP:
             assert self.EPSILON > 0.0
 
         self.NUM_EXTRA_LAYER = num_extra_layer
+        self.MARK_LOSS = mark_loss
         self.PLOT_PRED_DEV = True
         self.PLOT_PRED_TEST = False
 
@@ -145,11 +149,13 @@ class RMTPP:
 
         def get_wt_constraint():
             if self.CONSTRAINTS == 'default':
-                return lambda x: tf.clip_by_value(x, 1e-5, np.inf)
+                return lambda x: tf.clip_by_value(x, 1e-5, 20.0)
             elif self.CONSTRAINTS == 'c1':
                 return lambda x: tf.clip_by_value(x, 1.0, np.inf)
             elif self.CONSTRAINTS == 'c2':
                 return lambda x: tf.clip_by_value(x, 1e-5, np.inf)
+            elif self.CONSTRAINTS == 'unconstrained':
+                return lambda x: x
             else:
                 print('Constraint on wt not found.')
                 assert False
@@ -159,6 +165,8 @@ class RMTPP:
                 return lambda x: x
             elif self.CONSTRAINTS in ['c1', 'c2']:
                 return lambda x: -tf.nn.softplus(-x)
+            elif self.CONSTRAINTS == 'unconstrained':
+                return lambda x: x
             else:
                 print('Constraint on wt not found.')
                 assert False
@@ -270,7 +278,7 @@ class RMTPP:
                                                          dtype=self.FLOAT_TYPE,
                                                          name='initial_time')
 
-                self.loss = 0.0
+                self.loss, self.time_loss, self.mark_loss = 0.0, 0.0, 0.0
                 ones_2d = tf.ones((self.inf_batch_size, 1), dtype=self.FLOAT_TYPE)
                 # ones_1d = tf.ones((self.inf_batch_size,), dtype=self.FLOAT_TYPE)
 
@@ -381,7 +389,17 @@ class RMTPP:
 
                             self.loss -= tf.reduce_sum(
                                 tf.where(self.events_in[:, i] > 0,
-                                         tf.squeeze(step_LL) / self.batch_num_events,
+                                         tf.squeeze(step_LL),
+                                         tf.zeros(shape=(self.inf_batch_size,)))
+                            )
+                            self.time_loss -= tf.reduce_sum(
+                                tf.where(self.events_in[:, i] > 0,
+                                         tf.squeeze(time_LL),
+                                         tf.zeros(shape=(self.inf_batch_size,)))
+                            )
+                            self.mark_loss -= tf.reduce_sum(
+                                tf.where(self.events_in[:, i] > 0,
+                                         tf.squeeze(mark_LL),
                                          tf.zeros(shape=(self.inf_batch_size,)))
                             )
 
@@ -561,6 +579,9 @@ class RMTPP:
         best_epoch = 0
         total_loss = 0.0
         train_loss_list = list()
+        train_time_loss_list = list()
+        train_mark_loss_list = list()
+        wt_list = list()
 
         idxes = list(range(len(train_event_in_seq)))
         n_batches = len(idxes) // self.BATCH_SIZE
@@ -572,6 +593,7 @@ class RMTPP:
             print("Starting epoch...", epoch)
             total_loss_prev = total_loss
             total_loss = 0.0
+            time_loss, mark_loss = 0.0, 0.0
 
             for batch_idx in range(n_batches):
                 batch_idxes = idxes[batch_idx * self.BATCH_SIZE:(batch_idx + 1) * self.BATCH_SIZE]
@@ -581,7 +603,7 @@ class RMTPP:
                 batch_time_train_out = train_time_out_seq[batch_idxes, :]
 
                 cur_state = np.zeros((self.BATCH_SIZE, self.HIDDEN_LAYER_SIZE))
-                batch_loss = 0.0
+                batch_loss, batch_time_loss, batch_mark_loss = 0.0, 0.0, 0.0
 
                 batch_num_events = np.sum(batch_event_train_in > 0)
                 for bptt_idx in range(0, len(batch_event_train_in[0]) - self.BPTT + 1, self.BPTT):
@@ -631,13 +653,18 @@ class RMTPP:
                                               feed_dict=feed_dict)
                             train_writer.add_summary(summaries, step)
                         else:
-                            _, cur_state, loss_ = \
+                            _, cur_state, loss_, time_loss_, mark_loss_ = \
                                 self.sess.run([self.update,
-                                               self.final_state, self.loss],
+                                               self.final_state, self.loss,
+                                               self.time_loss, self.mark_loss],
                                               feed_dict=feed_dict)
                     batch_loss += loss_
+                    batch_time_loss += time_loss_
+                    batch_mark_loss += mark_loss_
 
                 total_loss += batch_loss
+                time_loss += batch_time_loss
+                mark_loss += batch_mark_loss
                 if batch_idx % 10 == 0:
                     print('Loss during batch {} last BPTT = {:.3f}, lr = {:.5f}'
                           .format(batch_idx, batch_loss, self.sess.run(self.learning_rate)))
@@ -708,6 +735,7 @@ class RMTPP:
                     ax1.scatter(list(range(len(true_gaps_plot))), true_gaps_plot, c='b', label='True gaps')
 
                     plt.savefig(name_plot)
+                    plt.close()
 
                 dev_mae, dev_total_valid, dev_acc, dev_gap_mae = self.eval(dev_time_preds, dev_time_out_seq,
                                                                            dev_event_preds, training_data['dev_event_out_seq'],
@@ -755,6 +783,7 @@ class RMTPP:
                     ax1.scatter(list(range(len(true_gaps_plot))), true_gaps_plot, c='b', label='True gaps')
 
                     plt.savefig(name_plot)
+                    plt.close()
 
                 print('Predicted gaps')
                 print(gaps)
@@ -778,7 +807,9 @@ class RMTPP:
                     best_test_event_preds, best_test_time_preds  = test_event_preds, test_time_preds
                     best_w = self.sess.run(self.wt).tolist()
     
-                    checkpoint_dir = os.path.join(self.SAVE_DIR, 'hls_'+str(self.HIDDEN_LAYER_SIZE))
+                    #checkpoint_dir = os.path.join(self.SAVE_DIR, 'hls_'+str(self.HIDDEN_LAYER_SIZE))
+                    checkpoint_dir = restore_path
+                    print(checkpoint_dir)
                     checkpoint_path = os.path.join(checkpoint_dir, 'model.ckpt')
                     saver.save(self.sess, checkpoint_path)# , global_step=step)
                     print('Model saved at {}'.format(checkpoint_path))
@@ -786,8 +817,11 @@ class RMTPP:
 
             # self.sess.run(self.increment_global_step)
             train_loss_list.append(total_loss)
-            print('Loss on last epoch = {:.4f}, new lr = {:.5f}, global_step = {}'
-                  .format(total_loss,
+            train_time_loss_list.append(np.float64(time_loss))
+            train_mark_loss_list.append(np.float64(mark_loss))
+            wt_list.append(self.sess.run(self.wt).tolist()[0][0])
+            print('Loss on last epoch = {:.4f}, train_loss = {:.4f}, mark_loss = {:.4f}, new lr = {:.5f}, global_step = {}'
+                  .format(total_loss, np.float64(time_loss), np.float64(mark_loss),
                           self.sess.run(self.learning_rate),
                           self.sess.run(self.global_step)))
 
@@ -829,6 +863,7 @@ class RMTPP:
                     train_mae, train_total_valid, train_acc))
             else:
                 train_mae, train_acc, train_time_preds, train_event_preds = None, None, np.array([]), np.array([])
+
 
             plt_time_out_seq = training_data['dev_time_out_seq']
             plt_tru_gaps = plt_time_out_seq[:,:dec_len_for_eval] - np.concatenate([training_data['dev_time_in_seq'][:, -1:], plt_time_out_seq[:, :dec_len_for_eval-1]], axis=1)
@@ -887,7 +922,8 @@ class RMTPP:
                 best_test_event_preds, best_test_time_preds  = test_event_preds, test_time_preds
                 best_w = self.sess.run(self.wt).tolist()
 
-                checkpoint_dir = os.path.join(self.SAVE_DIR, 'hls_'+str(self.HIDDEN_LAYER_SIZE))
+                #checkpoint_dir = os.path.join(self.SAVE_DIR, 'hls_'+str(self.HIDDEN_LAYER_SIZE))
+                checkpoint_dir = restore_path
                 checkpoint_path = os.path.join(checkpoint_dir, 'model.ckpt')
                 saver.save(self.sess, checkpoint_path)# , global_step=step)
                 print('Model saved at {}'.format(checkpoint_path))
@@ -976,6 +1012,9 @@ class RMTPP:
                 'wt_hparam': self.wt_hparam,
                 'checkpoint_dir': checkpoint_dir,
                 'train_loss_list': train_loss_list,
+                'train_time_loss_list': train_time_loss_list,
+                'train_mark_loss_list': train_mark_loss_list,
+                'wt_list': wt_list,
                }
 
 
@@ -991,11 +1030,13 @@ class RMTPP:
 
         def get_wt_constraint():
             if self.CONSTRAINTS == 'default':
-                return lambda x: tf.clip_by_value(x, 1e-5, np.inf)
+                return lambda x: tf.clip_by_value(x, 1e-5, 20.0)
             elif self.CONSTRAINTS == 'c1':
                 return lambda x: tf.clip_by_value(x, 1.0, np.inf)
             elif self.CONSTRAINTS == 'c2':
                 return lambda x: tf.clip_by_value(x, 1e-5, np.inf)
+            elif self.CONSTRAINTS == 'unconstrained':
+                return lambda x: x
             else:
                 print('Constraint on wt not found.')
                 assert False
@@ -1005,6 +1046,8 @@ class RMTPP:
                 return lambda x: x
             elif self.CONSTRAINTS in ['c1', 'c2']:
                 return lambda x: -softplus(-x)
+            elif self.CONSTRAINTS == 'unconstrained':
+                return lambda x: x
             else:
                 print('Constraint on wt not found.')
                 assert False

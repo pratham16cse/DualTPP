@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 
 hidden_layer_size_list = [16, 32, 64, 128]
 hparams = json.loads(open('hparams.json', 'r').read())
+hparams_aliases = json.loads(open('hparams_aliases.json', 'r').read())
 
 def_opts = rmtpp.rmtpp_core.def_opts
 
@@ -46,13 +47,14 @@ def_opts = rmtpp.rmtpp_core.def_opts
 @click.option('--stop-criteria', 'stop_criteria', help='Stopping criteria: per_epoch_val_err or epsilon', default=None)
 @click.option('--epsilon', 'epsilon', help='threshold for epsilon-stopping-criteria', default=0.0)
 @click.option('--num-extra-layer', 'num_extra_layer', help='Number of extra layer on top of hidden state ', default=0)
+@click.option('--mark-loss/--no-mark-loss', 'mark_loss', help='If true, mark_LL is also added to the loss', default=True)
 def cmd(dataset_name, alg_name, dataset_path,
         event_train_file, time_train_file, event_dev_file, time_dev_file, event_test_file, time_test_file,
         save_dir, summary_dir, num_epochs, restart, train_eval, test_eval, scale,
         batch_size, bptt, decoder_length, learning_rate, cpu_only, normalization, constraints,
-        patience, stop_criteria, epsilon, num_extra_layer):
+        patience, stop_criteria, epsilon, num_extra_layer, mark_loss):
     """Read data from EVENT_TRAIN_FILE, TIME_TRAIN_FILE and try to predict the values in EVENT_TEST_FILE, TIME_TEST_FILE."""
-    
+
     data = rmtpp.utils.read_seq2seq_data(
         event_train_file=event_train_file,
         event_dev_file=event_dev_file,
@@ -78,11 +80,17 @@ def cmd(dataset_name, alg_name, dataset_path,
 
         #rmtpp.utils.data_stats(data) #TODO(PD) Need to support seq2seq models.
 
-        hidden_layer_size, wt_hparam, restart, num_epochs, save_dir, train_eval = params
+        params_named, restart, num_epochs, save_dir, train_eval = params
+        def_opts_local = def_opts
+        print('params_named start')
+        for name, val in params_named:
+            print(name, val, '-------------')
+            def_opts_local = def_opts_local.set(name, val)
+        print('params_named end')
         rmtpp_mdl = rmtpp.rmtpp_core.RMTPP(
             sess=sess,
             num_categories=data['num_categories'],
-            hidden_layer_size=hidden_layer_size, # A hyperparameter
+            #hidden_layer_size=hidden_layer_size, # A hyperparameter
             alg_name=alg_name,
             save_dir=save_dir,
             summary_dir=summary_dir,
@@ -92,19 +100,20 @@ def cmd(dataset_name, alg_name, dataset_path,
             learning_rate=learning_rate,
             cpu_only=cpu_only,
             constraints=constraints,
-            wt_hparam=wt_hparam,
+            #wt_hparam=wt_hparam,
             patience=patience,
             stop_criteria=stop_criteria,
             epsilon=epsilon,
             num_extra_layer=num_extra_layer,
-            _opts=rmtpp.rmtpp_core.def_opts
+            mark_loss=mark_loss,
+            _opts=def_opts_local
         )
 
         return rmtpp_mdl
 
     def hyperparameter_worker(params, rmtpp_mdl, dec_len, restore_path=None):
         
-        hidden_layer_size, wt_hparam, restart, num_epochs, save_dir, train_eval = params
+        params_named, restart, num_epochs, save_dir, train_eval = params
         # TODO: The finalize here has to be false because tf.global_variables()
         # creates a new graph node (why?). Hence, need to be extra careful while
         # saving the model.
@@ -142,14 +151,22 @@ def cmd(dataset_name, alg_name, dataset_path,
             # TODO(PD) Run hyperparameter tuning in parallel
             #results  = pp.ProcessPool().map(hyperparameter_worker, hidden_layer_size_list)
             results = []
-            for params in product(*hparams[alg_name].values()):
-                checkp_dir = old_save_dir+'/'+str(decoder_length_run[0])+'/hls_'+str(params[0])
+            param_names, param_values = zip(*hparams[alg_name].items())
+            for params in product(*param_values):
+                checkp_dir = old_save_dir+'/'+str(decoder_length_run[0])
+                checkp_dir_hparams = ''
+                params_named = zip(param_names, params)
+                for name, val in params_named:
+                    print(name, hparams_aliases[name], val)
+                    checkp_dir_hparams = checkp_dir_hparams+hparams_aliases[name]+'_'+str(val)+'_'
+                checkp_dir = checkp_dir + '/' + checkp_dir_hparams
                 state_restart=True
                 if dec_len==decoder_length_run[0]:
-                    checkp_dir=None
+                    #checkp_dir=None
                     state_restart = False
                 print("check dir ", checkp_dir)
-                args = params + (state_restart, num_epochs, save_dir, train_eval)
+                params_named = tuple([zip(param_names, params)])
+                args = (params_named) + (state_restart, num_epochs, save_dir, train_eval)
                 rmtpp_mdl = model_creator(args)
                 result = hyperparameter_worker(args, rmtpp_mdl, dec_len, checkp_dir)
                 results.append(result)
@@ -163,12 +180,12 @@ def cmd(dataset_name, alg_name, dataset_path,
                 np.savetxt(os.path.join(save_dir)+'/test.pred.events.out.csv', best_result['best_test_event_preds'], delimiter=',')
                 np.savetxt(os.path.join(save_dir)+'/test.pred.times.out.csv', best_result['best_test_time_preds'], delimiter=',')
                 np.savetxt(os.path.join(save_dir)+'/test.gt.events.out.csv', data['test_event_out_seq'], delimiter=',')
-                np.savetxt(os.path.join(save_dir)+'/test.gt.times.out.csv', data['test_time_out_seq'], delimiter=',')
+                np.savetxt(os.path.join(save_dir)+'/test.gt.times.out.csv', data['test_actual_time_out_seq'], delimiter=',')
 
                 np.savetxt(os.path.join(save_dir)+'/dev.pred.events.out.csv', best_result['best_dev_event_preds'], delimiter=',')
                 np.savetxt(os.path.join(save_dir)+'/dev.pred.times.out.csv', best_result['best_dev_time_preds'], delimiter=',')
                 np.savetxt(os.path.join(save_dir)+'/dev.gt.events.out.csv', data['dev_event_out_seq'], delimiter=',')
-                np.savetxt(os.path.join(save_dir)+'/dev.gt.times.out.csv', data['dev_time_out_seq'], delimiter=',')
+                np.savetxt(os.path.join(save_dir)+'/dev.gt.times.out.csv', data['dev_actual_time_out_seq'], delimiter=',')
 
                 for result in results:
                     del result['best_train_event_preds'], result['best_train_time_preds'], \
@@ -185,6 +202,21 @@ def cmd(dataset_name, alg_name, dataset_path,
                 plt.ylabel('train_loss')
                 plt.xlabel('epoch')
                 plt.savefig(os.path.join(save_dir, 'train_loss.png'))
+                plt.close()
+                plt.plot(best_result['train_time_loss_list'])
+                plt.ylabel('train_time_loss')
+                plt.xlabel('epoch')
+                plt.savefig(os.path.join(save_dir, 'train_time_loss.png'))
+                plt.close()
+                plt.plot(best_result['train_mark_loss_list'])
+                plt.ylabel('train_mark_loss')
+                plt.xlabel('epoch')
+                plt.savefig(os.path.join(save_dir, 'train_mark_loss.png'))
+                plt.close()
+                plt.plot(best_result['wt_list'])
+                plt.ylabel('wt')
+                plt.xlabel('epoch')
+                plt.savefig(os.path.join(save_dir, 'wt.png'))
                 plt.close()
 
 
