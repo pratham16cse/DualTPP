@@ -98,6 +98,8 @@ def density_func(t, c, w):
     given c, w."""
     return c * np.exp(w * t - (c / w) * (np.exp(w * t) - 1))
 
+def quad_func_splusintensity(t, D, w):
+    return t * (D + w * t) * np.exp(-(D * t) - (w * t * t) / 2)
 
 class RMTPP_DECRNN:
     """Class implementing the Recurrent Marked Temporal Point Process model."""
@@ -446,21 +448,31 @@ class RMTPP_DECRNN:
 
                     # D = tf.squeeze(tf.tensordot(self.decoder_states, self.Vt, axes=[[2],[0]]), axis=-1) + base_intensity_bt
                     D = get_D_constraint()(D)
+                    if self.ALG_NAME in ['rmtpp_decrnn_splusintensity']:
+                        D = tf.nn.softplus(D)
+
                     if self.ALG_NAME in ['rmtpp_decrnn_wcmpt', 'rmtpp_decrnn_mode_wcmpt']:
                         WT = tf.reduce_sum(decoder_states_concat * newVw, axis=2) + base_intensity_bw
                         # WT = tf.squeeze(tf.tensordot(self.decoder_states, self.Vw, axes=[[2],[0]]), axis=-1) + base_intensity_bw
                         WT = get_WT_constraint()(WT)
                         WT = tf.clip_by_value(WT, 0.0, 10.0)
-                    elif self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_mode']:
+                    elif self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_mode', 'rmtpp_decrnn_splusintensity']:
                         WT = self.wt
                     elif self.ALG_NAME in ['rmtpp_decrnn_whparam', 'rmtpp_decrnn_mode_whparam']:
                         WT = self.wt_hparam
-                    log_lambda_ = (D + gaps * WT)
-                    lambda_ = tf.exp(tf.minimum(ETH, log_lambda_), name='lambda_')
-                    log_f_star = (log_lambda_
-                                  + (1.0 / WT) * tf.exp(tf.minimum(ETH, D))
-                                  - (1.0 / WT) * lambda_)
 
+                    if self.ALG_NAME in ['rmtpp_decrnn_splusintensity']:
+                        lambda_ = (D + gaps * WT)
+                        log_lambda_ = tf.log(lambda_)
+                        log_f_star = (log_lambda_
+                                      - D * gaps
+                                      - (WT/2.0) * tf.square(gaps))
+                    else:
+                        log_lambda_ = (D + gaps * WT)
+                        lambda_ = tf.exp(tf.minimum(ETH, log_lambda_), name='lambda_')
+                        log_f_star = (log_lambda_
+                                      + (1.0 / WT) * tf.exp(tf.minimum(ETH, D))
+                                      - (1.0 / WT) * lambda_)
 
                 with tf.name_scope('loss_calc'):
 
@@ -1177,12 +1189,15 @@ class RMTPP_DECRNN:
                 D = (np.dot(s_i, Vt[pred_idx,:]) + bt[:,pred_idx]).reshape(-1)
                 D = np.clip(D, np.ones_like(D)*-50.0, np.ones_like(D)*50.0)
                 D = get_D_constraint()(D)
+                if self.ALG_NAME in ['rmtpp_decrnn_splusintensity']:
+                    D = softplus(D)
+
                 c_ = np.exp(np.maximum(D, np.ones_like(D)*-87.0))
                 if self.ALG_NAME in ['rmtpp_decrnn_wcmpt', 'rmtpp_decrnn_mode_wcmpt']:
                     WT = (np.dot(s_i, Vw[pred_idx,:]) + bw[:,pred_idx]).reshape(-1)
                     WT = get_WT_constraint()(WT)
                     WT = np.clip(WT, 0.0, 10.0)
-                elif self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_mode']:
+                elif self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_mode', 'rmtpp_decrnn_splusintensity']:
                     WT = wt
                 elif self.ALG_NAME in ['rmtpp_decrnn_whparam', 'rmtpp_decrnn_mode_whparam']:
                     WT = self.wt_hparam
@@ -1196,6 +1211,9 @@ class RMTPP_DECRNN:
                     val = np.where(val_raw<0.0, 0.0, val_raw)
                     val = val.reshape(-1)[0]
                     #print(batch_idx, D, c_, WT, val, val_raw)
+                elif self.ALG_NAME in ['rmtpp_decrnn_splusintensity']:
+                    args = (D, WT)
+                    val, _err = quad(quad_func_splusintensity, 0, np.inf, args=args)
 
                 assert np.isfinite(val)
                 preds_i.append(t_last + val)

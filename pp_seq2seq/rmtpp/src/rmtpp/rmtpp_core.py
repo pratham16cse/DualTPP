@@ -93,6 +93,8 @@ def density_func(t, c, w):
     given c, w."""
     return c * np.exp(w * t - (c / w) * (np.exp(w * t) - 1))
 
+def quad_func_splusintensity(t, D, w):
+    return t * (D + w * t) * np.exp(-(D * t) - (w * t * t) / 2)
 
 class RMTPP:
     """Class implementing the Recurrent Marked Temporal Point Process model."""
@@ -336,24 +338,35 @@ class RMTPP:
                             base_intensity_bt = tf.matmul(ones_2d, self.bt)
                             base_intensity_bw = tf.matmul(ones_2d, self.bw)
                             # wt_non_zero = tf.sign(self.wt) * tf.maximum(1e-9, tf.abs(self.wt))
+                            #base_intensity_bt = tf.Print(base_intensity_bt, [base_intensity_bt, self.Vt], message='Printing Vt and bt')
                             D = tf.matmul(state, self.Vt) + base_intensity_bt
                             D = get_D_constraint()(D)
+                            #D = tf.Print(D, [D], message='Printing D Before')
+                            if self.ALG_NAME in ['rmtpp_splusintensity']:
+                                D = tf.nn.softplus(D)
+                            #D = tf.Print(D, [D], message='Printing D After')
+
                             if self.ALG_NAME in ['rmtpp_wcmpt', 'rmtpp_mode_wcmpt']:
                                 WT = tf.matmul(state, self.Vw) + base_intensity_bw
                                 WT = get_WT_constraint()(WT)
                                 WT = tf.clip_by_value(WT, 0.0, 10.0)
-                            elif self.ALG_NAME in ['rmtpp', 'rmtpp_mode']:
+                            elif self.ALG_NAME in ['rmtpp', 'rmtpp_mode', 'rmtpp_splusintensity']:
                                 WT = self.wt
                             elif self.ALG_NAME in ['rmtpp_whparam', 'rmtpp_mode_whparam']:
                                 WT = self.wt_hparam
 
-                            log_lambda_ = (D + (delta_t_next * WT))
-
-                            lambda_ = tf.exp(tf.minimum(ETH, log_lambda_), name='lambda_')
-
-                            log_f_star = (log_lambda_
-                                          + (1.0 / WT) * tf.exp(tf.minimum(ETH, D))
-                                          - (1.0 / WT) * lambda_)
+                            if self.ALG_NAME in ['rmtpp_splusintensity']:
+                                lambda_ = D + (delta_t_next * WT)
+                                log_lambda_ = tf.log(lambda_)
+                                log_f_star = (log_lambda_
+                                              - D * delta_t_next
+                                              - (WT/2.0) * tf.square(delta_t_next))
+                            else:
+                                log_lambda_ = (D + (delta_t_next * WT))
+                                lambda_ = tf.exp(tf.minimum(ETH, log_lambda_), name='lambda_')
+                                log_f_star = (log_lambda_
+                                              + (1.0 / WT) * tf.exp(tf.minimum(ETH, D))
+                                              - (1.0 / WT) * lambda_)
 
                             events_pred = tf.nn.softmax(
                                 tf.minimum(ETH,
@@ -1117,12 +1130,15 @@ class RMTPP:
                 D = (np.dot(h_i, Vt) + bt).reshape(-1)
                 D = np.clip(D, np.ones_like(D)*-50.0, np.ones_like(D)*50.0)
                 D = get_D_constraint()(D)
+                if self.ALG_NAME in ['rmtpp_splusintensity']:
+                    D = softplus(D)
+
                 c_ = np.exp(np.maximum(D, np.ones_like(D)*-87.0))
                 if self.ALG_NAME in ['rmtpp_wcmpt', 'rmtpp_mode_wcmpt']:
                     WT = (np.dot(h_i, Vw) + bw).reshape(-1)
                     WT = get_WT_constraint()(WT)
                     WT = np.clip(WT, 0.0, 10.0)
-                elif self.ALG_NAME in ['rmtpp', 'rmtpp_mode']:
+                elif self.ALG_NAME in ['rmtpp', 'rmtpp_mode', 'rmtpp_splusintensity']:
                     WT = wt
                 elif self.ALG_NAME in ['rmtpp_whparam', 'rmtpp_mode_whparam']:
                     WT = self.wt_hparam
@@ -1136,6 +1152,10 @@ class RMTPP:
                     val = np.where(val_raw<0.0, 0.0, val_raw)
                     val = val.reshape(-1)[0]
                     #print(batch_idx, D, c_, WT, val, val_raw)
+                elif self.ALG_NAME in ['rmtpp_splusintensity']:
+                    args = (D, WT)
+                    val, _err = quad(quad_func_splusintensity, 0, np.inf, args=args)
+                    #print(val)
 
                 assert np.isfinite(val)
                 preds_i = (t_last + val)

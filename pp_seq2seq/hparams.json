@@ -9,6 +9,11 @@
 		"hidden_layer_size": [16, 32, 64, 128],
 		"wt_hparam": [1.0] 
 	},
+	"rmtpp_splusintensity":
+	{
+		"hidden_layer_size": [16, 32, 64, 128],
+		"wt_hparam": [1.0] 
+	},
 	"rmtpp_whparam":
 	{
 		"hidden_layer_size": [16, 32, 64, 128],
@@ -38,6 +43,11 @@
 	{
 		"hidden_layer_size": [16, 32, 64, 128],
 		"wt_hparam": [1.0]
+	},
+	"rmtpp_decrnn_splusintensity":
+	{
+		"hidden_layer_size": [16, 32, 64, 128],
+		"wt_hparam": [1.0] 
 	},
 	"rmtpp_decrnn_truemarks":
 	{
