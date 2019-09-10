@@ -483,17 +483,17 @@ class RMTPP_DECRNN:
                     # TODO(PD) Is the sign of loss correct?
                     self.loss = (-1) * tf.reduce_sum(
                         tf.where(self.events_out > 0,
-                                 step_LLs / self.batch_num_events,
+                                 step_LLs,
                                  tf.zeros(shape=(self.inf_batch_size, self.DEC_LEN)))
                     )
                     self.time_loss = (-1) * tf.reduce_sum(
                         tf.where(self.events_out > 0,
-                                 self.time_LLs / self.batch_num_events,
+                                 self.time_LLs,
                                  tf.zeros(shape=(self.inf_batch_size, self.DEC_LEN)))
                     )
                     self.mark_loss = (-1) * tf.reduce_sum(
                         tf.where(self.events_out > 0,
-                                 self.mark_LLs / self.batch_num_events,
+                                 self.mark_LLs,
                                  tf.zeros(shape=(self.inf_batch_size, self.DEC_LEN)))
                     )
 
