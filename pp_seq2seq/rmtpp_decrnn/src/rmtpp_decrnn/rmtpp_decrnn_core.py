@@ -804,6 +804,7 @@ class RMTPP_DECRNN:
                     ax1.scatter(list(range(len(true_gaps_plot))), true_gaps_plot, c='b', label='True gaps')
 
                     plt.savefig(name_plot)
+                    plt.close()
 
                 dev_mae, dev_total_valid, dev_acc, dev_gap_mae = self.eval(dev_time_preds, dev_time_out_seq,
                                                                            dev_event_preds, training_data['dev_event_out_seq'],
@@ -855,6 +856,7 @@ class RMTPP_DECRNN:
                     ax1.scatter(list(range(len(true_gaps_plot))), true_gaps_plot, c='b', label='True gaps')
 
                     plt.savefig(name_plot)
+                    plt.close()
 
                 print('Predicted gaps')
                 print(gaps)
