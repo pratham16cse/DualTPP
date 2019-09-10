@@ -15,6 +15,8 @@ __HIDDEN_LAYER_SIZE = 16  # 64, 128, 256, 512, 1024
 epsilon = 0.1
 
 def_opts = Deco.Options(
+    hidden_layer_size=16,
+
     batch_size=64,          # 16, 32, 64
 
     learning_rate=0.1,      # 0.1, 0.01, 0.001

@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 
 hidden_layer_size_list = [16, 32, 64, 128]
 hparams = json.loads(open('hparams.json', 'r').read())
+hparams_aliases = json.loads(open('hparams_aliases.json', 'r').read())
 
 def_opts = rmtpp_decrnn.rmtpp_decrnn_core.def_opts
 
@@ -84,11 +85,14 @@ def cmd(dataset_name, alg_name, dataset_path,
 
         #rmtpp_decrnn.utils.data_stats(data) #TODO(PD) Need to support seq2seq models.
 
-        hidden_layer_size, wt_hparam, restart, num_epochs, save_dir, train_eval = params
+        params_named, restart, num_epochs, save_dir, train_eval = params
+        def_opts_local = def_opts
+        for name, val in params_named:
+            def_opts_local = def_opts_local.set(name, val)
         rmtpp_decrnn_mdl = rmtpp_decrnn.rmtpp_decrnn_core.RMTPP_DECRNN(
             sess=sess,
             num_categories=data['num_categories'],
-            hidden_layer_size=hidden_layer_size, # A hyperparameter
+            #hidden_layer_size=hidden_layer_size, # A hyperparameter
             alg_name=alg_name,
             save_dir=save_dir,
             summary_dir=summary_dir,
@@ -98,7 +102,7 @@ def cmd(dataset_name, alg_name, dataset_path,
             learning_rate=learning_rate,
             cpu_only=cpu_only,
             constraints=constraints,
-            wt_hparam=wt_hparam,
+            #wt_hparam=wt_hparam,
             patience=patience,
             stop_criteria=stop_criteria,
             epsilon=epsilon,
@@ -108,14 +112,14 @@ def cmd(dataset_name, alg_name, dataset_path,
             num_extra_dec_layer=num_extra_dec_layer,
             concat_before_dec_update=concat_before_dec_update,
             mark_triggers_time=mark_triggers_time,
-            _opts=rmtpp_decrnn.rmtpp_decrnn_core.def_opts
+            _opts=def_opts_local
         )
 
         return rmtpp_decrnn_mdl
 
     def hyperparameter_worker(params, rmtpp_decrnn_mdl, dec_len, restore_path=None):
         
-        hidden_layer_size, wt_hparam, restart, num_epochs, save_dir, train_eval = params
+        params_named, restart, num_epochs, save_dir, train_eval = params
         # TODO: The finalize here has to be false because tf.global_variables()
         # creates a new graph node (why?). Hence, need to be extra careful while
         # saving the model.
@@ -153,14 +157,22 @@ def cmd(dataset_name, alg_name, dataset_path,
             # TODO(PD) Run hyperparameter tuning in parallel
             #results  = pp.ProcessPool().map(hyperparameter_worker, hidden_layer_size_list)
             results = []
-            for params in product(*hparams[alg_name].values()):
-                checkp_dir = old_save_dir+'/'+str(decoder_length_run[0])+'/hls_'+str(params[0])
+            param_names, param_values = zip(*hparams[alg_name].items())
+            for params in product(*param_values):
+                checkp_dir = old_save_dir+'/'+str(decoder_length_run[0])
+                checkp_dir_hparams = ''
+                params_named = zip(param_names, params)
+                for name, val in params_named:
+                    print(name, hparams_aliases[name], val)
+                    checkp_dir_hparams = checkp_dir_hparams+hparams_aliases[name]+'_'+str(val)+'_'
+                checkp_dir = checkp_dir + '/' + checkp_dir_hparams
                 state_restart=True
                 if dec_len==decoder_length_run[0]:
                     checkp_dir=None
                     state_restart = False
                 print("check dir ", checkp_dir)
-                args = params + (state_restart, num_epochs, save_dir, train_eval)
+                params_named = tuple([params_named])
+                args = (params_named) + (state_restart, num_epochs, save_dir, train_eval)
                 rmtpp_decrnn_mdl = model_creator(args)
                 result = hyperparameter_worker(args, rmtpp_decrnn_mdl, dec_len, checkp_dir)
                 results.append(result)
