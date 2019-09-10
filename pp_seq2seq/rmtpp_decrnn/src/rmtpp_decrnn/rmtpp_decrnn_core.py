@@ -670,6 +670,7 @@ class RMTPP_DECRNN:
         train_loss_list = list()
         train_time_loss_list = list()
         train_mark_loss_list = list()
+        wt_list = list()
 
         idxes = list(range(len(train_event_in_seq)))
         n_batches = len(idxes) // self.BATCH_SIZE
@@ -894,6 +895,7 @@ class RMTPP_DECRNN:
             train_loss_list.append(total_loss)
             train_time_loss_list.append(np.float64(time_loss_))
             train_mark_loss_list.append(np.float64(mark_loss_))
+            wt_list.append(self.sess.run(self.wt).tolist()[0][0])
             print('Loss on last epoch = {:.4f}, train_loss = {:.4f}, mark_loss = {:.4f}, new lr = {:.5f}, global_step = {}'
                   .format(total_loss, np.float64(time_loss_), np.float64(mark_loss_),
                           self.sess.run(self.learning_rate),
@@ -1089,6 +1091,7 @@ class RMTPP_DECRNN:
                 'train_loss_list': train_loss_list,
                 'train_time_loss_list': train_time_loss_list,
                 'train_mark_loss_list': train_mark_loss_list,
+                'wt_list': wt_list,
                }
 
 

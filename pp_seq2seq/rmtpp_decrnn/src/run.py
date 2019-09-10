@@ -224,6 +224,11 @@ def cmd(dataset_name, alg_name, dataset_path,
                 plt.xlabel('epoch')
                 plt.savefig(os.path.join(save_dir, 'train_mark_loss.png'))
                 plt.close()
+                plt.plot(best_result['wt_list'])
+                plt.ylabel('wt')
+                plt.xlabel('epoch')
+                plt.savefig(os.path.join(save_dir, 'wt.png'))
+                plt.close()
 
 
 if __name__ == '__main__':
