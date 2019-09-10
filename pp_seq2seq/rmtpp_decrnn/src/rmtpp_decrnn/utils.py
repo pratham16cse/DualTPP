@@ -149,8 +149,8 @@ def read_seq2seq_data(event_train_file, event_dev_file, event_test_file,
             assert False
     else:
         timeTrain, trainAvgGaps = generate_shifted_seq(timeTrain, enc_len)
-        timeDevIn, devAvgGaps = generate_shifted_seq(timeDevIn, enc_len)
-        timeTestIn, testAvgGaps = generate_shifted_seq(timeTestIn, enc_len)
+        timeDev, devAvgGaps = generate_shifted_seq(timeDev, enc_len)
+        timeTest, testAvgGaps = generate_shifted_seq(timeTest, enc_len)
         minTime, maxTime = 0, 1
 
     timeTrainIn, timeTrainOut = timeTrain[:, :enc_len], timeTrain[:, enc_len:]
