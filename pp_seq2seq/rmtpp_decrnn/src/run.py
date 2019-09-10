@@ -87,8 +87,11 @@ def cmd(dataset_name, alg_name, dataset_path,
 
         params_named, restart, num_epochs, save_dir, train_eval = params
         def_opts_local = def_opts
+        print('params_named start')
         for name, val in params_named:
+            print(name, val, '-------------')
             def_opts_local = def_opts_local.set(name, val)
+        print('params_named end')
         rmtpp_decrnn_mdl = rmtpp_decrnn.rmtpp_decrnn_core.RMTPP_DECRNN(
             sess=sess,
             num_categories=data['num_categories'],
@@ -168,10 +171,10 @@ def cmd(dataset_name, alg_name, dataset_path,
                 checkp_dir = checkp_dir + '/' + checkp_dir_hparams
                 state_restart=True
                 if dec_len==decoder_length_run[0]:
-                    checkp_dir=None
+                    #checkp_dir=None
                     state_restart = False
                 print("check dir ", checkp_dir)
-                params_named = tuple([params_named])
+                params_named = tuple([zip(param_names, params)])
                 args = (params_named) + (state_restart, num_epochs, save_dir, train_eval)
                 rmtpp_decrnn_mdl = model_creator(args)
                 result = hyperparameter_worker(args, rmtpp_decrnn_mdl, dec_len, checkp_dir)
