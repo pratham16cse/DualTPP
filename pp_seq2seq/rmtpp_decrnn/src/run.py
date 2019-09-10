@@ -214,6 +214,16 @@ def cmd(dataset_name, alg_name, dataset_path,
                 plt.xlabel('epoch')
                 plt.savefig(os.path.join(save_dir, 'train_loss.png'))
                 plt.close()
+                plt.plot(best_result['train_time_loss_list'])
+                plt.ylabel('train_time_loss')
+                plt.xlabel('epoch')
+                plt.savefig(os.path.join(save_dir, 'train_time_loss.png'))
+                plt.close()
+                plt.plot(best_result['train_mark_loss_list'])
+                plt.ylabel('train_mark_loss')
+                plt.xlabel('epoch')
+                plt.savefig(os.path.join(save_dir, 'train_mark_loss.png'))
+                plt.close()
 
 
 if __name__ == '__main__':

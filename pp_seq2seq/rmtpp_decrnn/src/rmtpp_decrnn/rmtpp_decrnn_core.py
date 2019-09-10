@@ -486,6 +486,16 @@ class RMTPP_DECRNN:
                                  step_LLs / self.batch_num_events,
                                  tf.zeros(shape=(self.inf_batch_size, self.DEC_LEN)))
                     )
+                    self.time_loss = (-1) * tf.reduce_sum(
+                        tf.where(self.events_out > 0,
+                                 self.time_LLs / self.batch_num_events,
+                                 tf.zeros(shape=(self.inf_batch_size, self.DEC_LEN)))
+                    )
+                    self.mark_loss = (-1) * tf.reduce_sum(
+                        tf.where(self.events_out > 0,
+                                 self.mark_LLs / self.batch_num_events,
+                                 tf.zeros(shape=(self.inf_batch_size, self.DEC_LEN)))
+                    )
 
                     # self.loss -= tf.cond(num_events > 0,
                     #                      lambda: tf.reduce_sum(
@@ -658,6 +668,8 @@ class RMTPP_DECRNN:
         best_epoch = 0
         total_loss = 0.0
         train_loss_list = list()
+        train_time_loss_list = list()
+        train_mark_loss_list = list()
 
         idxes = list(range(len(train_event_in_seq)))
         n_batches = len(idxes) // self.BATCH_SIZE
@@ -714,9 +726,10 @@ class RMTPP_DECRNN:
                                           feed_dict=feed_dict)
                         train_writer.add_summary(summaries, step)
                     else:
-                        _, cur_state, loss_ = \
+                        _, cur_state, loss_, time_loss_, mark_loss_ = \
                             self.sess.run([self.update,
-                                           self.final_state, self.loss],
+                                           self.final_state, self.loss,
+                                           self.time_loss, self.mark_loss],
                                           feed_dict=feed_dict)
                 batch_loss = loss_
                 total_loss += batch_loss
@@ -877,8 +890,10 @@ class RMTPP_DECRNN:
 
             # self.sess.run(self.increment_global_step)
             train_loss_list.append(total_loss)
-            print('Loss on last epoch = {:.4f}, new lr = {:.5f}, global_step = {}'
-                  .format(total_loss,
+            train_time_loss_list.append(np.float64(time_loss_))
+            train_mark_loss_list.append(np.float64(mark_loss_))
+            print('Loss on last epoch = {:.4f}, train_loss = {:.4f}, mark_loss = {:.4f}, new lr = {:.5f}, global_step = {}'
+                  .format(total_loss, np.float64(time_loss_), np.float64(mark_loss_),
                           self.sess.run(self.learning_rate),
                           self.sess.run(self.global_step)))
 
@@ -1070,6 +1085,8 @@ class RMTPP_DECRNN:
                 'wt_hparam': self.wt_hparam,
                 'checkpoint_dir': checkpoint_dir,
                 'train_loss_list': train_loss_list,
+                'train_time_loss_list': train_time_loss_list,
+                'train_mark_loss_list': train_mark_loss_list,
                }
 
 
