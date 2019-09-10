@@ -54,6 +54,7 @@ def_opts = Deco.Options(
     num_extra_dec_layer=0,
     concat_before_dec_update=False,
     mark_triggers_time=True,
+    mark_loss=True,
 
     wt_hparam=1.0,
 
@@ -109,7 +110,7 @@ class RMTPP_DECRNN:
                  device_gpu, device_cpu, summary_dir, cpu_only, constraints,
                  patience, stop_criteria, epsilon, share_dec_params,
                  init_zero_dec_state, concat_final_enc_state, num_extra_dec_layer, concat_before_dec_update,
-                 mark_triggers_time,
+                 mark_triggers_time, mark_loss,
                  Wt, Wem, Wh, bh, Ws, bs, wt, Wy, Vy, Vt, Vw, bk, bt, bw, wt_hparam):
         self.HIDDEN_LAYER_SIZE = hidden_layer_size
         self.BATCH_SIZE = batch_size
@@ -144,6 +145,7 @@ class RMTPP_DECRNN:
         self.NUM_EXTRA_DEC_LAYER = num_extra_dec_layer
         self.CONCAT_BEFORE_DEC_UPDATE = concat_before_dec_update
         self.MARK_TRIGGERS_TIME = mark_triggers_time
+        self.MARK_LOSS = mark_loss
 
         self.PLOT_PRED_DEV = True
         self.PLOT_PRED_TEST = False
@@ -464,7 +466,9 @@ class RMTPP_DECRNN:
 
                     self.mark_LLs = tf.squeeze(tf.stack(self.mark_LLs, axis=1), axis=-1)
                     self.time_LLs = log_f_star
-                    step_LLs = self.time_LLs + self.mark_LLs
+                    step_LLs = self.time_LLs
+                    if self.MARK_LOSS:
+                        step_LLs += self.mark_LLs
                     #step_LLs = self.mark_LLs
                     #step_LLs = self.time_LLs
 
