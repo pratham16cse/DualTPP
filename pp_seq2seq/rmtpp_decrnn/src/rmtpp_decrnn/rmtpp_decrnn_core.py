@@ -796,7 +796,7 @@ class RMTPP_DECRNN:
                 tru_gaps = dev_time_out_seq - np.concatenate([training_data['dev_actual_time_in_seq'], dev_time_out_seq[:, :-1]], axis=1)
 
                 if self.PLOT_PRED_DEV:
-                    random_plot_number = 34
+                    random_plot_number = 4
                     true_gaps_plot = tru_gaps[random_plot_number,:]
                     pred_gaps_plot = unnorm_gaps[random_plot_number,:]
                     inp_tru_gaps = np.concatenate([training_data['dev_time_in_seq'][random_plot_number, 1:], training_data['dev_time_out_seq'][random_plot_number, :1]]) - training_data['dev_time_in_seq'][random_plot_number,:]
@@ -848,7 +848,7 @@ class RMTPP_DECRNN:
                 test_time_preds = np.cumsum(unnorm_gaps, axis=1) + training_data['test_actual_time_in_seq']
 
                 if self.PLOT_PRED_TEST:
-                    random_plot_number = 34
+                    random_plot_number = 4
                     true_gaps_plot = tru_gaps[random_plot_number,:]
                     pred_gaps_plot = unnorm_gaps[random_plot_number,:]
                     inp_tru_gaps = np.concatenate([training_data['test_time_in_seq'][random_plot_number, 1:], training_data['test_time_out_seq'][random_plot_number, :1]]) - training_data['test_time_in_seq'][random_plot_number,:]
