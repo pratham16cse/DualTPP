@@ -422,7 +422,7 @@ def main():
     data_path = dataset_path
 
     data = pd.read_csv(data_path, usecols= [0, 1], delimiter=' ', header=None, names=['ID', 'Time']) 
-    data['Time'] = data['Time'].astype(int)
+    data['Time'] = data['Time'].astype(float)
     data = data.sort_values(['Time'], ascending=True)
 
     lst = []
