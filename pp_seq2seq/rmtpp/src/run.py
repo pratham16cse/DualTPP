@@ -106,7 +106,7 @@ def cmd(dataset_name, alg_name, dataset_path,
             patience=patience,
             stop_criteria=stop_criteria,
             epsilon=epsilon,
-            num_extra_layer=num_extra_layer,
+            #num_extra_layer=num_extra_layer,
             mark_loss=mark_loss,
             _opts=def_opts_local
         )

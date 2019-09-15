@@ -1,5 +1,7 @@
 {
 	"hidden_layer_size": "hls",
 	"wt_hparam": "wthparam",
-	"learning_rate": "lr"
+	"learning_rate": "lr",
+	"num_extra_layer": "nel",
+	"num_extra_dec_layer": "nel"
 }
