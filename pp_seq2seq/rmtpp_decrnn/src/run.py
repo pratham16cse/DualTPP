@@ -89,6 +89,7 @@ def cmd(dataset_name, alg_name, dataset_path,
         params_named, restart, num_epochs, save_dir, train_eval = params
         def_opts_local = def_opts
         print('params_named start')
+        params_alias_named = [(hparams_aliases[name], val) for name, val in params_named]
         for name, val in params_named:
             print(name, val, '-------------')
             def_opts_local = def_opts_local.set(name, val)
@@ -96,6 +97,7 @@ def cmd(dataset_name, alg_name, dataset_path,
         rmtpp_decrnn_mdl = rmtpp_decrnn.rmtpp_decrnn_core.RMTPP_DECRNN(
             sess=sess,
             num_categories=data['num_categories'],
+            params_named=params_alias_named,
             #hidden_layer_size=hidden_layer_size, # A hyperparameter
             alg_name=alg_name,
             save_dir=save_dir,
@@ -103,7 +105,7 @@ def cmd(dataset_name, alg_name, dataset_path,
             batch_size=batch_size,
             bptt=data['encoder_length'],
             decoder_length=data['decoder_length'],
-            learning_rate=learning_rate,
+            #learning_rate=learning_rate,
             cpu_only=cpu_only,
             constraints=constraints,
             #wt_hparam=wt_hparam,
@@ -180,6 +182,8 @@ def cmd(dataset_name, alg_name, dataset_path,
                 args = (params_named) + (state_restart, num_epochs, save_dir, train_eval)
                 rmtpp_decrnn_mdl = model_creator(args)
                 result = hyperparameter_worker(args, rmtpp_decrnn_mdl, dec_len, checkp_dir)
+                for name, val in zip(param_names, params):
+                    result[name] = val
                 results.append(result)
                 # print(result['best_test_mae'], result['best_test_acc'])
 
@@ -190,13 +194,13 @@ def cmd(dataset_name, alg_name, dataset_path,
             if save_dir:
                 np.savetxt(os.path.join(save_dir)+'/test.pred.events.out.csv', best_result['best_test_event_preds'], delimiter=',')
                 np.savetxt(os.path.join(save_dir)+'/test.pred.times.out.csv', best_result['best_test_time_preds'], delimiter=',')
-                np.savetxt(os.path.join(save_dir)+'/test.gt.events.out.csv', data['test_event_out_seq'], delimiter=',')
-                np.savetxt(os.path.join(save_dir)+'/test.gt.times.out.csv', data['test_actual_time_out_seq'], delimiter=',')
+                np.savetxt(os.path.join(save_dir)+'/test.gt.events.out.csv', data['test_event_out_seq'][:,:dec_len], delimiter=',')
+                np.savetxt(os.path.join(save_dir)+'/test.gt.times.out.csv', np.array(data['test_actual_time_out_seq'])[:,:dec_len], delimiter=',')
 
                 np.savetxt(os.path.join(save_dir)+'/dev.pred.events.out.csv', best_result['best_dev_event_preds'], delimiter=',')
                 np.savetxt(os.path.join(save_dir)+'/dev.pred.times.out.csv', best_result['best_dev_time_preds'], delimiter=',')
-                np.savetxt(os.path.join(save_dir)+'/dev.gt.events.out.csv', data['dev_event_out_seq'], delimiter=',')
-                np.savetxt(os.path.join(save_dir)+'/dev.gt.times.out.csv', data['dev_actual_time_out_seq'], delimiter=',')
+                np.savetxt(os.path.join(save_dir)+'/dev.gt.events.out.csv', data['dev_event_out_seq'][:,:dec_len], delimiter=',')
+                np.savetxt(os.path.join(save_dir)+'/dev.gt.times.out.csv', np.array(data['dev_actual_time_out_seq'])[:,:dec_len], delimiter=',')
 
                 for result in results:
                     del result['best_train_event_preds'], result['best_train_time_preds'], \

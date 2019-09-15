@@ -15,6 +15,8 @@ __HIDDEN_LAYER_SIZE = 16  # 64, 128, 256, 512, 1024
 epsilon = 0.1
 
 def_opts = Deco.Options(
+    params_named={},
+
     hidden_layer_size=16,
 
     batch_size=64,          # 16, 32, 64
@@ -100,13 +102,16 @@ class RMTPP:
     """Class implementing the Recurrent Marked Temporal Point Process model."""
 
     @Deco.optioned()
-    def __init__(self, sess, num_categories, hidden_layer_size, batch_size,
+    def __init__(self, sess, num_categories, params_named, hidden_layer_size, batch_size,
                  learning_rate, momentum, l2_penalty, embed_size,
                  float_type, bptt, decoder_length, seed, scope, alg_name,
                  save_dir, decay_steps, decay_rate,
                  device_gpu, device_cpu, summary_dir, cpu_only, constraints,
                  patience, stop_criteria, epsilon, num_extra_layer, mark_loss,
                  Wt, Wem, Wh, bh, Ws, bs, wt, Wy, Vy, Vt, Vw, bk, bt, bw, wt_hparam):
+        print('PARAMS_NAMED:', params_named)
+        self.PARAMS_NAMED = params_named
+
         self.HIDDEN_LAYER_SIZE = hidden_layer_size
         self.BATCH_SIZE = batch_size
         self.LEARNING_RATE = learning_rate
@@ -724,7 +729,7 @@ class RMTPP:
                 tru_gaps = dev_time_out_seq - np.concatenate([training_data['dev_actual_time_in_seq'], dev_time_out_seq[:, :-1]], axis=1)
 
                 if self.PLOT_PRED_DEV:
-                    random_plot_number = 34
+                    random_plot_number = 4
                     true_gaps_plot = tru_gaps[random_plot_number,:]
                     pred_gaps_plot = unnorm_gaps[random_plot_number,:]
                     inp_tru_gaps = np.concatenate([training_data['dev_time_in_seq'][random_plot_number, 1:], training_data['dev_time_out_seq'][random_plot_number, :1]]) - training_data['dev_time_in_seq'][random_plot_number,:]
@@ -734,7 +739,13 @@ class RMTPP:
 
                     plot_dir = os.path.join(self.SAVE_DIR,'dev_plots')
                     if not os.path.isdir(plot_dir): os.mkdir(plot_dir)
-                    name_plot = os.path.join(plot_dir, "pred_plot_"+str(self.HIDDEN_LAYER_SIZE)+"_"+str(epoch))
+                    plot_hparam_dir = 'pred_plot_'
+                    for name, val in self.PARAMS_NAMED:
+                        plot_hparam_dir += str(name) + '_' + str(val) + '_'
+                    plot_dir = os.path.join(plot_dir, plot_hparam_dir)
+                    if not os.path.isdir(plot_dir): os.mkdir(plot_dir)
+                    #name_plot = os.path.join(plot_dir, "pred_plot_"+str(self.HIDDEN_LAYER_SIZE)+"_"+str(epoch))
+                    name_plot = os.path.join(plot_dir, 'epoch_' + str(epoch))
 
                     assert len(true_gaps_plot) == len(pred_gaps_plot)
 
@@ -747,7 +758,7 @@ class RMTPP:
                     ax1.scatter(list(range(len(pred_gaps_plot))), pred_gaps_plot, c='r', label='Pred gaps')
                     ax1.scatter(list(range(len(true_gaps_plot))), true_gaps_plot, c='b', label='True gaps')
 
-                    plt.savefig(name_plot)
+                    plt.savefig(name_plot+'.png')
                     plt.close()
 
                 dev_mae, dev_total_valid, dev_acc, dev_gap_mae = self.eval(dev_time_preds, dev_time_out_seq,
@@ -772,7 +783,7 @@ class RMTPP:
                 test_time_preds = np.cumsum(unnorm_gaps, axis=1) + training_data['test_actual_time_in_seq']
 
                 if self.PLOT_PRED_TEST:
-                    random_plot_number = 34
+                    random_plot_number = 4
                     true_gaps_plot = tru_gaps[random_plot_number,:]
                     pred_gaps_plot = unnorm_gaps[random_plot_number,:]
                     inp_tru_gaps = np.concatenate([training_data['test_time_in_seq'][random_plot_number, 1:], training_data['test_time_out_seq'][random_plot_number, :1]]) - training_data['test_time_in_seq'][random_plot_number,:]
