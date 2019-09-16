@@ -49,7 +49,7 @@ def_opts = Deco.Options(
 
     patience=0,
     stop_criteria='per_epoch_val_err',
-    epsilon=0.0,
+    epsilon=0.0001,
 
     share_dec_params=True,
     init_zero_dec_state=True,

@@ -42,17 +42,17 @@ def_opts = rmtpp_decrnn.rmtpp_decrnn_core.def_opts
 @click.option('--init-learning-rate', 'learning_rate', help='Initial learning rate.', default=def_opts.learning_rate)
 @click.option('--cpu-only/--no-cpu-only', 'cpu_only', help='Use only the CPU.', default=def_opts.cpu_only)
 @click.option('--normalization', 'normalization', help='The normalization technique', default=def_opts.normalization)
-@click.option('--constraints', 'constraints', help='Constraints over wt and D (or any other values), refer to constraints.json', default="default")
-@click.option('--patience', 'patience', help='Number of epochs to wait before applying stop_criteria for training', default=0)
-@click.option('--stop-criteria', 'stop_criteria', help='Stopping criteria: per_epoch_val_err or epsilon', default=None)
-@click.option('--epsilon', 'epsilon', help='threshold for epsilon-stopping-criteria', default=0.0)
+@click.option('--constraints', 'constraints', help='Constraints over wt and D (or any other values), refer to constraints.json', default=def_opts.constraints)
+@click.option('--patience', 'patience', help='Number of epochs to wait before applying stop_criteria for training', default=def_opts.patience)
+@click.option('--stop-criteria', 'stop_criteria', help='Stopping criteria: per_epoch_val_err or epsilon', default=def_opts.stop_criteria)
+@click.option('--epsilon', 'epsilon', help='threshold for epsilon-stopping-criteria', default=def_opts.epsilon)
 @click.option('--share-dec-params/--no-share-dec-params', 'share_dec_params', help='Share/not share decoder parameters', default=True)
 @click.option('--init-zero-dec-state/--no-init-zero-dec-state', 'init_zero_dec_state', help='Concatenate final encoder state with decoder state at each step', default=True)
 @click.option('--concat-final-enc-state/--no-concat-final-enc-state', 'concat_final_enc_state', help='Concatenate final encoder state with decoder state at each step', default=True)
-@click.option('--num-extra-dec-layer', 'num_extra_dec_layer', help='Number of extra layer on top of decoder state before final encoder state concat', default=0)
+@click.option('--num-extra-dec-layer', 'num_extra_dec_layer', help='Number of extra layer on top of decoder state before final encoder state concat', default=def_opts.num_extra_dec_layer)
 @click.option('--concat-before-dec-update/--no-concat-before-dec-update', 'concat_before_dec_update', help='Concatenate final encoder state before updating decoder state', default=False)
 @click.option('--mark-triggers-time/--no-mark-triggers-time', 'mark_triggers_time', help='If true, m_i is used to predict t_i, otherwise m_i, t_i predicted together', default=True)
-@click.option('--mark-loss/--no-mark-loss', 'mark_loss', help='If true, mark_LL is also added to the loss', default=True)
+@click.option('--mark-loss/--no-mark-loss', 'mark_loss', help='If true, mark_LL is also added to the loss', default=def_opts.mark_loss)
 def cmd(dataset_name, alg_name, dataset_path,
         event_train_file, time_train_file, event_dev_file, time_dev_file, event_test_file, time_test_file,
         save_dir, summary_dir, num_epochs, restart, train_eval, test_eval, scale,
