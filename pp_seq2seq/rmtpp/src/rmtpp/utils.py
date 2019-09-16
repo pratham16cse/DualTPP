@@ -415,5 +415,18 @@ def ACC(event_preds, event_true):
 
     return np.sum((highest_prob_ev == clipped_event_true)[is_valid]) / np.sum(is_valid)
 
+
+def MRR(event_preds_softmax, event_true):
+    "Computes Mean Reciprocal Rank of events"
+
+    num_unique_events = event_preds_softmax.shape[-1]
+    event_true_flatten = np.reshape(event_true, [-1, 1])
+    num_events = event_true_flatten.shape[0]
+    event_preds_softmax_flatten = np.reshape(event_preds_softmax, [-1, num_unique_events])
+
+    ranks = (np.argsort(-event_preds_softmax_flatten) + 1)[range(num_events), np.squeeze(event_true_flatten)-1]
+
+    return np.mean(1.0/ranks)
+
 def PERCENT_ERROR(event_preds, event_true):
     return (1.0 - ACC(event_preds, event_true)) * 100
