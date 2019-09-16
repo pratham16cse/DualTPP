@@ -53,6 +53,8 @@ def_opts = Deco.Options(
 
     num_extra_layer=0,
     mark_loss=True,
+    plot_pred_dev=True,
+    plot_pred_test=False,
 
     wt_hparam=1.0,
 
@@ -109,8 +111,8 @@ class RMTPP:
                  save_dir, decay_steps, decay_rate,
                  device_gpu, device_cpu, summary_dir, cpu_only, constraints,
                  patience, stop_criteria, epsilon, num_extra_layer, mark_loss,
-                 Wt, Wem, Wh, bh, Ws, bs, wt, Wy, Vy, Vt, Vw, bk, bt, bw, wt_hparam):
-        print('PARAMS_NAMED:', params_named)
+                 Wt, Wem, Wh, bh, Ws, bs, wt, Wy, Vy, Vt, Vw, bk, bt, bw, wt_hparam,
+                 plot_pred_dev, plot_pred_test):
         self.PARAMS_NAMED = params_named
 
         self.HIDDEN_LAYER_SIZE = hidden_layer_size
@@ -142,8 +144,8 @@ class RMTPP:
 
         self.NUM_EXTRA_LAYER = num_extra_layer
         self.MARK_LOSS = mark_loss
-        self.PLOT_PRED_DEV = True
-        self.PLOT_PRED_TEST = False
+        self.PLOT_PRED_DEV = plot_pred_dev
+        self.PLOT_PRED_TEST = plot_pred_test
 
         if True:
             self.DEC_STATE_SIZE = 2 * self.HIDDEN_LAYER_SIZE
@@ -753,10 +755,6 @@ class RMTPP:
 
                     fig_pred_gaps = plt.figure()
                     ax1 = fig_pred_gaps.add_subplot(111)
-                    print("plotting")
-                    print(list(range(len(true_gaps_plot))))
-                    print(true_gaps_plot)
-                    print(pred_gaps_plot)
                     ax1.scatter(list(range(len(pred_gaps_plot))), pred_gaps_plot, c='r', label='Pred gaps')
                     ax1.scatter(list(range(len(true_gaps_plot))), true_gaps_plot, c='b', label='True gaps')
 
@@ -797,26 +795,25 @@ class RMTPP:
                     if not os.path.isdir(plot_dir): os.mkdir(plot_dir)
                     name_plot = os.path.join(plot_dir, "pred_plot_"+str(self.HIDDEN_LAYER_SIZE)+"_"+str(epoch))
 
+                    plot_dir = os.path.join(self.SAVE_DIR,'test_plots')
+                    if not os.path.isdir(plot_dir): os.mkdir(plot_dir)
+                    plot_hparam_dir = 'pred_plot_'
+                    for name, val in self.PARAMS_NAMED:
+                        plot_hparam_dir += str(name) + '_' + str(val) + '_'
+                    plot_dir = os.path.join(plot_dir, plot_hparam_dir)
+                    if not os.path.isdir(plot_dir): os.mkdir(plot_dir)
+                    #name_plot = os.path.join(plot_dir, "pred_plot_"+str(self.HIDDEN_LAYER_SIZE)+"_"+str(epoch))
+                    name_plot = os.path.join(plot_dir, 'epoch_' + str(epoch))
+
                     assert len(true_gaps_plot) == len(pred_gaps_plot)
 
                     fig_pred_gaps = plt.figure()
                     ax1 = fig_pred_gaps.add_subplot(111)
-                    print("plotting")
-                    print(list(range(len(true_gaps_plot))))
-                    print(true_gaps_plot)
-                    print(pred_gaps_plot)
                     ax1.scatter(list(range(len(pred_gaps_plot))), pred_gaps_plot, c='r', label='Pred gaps')
                     ax1.scatter(list(range(len(true_gaps_plot))), true_gaps_plot, c='b', label='True gaps')
 
                     plt.savefig(name_plot)
                     plt.close()
-
-                print('Predicted gaps')
-                print(gaps)
-                print('UnNormed Predicted gaps')
-                print(unnorm_gaps)
-                print('True gaps')
-                print(tru_gaps)
 
                 test_mae, test_total_valid, test_acc, test_gap_mae = self.eval(test_time_preds, test_time_out_seq,
                                                                                test_event_preds, training_data['test_event_out_seq'],
@@ -835,7 +832,6 @@ class RMTPP:
     
                     #checkpoint_dir = os.path.join(self.SAVE_DIR, 'hls_'+str(self.HIDDEN_LAYER_SIZE))
                     checkpoint_dir = restore_path
-                    print(checkpoint_dir)
                     checkpoint_path = os.path.join(checkpoint_dir, 'model.ckpt')
                     saver.save(self.sess, checkpoint_path)# , global_step=step)
                     print('Model saved at {}'.format(checkpoint_path))
@@ -851,7 +847,6 @@ class RMTPP:
                           self.sess.run(self.learning_rate),
                           self.sess.run(self.global_step)))
 
-            print(total_loss, total_loss_prev, abs(total_loss-total_loss_prev))
             if self.STOP_CRITERIA == 'epsilon' and epoch >= self.PATIENCE and abs(total_loss-total_loss_prev) < self.EPSILON:
                 break
 
@@ -864,7 +859,6 @@ class RMTPP:
             self.last_epoch += num_epochs
 
         if self.STOP_CRITERIA == 'epsilon':
-            print('w:', self.sess.run(self.wt).tolist())
 
             if eval_train_data:
                 print('Running evaluation on train, dev, test: ...')
@@ -930,11 +924,6 @@ class RMTPP:
             tru_gaps = test_time_out_seq - np.concatenate([training_data['test_actual_time_in_seq'], test_time_out_seq[:, :-1]], axis=1)
             test_time_preds = unnorm_gaps + training_data['test_actual_time_in_seq']
 
-            # print('UnNormed Predicted gaps')
-            # print(unnorm_gaps)
-            # print('True gaps')
-            # print(tru_gaps)
-            
             test_mae, test_total_valid, test_acc, test_gap_mae = self.eval(test_time_preds, test_time_out_seq,
                                                                            test_event_preds, training_data['test_event_out_seq'],
                                                                            training_data['test_actual_time_in_seq'])
@@ -1151,8 +1140,6 @@ class RMTPP:
                 return preds_i
     
             time_pred_last = time_in_seq[:, -1] if pred_idx==0 else all_time_preds[-1]
-            print('cur_state_shape:', cur_state.shape)
-            print(plt_tru_gaps.shape)
             if single_threaded:
                 step_time_preds = [_quad_worker((idx, (state, t_last, tru_gap))) for idx, (state, t_last, tru_gap) in enumerate(zip(cur_state, time_pred_last, plt_tru_gaps))]
             else:
@@ -1164,7 +1151,6 @@ class RMTPP:
         all_time_preds = np.asarray(all_time_preds)
         assert np.isfinite(all_time_preds).sum() == all_time_preds.size
 
-        print('all_time_preds shape:', all_time_preds.shape)
         end_time = time.time()
         inference_time = end_time - start_time
 
