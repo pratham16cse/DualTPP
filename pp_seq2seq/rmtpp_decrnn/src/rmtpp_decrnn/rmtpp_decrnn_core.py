@@ -8,6 +8,7 @@ import multiprocessing as MP
 import matplotlib
 matplotlib.use('agg')
 import matplotlib.pyplot as plt
+import time
 
 ETH = 10.0
 __EMBED_SIZE = 4
@@ -687,6 +688,9 @@ class RMTPP_DECRNN:
         train_time_loss_list = list()
         train_mark_loss_list = list()
         wt_list = list()
+        train_inference_times = list()
+        dev_inference_times = list()
+        test_inference_times = list()
 
         idxes = list(range(len(train_event_in_seq)))
         n_batches = len(idxes) // self.BATCH_SIZE
@@ -759,8 +763,6 @@ class RMTPP_DECRNN:
 
             if self.STOP_CRITERIA == 'per_epoch_val_err' and epoch >= self.PATIENCE:
 
-                minTime, maxTime = training_data['minTime'], training_data['maxTime']
-
                 if eval_train_data:
                     print('Running evaluation on train, dev, test: ...')
                 else:
@@ -769,13 +771,13 @@ class RMTPP_DECRNN:
                 if eval_train_data:
                     plt_time_out_seq = training_data['train_time_out_seq']
                     plt_tru_gaps = plt_time_out_seq - np.concatenate([training_data['train_time_in_seq'][:, -1:], plt_time_out_seq[:, :-1]], axis=1)
-                    train_time_preds, train_event_preds = self.predict(training_data['train_event_in_seq'],
-                                                                   training_data['train_time_in_seq'],
-                                                                   training_data['decoder_length'],
-                                                                   plt_tru_gaps,
-                                                                   single_threaded=True)
-                    train_time_preds = train_time_preds * (maxTime - minTime) + minTime
-                    train_time_out_seq = training_data['train_time_out_seq'] * (maxTime - minTime) + minTime
+                    train_time_preds, train_event_preds, inference_time = self.predict(training_data['train_event_in_seq'],
+                                                                                       training_data['train_time_in_seq'],
+                                                                                       training_data['decoder_length'],
+                                                                                       plt_tru_gaps,
+                                                                                       single_threaded=False)
+                    train_inference_times.append(inference_time)
+                    train_time_out_seq = training_data['train_time_out_seq']
                     train_mae, train_total_valid, train_acc = self.eval(train_time_preds, train_time_out_seq,
                                                                   train_event_preds, training_data['train_event_out_seq'])
                     print('TRAIN: MAE = {:.5f}; valid = {}, ACC = {:.5f}'.format(
@@ -785,17 +787,16 @@ class RMTPP_DECRNN:
 
                 plt_time_out_seq = training_data['dev_time_out_seq']
                 plt_tru_gaps = plt_time_out_seq - np.concatenate([training_data['dev_time_in_seq'][:, -1:], plt_time_out_seq[:, :-1]], axis=1)
-                dev_time_preds, dev_event_preds = self.predict(training_data['dev_event_in_seq'],
-                                                               training_data['dev_time_in_seq'],
-                                                               training_data['decoder_length'],
-                                                               plt_tru_gaps,
-                                                               single_threaded=True)
-                # dev_time_out_seq = training_data['dev_time_out_seq'] * (maxTime - minTime) + minTime
-                dev_time_preds = dev_time_preds * (maxTime - minTime) + minTime
+                dev_time_preds, dev_event_preds, inference_time = self.predict(training_data['dev_event_in_seq'],
+                                                                               training_data['dev_time_in_seq'],
+                                                                               training_data['decoder_length'],
+                                                                               plt_tru_gaps,
+                                                                               single_threaded=False)
+                dev_inference_times.append(inference_time)
                 dev_time_out_seq = np.array(training_data['dev_actual_time_out_seq'])
-                dev_time_in_seq = training_data['dev_time_in_seq'] * (maxTime - minTime) + minTime
+                dev_time_in_seq = training_data['dev_time_in_seq']
                 gaps = dev_time_preds - np.concatenate([dev_time_in_seq[:, -1:], dev_time_preds[:, :-1]], axis=-1)
-                unnorm_gaps = gaps * training_data['dev_avg_gaps']
+                unnorm_gaps = gaps * training_data['devND']
                 dev_time_preds = np.cumsum(unnorm_gaps, axis=1) + training_data['dev_actual_time_in_seq']
                 tru_gaps = dev_time_out_seq - np.concatenate([training_data['dev_actual_time_in_seq'], dev_time_out_seq[:, :-1]], axis=1)
 
@@ -804,7 +805,7 @@ class RMTPP_DECRNN:
                     true_gaps_plot = tru_gaps[random_plot_number,:]
                     pred_gaps_plot = unnorm_gaps[random_plot_number,:]
                     inp_tru_gaps = np.concatenate([training_data['dev_time_in_seq'][random_plot_number, 1:], training_data['dev_time_out_seq'][random_plot_number, :1]]) - training_data['dev_time_in_seq'][random_plot_number,:]
-                    inp_tru_gaps = inp_tru_gaps * training_data['dev_avg_gaps'][random_plot_number]
+                    inp_tru_gaps = inp_tru_gaps * training_data['devND'][random_plot_number]
                     true_gaps_plot = list(inp_tru_gaps) + list(true_gaps_plot)
                     pred_gaps_plot = list(inp_tru_gaps) + list(pred_gaps_plot)
 
@@ -840,21 +841,17 @@ class RMTPP_DECRNN:
     
                 plt_time_out_seq = training_data['test_time_out_seq']
                 plt_tru_gaps = plt_time_out_seq - np.concatenate([training_data['test_time_in_seq'][:, -1:], plt_time_out_seq[:, :-1]], axis=1)
-                test_time_preds, test_event_preds = self.predict(training_data['test_event_in_seq'],
-                                                                 training_data['test_time_in_seq'],
-                                                                 training_data['decoder_length'],
-                                                                 plt_tru_gaps,
-                                                                 single_threaded=True)
-                test_time_preds = test_time_preds * (maxTime - minTime) + minTime
-                # test_time_out_seq = training_data['test_time_out_seq'] * (maxTime - minTime) + minTime
+                test_time_preds, test_event_preds, inference_time = self.predict(training_data['test_event_in_seq'],
+                                                                                 training_data['test_time_in_seq'],
+                                                                                 training_data['decoder_length'],
+                                                                                 plt_tru_gaps,
+                                                                                 single_threaded=False)
+                test_inference_times.append(inference_time)
                 test_time_out_seq = np.array(training_data['test_actual_time_out_seq'])
-                test_time_in_seq = training_data['test_time_in_seq'] * (maxTime - minTime) + minTime
+                test_time_in_seq = training_data['test_time_in_seq']
                 gaps = test_time_preds - np.concatenate([test_time_in_seq[:, -1:], test_time_preds[:, :-1]], axis=-1)
-                # gaps = test_time_preds - np.concatenate([training_data['test_actual_time_in_seq'], test_time_preds[:, :-1]], axis=-1)
-                # tru_gaps = test_time_out_seq - np.concatenate([training_data['test_actual_time_in_seq'], test_time_out_seq[:, :-1]], axis=1)
-                tru_gaps = test_time_out_seq - np.concatenate([training_data['test_actual_time_in_seq'], test_time_out_seq[:, :-1]], axis=1)
-                # unnorm_true_gaps = tru_gaps * training_data['test_avg_gaps']
-                unnorm_gaps = gaps * training_data['test_avg_gaps']
+                tru_gaps = test_time_out_seq - np.concatenate([training_data['test_actual_time_in_seq'], test_time_out_seq[:, :-1]], axis=-1)
+                unnorm_gaps = gaps * training_data['testND']
                 test_time_preds = np.cumsum(unnorm_gaps, axis=1) + training_data['test_actual_time_in_seq']
 
                 if self.PLOT_PRED_TEST:
@@ -862,7 +859,7 @@ class RMTPP_DECRNN:
                     true_gaps_plot = tru_gaps[random_plot_number,:]
                     pred_gaps_plot = unnorm_gaps[random_plot_number,:]
                     inp_tru_gaps = np.concatenate([training_data['test_time_in_seq'][random_plot_number, 1:], training_data['test_time_out_seq'][random_plot_number, :1]]) - training_data['test_time_in_seq'][random_plot_number,:]
-                    inp_tru_gaps = inp_tru_gaps * training_data['test_avg_gaps'][random_plot_number]
+                    inp_tru_gaps = inp_tru_gaps * training_data['testND'][random_plot_number]
                     true_gaps_plot = list(inp_tru_gaps) + list(true_gaps_plot)
                     pred_gaps_plot = list(inp_tru_gaps) + list(pred_gaps_plot)
 
@@ -891,8 +888,6 @@ class RMTPP_DECRNN:
                 print('True gaps')
                 print(tru_gaps)
 
-                # print('UnNormed True gaps')
-                # print(unnorm_true_gaps)
                 test_mae, test_total_valid, test_acc, test_gap_mae = self.eval(test_time_preds, test_time_out_seq,
                                                                                test_event_preds, training_data['test_event_out_seq'],
                                                                                training_data['test_actual_time_in_seq'])
@@ -941,7 +936,6 @@ class RMTPP_DECRNN:
         if self.STOP_CRITERIA == 'epsilon':
             print('w:', self.sess.run(self.wt).tolist())
 
-            minTime, maxTime = training_data['minTime'], training_data['maxTime']
             if eval_train_data:
                 print('Running evaluation on train, dev, test: ...')
             else:
@@ -952,7 +946,7 @@ class RMTPP_DECRNN:
                 #Not yet Implemented
                 plt_time_out_seq = training_data['train_time_out_seq']
                 plt_tru_gaps = plt_time_out_seq[:,:dec_len_for_eval] - np.concatenate([training_data['train_time_in_seq'][:, -1:], plt_time_out_seq[:, :dec_len_for_eval-1]], axis=1)
-                train_time_preds, train_event_preds = self.predict(training_data['train_event_in_seq'],
+                train_time_preds, train_event_preds, inference_time = self.predict(training_data['train_event_in_seq'],
                                                                training_data['train_time_in_seq'],
                                                                training_data['decoder_length'],
                                                                plt_tru_gaps,
@@ -969,16 +963,17 @@ class RMTPP_DECRNN:
 
             plt_time_out_seq = training_data['dev_time_out_seq']
             plt_tru_gaps = plt_time_out_seq[:,:dec_len_for_eval] - np.concatenate([training_data['dev_time_in_seq'][:, -1:], plt_time_out_seq[:, :dec_len_for_eval-1]], axis=1)
-            dev_time_preds, dev_event_preds = self.predict(training_data['dev_event_in_seq'],
-                                                           training_data['dev_time_in_seq'],
-                                                           training_data['decoder_length'],
-                                                           plt_tru_gaps,
-                                                           single_threaded=True)
-            dev_time_preds = dev_time_preds[:,:dec_len_for_eval] * (maxTime - minTime) + minTime
+            dev_time_preds, dev_event_preds, inference_time = self.predict(training_data['dev_event_in_seq'],
+                                                                           training_data['dev_time_in_seq'],
+                                                                           training_data['decoder_length'],
+                                                                           plt_tru_gaps,
+                                                                           single_threaded=False)
+            dev_inference_times.append(inference_time)
+            dev_time_preds = dev_time_preds[:,:dec_len_for_eval]
             dev_time_out_seq = np.array(training_data['dev_actual_time_out_seq'])[:,:dec_len_for_eval]
-            dev_time_in_seq = training_data['dev_time_in_seq'] * (maxTime - minTime) + minTime
+            dev_time_in_seq = training_data['dev_time_in_seq']
             gaps = dev_time_preds - np.concatenate([dev_time_in_seq[:, -1:], dev_time_preds[:, :-1]], axis=-1)
-            unnorm_gaps = gaps * training_data['dev_avg_gaps']
+            unnorm_gaps = gaps * training_data['devND']
             unnorm_gaps = np.cumsum(unnorm_gaps, axis=1)
             dev_time_preds = unnorm_gaps + training_data['dev_actual_time_in_seq']
             
@@ -990,16 +985,17 @@ class RMTPP_DECRNN:
 
             plt_time_out_seq = training_data['test_time_out_seq']
             plt_tru_gaps = plt_time_out_seq[:,:dec_len_for_eval] - np.concatenate([training_data['test_time_in_seq'][:, -1:], plt_time_out_seq[:, :dec_len_for_eval-1]], axis=1)
-            test_time_preds, test_event_preds = self.predict(training_data['test_event_in_seq'],
-                                                             training_data['test_time_in_seq'],
-                                                             training_data['decoder_length'],
-                                                             plt_tru_gaps,
-                                                             single_threaded=True)
-            test_time_preds = test_time_preds[:,:dec_len_for_eval] * (maxTime - minTime) + minTime
+            test_time_preds, test_event_preds, inference_time = self.predict(training_data['test_event_in_seq'],
+                                                                             training_data['test_time_in_seq'],
+                                                                             training_data['decoder_length'],
+                                                                             plt_tru_gaps,
+                                                                             single_threaded=False)
+            test_inference_times.append(inference_time)
+            test_time_preds = test_time_preds[:,:dec_len_for_eval]
             test_time_out_seq = np.array(training_data['test_actual_time_out_seq'])[:,:dec_len_for_eval]
-            test_time_in_seq = training_data['test_time_in_seq'] * (maxTime - minTime) + minTime
+            test_time_in_seq = training_data['test_time_in_seq']
             gaps = test_time_preds - np.concatenate([test_time_in_seq[:, -1:], test_time_preds[:, :-1]], axis=-1)
-            unnorm_gaps = gaps * training_data['test_avg_gaps']
+            unnorm_gaps = gaps * training_data['testND']
             unnorm_gaps = np.cumsum(unnorm_gaps, axis=1)
             tru_gaps = test_time_out_seq - np.concatenate([training_data['test_actual_time_in_seq'], test_time_out_seq[:, :-1]], axis=1)
             test_time_preds = unnorm_gaps + training_data['test_actual_time_in_seq']
@@ -1016,7 +1012,7 @@ class RMTPP_DECRNN:
                 test_mae, test_total_valid, test_acc, test_gap_mae))
 
             if dev_mae < best_dev_mae:
-                best_epoch = -1
+                best_epoch = num_epochs
                 best_train_mae, best_dev_mae, best_test_mae, best_dev_gap_mae, best_test_gap_mae = train_mae, dev_mae, test_mae, dev_gap_mae, test_gap_mae
                 best_train_acc, best_dev_acc, best_test_acc = train_acc, dev_acc, test_acc
                 best_train_event_preds, best_train_time_preds  = train_event_preds, train_time_preds
@@ -1031,67 +1027,9 @@ class RMTPP_DECRNN:
                 print('Model saved at {}'.format(checkpoint_path))
 
 
-        if ckpt and num_epochs==0:
-            self.restore()
-            minTime, maxTime = training_data['minTime'], training_data['maxTime']
-
-            plt_time_out_seq = training_data['train_time_out_seq']
-            plt_tru_gaps = plt_time_out_seq - np.concatenate([training_data['train_time_in_seq'][:, -1:], plt_time_out_seq[:, :-1]], axis=1) 
-            plot_dir = os.path.join(self.SAVE_DIR,'train')
-            if not os.path.isdir(plot_dir): os.mkdir(plot_dir)
-            best_train_time_preds, best_train_event_preds = self.predict(training_data['train_event_in_seq'],
-                                                           training_data['train_time_in_seq'],
-                                                           training_data['decoder_length'],
-                                                           plt_tru_gaps, plot_dir=plot_dir, single_threaded=True)
-            best_train_time_preds = best_train_time_preds * (maxTime - minTime) + minTime
-            train_time_out_seq = training_data['train_time_out_seq'] * (maxTime - minTime) + minTime
-            best_train_mae, train_total_valid, best_train_acc = self.eval(best_train_time_preds, train_time_out_seq,
-                                                          best_train_event_preds, training_data['train_event_out_seq'])
-            print('TRAIN: MAE = {:.5f}; valid = {}, ACC = {:.5f}'.format(
-                best_train_mae, train_total_valid, best_train_acc))
-
-            plt_time_out_seq = training_data['dev_time_out_seq']
-            plt_tru_gaps = plt_time_out_seq - np.concatenate([training_data['dev_time_in_seq'][:, -1:], plt_time_out_seq[:, :-1]], axis=1) 
-            plot_dir = os.path.join(self.SAVE_DIR,'dev')
-            if not os.path.isdir(plot_dir): os.mkdir(plot_dir)
-            best_dev_time_preds, best_dev_event_preds = self.predict(training_data['dev_event_in_seq'],
-                                                           training_data['dev_time_in_seq'],
-                                                           training_data['decoder_length'],
-                                                           plt_tru_gaps, plot_dir=plot_dir, single_threaded=True)
-            best_dev_time_preds = best_dev_time_preds * (maxTime - minTime) + minTime
-            dev_time_out_seq = training_data['dev_time_out_seq'] * (maxTime - minTime) + minTime
-            best_dev_mae, dev_total_valid, best_dev_acc = self.eval(best_dev_time_preds, dev_time_out_seq,
-                                                          best_dev_event_preds, training_data['dev_event_out_seq'])
-            print('DEV: MAE = {:.5f}; valid = {}, ACC = {:.5f}'.format(
-                best_dev_mae, dev_total_valid, best_dev_acc))
-    
-            plt_time_out_seq = training_data['test_time_out_seq']
-            plt_tru_gaps = plt_time_out_seq - np.concatenate([training_data['test_time_in_seq'][:, -1:], plt_time_out_seq[:, :-1]], axis=1)
-            plot_dir = os.path.join(self.SAVE_DIR,'test')
-            if not os.path.isdir(plot_dir): os.mkdir(plot_dir)
-            best_test_time_preds, best_test_event_preds = self.predict(training_data['test_event_in_seq'],
-                                                             training_data['test_time_in_seq'],
-                                                             training_data['decoder_length'],
-                                                             plt_tru_gaps, plot_dir=plot_dir, single_threaded=True)
-            best_test_time_preds = best_test_time_preds * (maxTime - minTime) + minTime
-            test_time_out_seq = training_data['test_time_out_seq'] * (maxTime - minTime) + minTime
-            test_time_in_seq = training_data['test_time_in_seq'] * (maxTime - minTime) + minTime
-            gaps = best_test_time_preds - np.concatenate([test_time_in_seq[:, -1:], best_test_time_preds[:, :-1]], axis=-1)
-            tru_gaps = test_time_out_seq - np.concatenate([test_time_in_seq[:, -1:], test_time_out_seq[:, :-1]], axis=1)
-            print('Predicted gaps')
-            print(gaps)
-            print(plt_tru_gaps)
-            best_test_mae, test_total_valid, best_test_acc = self.eval(best_test_time_preds, test_time_out_seq,
-                                                             best_test_event_preds, training_data['test_event_out_seq'])
-            print('TEST: MAE = {:.5f}; valid = {}, ACC = {:.5f}'.format(
-                best_test_mae, test_total_valid, best_test_acc))
-    
-            print('Best Epoch:{}, Best Dev MAE:{:.5f}, Best Test MAE:{:.5f}'.format(
-                best_epoch, best_dev_mae, best_test_mae))
-    
-            best_w = self.sess.run(self.wt).tolist()
-
-            return None
+        avg_dev_inference_time = np.average(dev_inference_times)
+        avg_train_inference_time = np.average(train_inference_times)
+        avg_test_inference_time = np.average(test_inference_times)
 
         return {
                 'best_epoch': best_epoch,
@@ -1117,6 +1055,9 @@ class RMTPP_DECRNN:
                 'train_time_loss_list': train_time_loss_list,
                 'train_mark_loss_list': train_mark_loss_list,
                 'wt_list': wt_list,
+                'avg_train_inference_time':avg_train_inference_time,
+                'avg_dev_inference_time':avg_dev_inference_time,
+                'avg_test_inference_time':avg_test_inference_time,
                }
 
 
@@ -1130,6 +1071,7 @@ class RMTPP_DECRNN:
     def predict(self, event_in_seq, time_in_seq, decoder_length, plt_tru_gaps, single_threaded=False, plot_dir=False):
         """Treats the entire dataset as a single batch and processes it."""
 
+        start_time = time.time()
         def get_wt_constraint():
             if self.CONSTRAINTS == 'default':
                 return lambda x: tf.clip_by_value(x, 1e-5, 20.0)
@@ -1271,8 +1213,10 @@ class RMTPP_DECRNN:
         assert np.isfinite(all_time_preds).sum() == all_time_preds.size
 
         print('all_time_preds shape:', all_time_preds.shape)
+        end_time = time.time()
+        inference_time = end_time - start_time
 
-        return np.asarray(all_time_preds).T, np.asarray(all_event_preds).swapaxes(0, 1)
+        return np.asarray(all_time_preds).T, np.asarray(all_event_preds).swapaxes(0, 1), inference_time
 
     def eval(self, time_preds, time_true, event_preds, event_true, time_input_last):
         """Prints evaluation of the model on the given dataset."""
