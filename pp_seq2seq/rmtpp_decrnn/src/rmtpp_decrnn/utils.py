@@ -429,7 +429,11 @@ def MRR(event_preds_softmax, event_true):
     num_events = event_true_flatten.shape[0]
     event_preds_softmax_flatten = np.reshape(event_preds_softmax, [-1, num_unique_events])
 
-    ranks = (np.argsort(-event_preds_softmax_flatten) + 1)[range(num_events), np.squeeze(event_true_flatten)-1]
+    ranks = np.where(event_true_flatten-1 == (np.argsort(-event_preds_softmax_flatten)))[1] + 1
+    #print((np.argsort(-event_preds_softmax_flatten)).shape)
+    #for event_tr, softmax, softmax_ranked in zip(event_true_flatten, event_preds_softmax_flatten.tolist(), np.where(event_true_flatten-1 == (np.argsort(-event_preds_softmax_flatten)))[1]):
+    #    print(event_tr, softmax, softmax_ranked)
+    #print(ranks)
 
     return np.mean(1.0/ranks)
 
