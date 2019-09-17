@@ -708,7 +708,7 @@ class RMTPP:
                                            training_data['train_time_in_seq'],
                                            training_data['decoder_length'],
                                            plt_tru_gaps,
-                                           single_threaded=False)
+                                           single_threaded=True)
                     train_inference_times.append(inference_time)
                     train_time_out_seq = training_data['train_time_out_seq']
                     train_mae, train_total_valid, train_acc, train_mrr = self.eval(train_time_preds, train_time_out_seq,
@@ -726,7 +726,7 @@ class RMTPP:
                                        training_data['dev_time_in_seq'],
                                        training_data['decoder_length'],
                                        plt_tru_gaps,
-                                       single_threaded=False)
+                                       single_threaded=True)
                 dev_inference_times.append(inference_time)
                 dev_time_out_seq = np.array(training_data['dev_actual_time_out_seq'])
                 dev_time_in_seq = training_data['dev_time_in_seq']
@@ -778,7 +778,7 @@ class RMTPP:
                                        training_data['test_time_in_seq'],
                                        training_data['decoder_length'],
                                        plt_tru_gaps,
-                                       single_threaded=False)
+                                       single_threaded=True)
                 test_inference_times.append(inference_time)
                 test_time_out_seq = np.array(training_data['test_actual_time_out_seq'])
                 test_time_in_seq = training_data['test_time_in_seq']
@@ -899,7 +899,7 @@ class RMTPP:
                                    training_data['dev_time_in_seq'],
                                    training_data['decoder_length'],
                                    plt_tru_gaps,
-                                   single_threaded=False)
+                                   single_threaded=True)
             dev_inference_times.append(inference_time)
             dev_time_preds = dev_time_preds[:,:dec_len_for_eval]
             dev_time_out_seq = np.array(training_data['dev_actual_time_out_seq'])[:,:dec_len_for_eval]
@@ -923,7 +923,7 @@ class RMTPP:
                                    training_data['test_time_in_seq'],
                                    training_data['decoder_length'],
                                    plt_tru_gaps,
-                                   single_threaded=False)
+                                   single_threaded=True)
             test_inference_times.append(inference_time)
             test_time_preds = test_time_preds[:,:dec_len_for_eval]
             test_time_out_seq = np.array(training_data['test_actual_time_out_seq'])[:,:dec_len_for_eval]
