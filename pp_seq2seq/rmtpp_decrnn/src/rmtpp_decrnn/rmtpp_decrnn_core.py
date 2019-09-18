@@ -9,6 +9,7 @@ import matplotlib
 matplotlib.use('agg')
 import matplotlib.pyplot as plt
 import time
+from collections import OrderedDict
 
 ETH = 10.0
 __EMBED_SIZE = 4
@@ -16,7 +17,7 @@ __HIDDEN_LAYER_SIZE = 16  # 64, 128, 256, 512, 1024
 epsilon = 0.1
 
 def_opts = Deco.Options(
-    params_named={},
+    params_alias_named={},
 
     hidden_layer_size=16,
 
@@ -110,7 +111,7 @@ class RMTPP_DECRNN:
     """Class implementing the Recurrent Marked Temporal Point Process model."""
 
     @Deco.optioned()
-    def __init__(self, sess, num_categories, params_named, hidden_layer_size, batch_size,
+    def __init__(self, sess, num_categories, params_named, params_alias_named, hidden_layer_size, batch_size,
                  learning_rate, momentum, l2_penalty, embed_size,
                  float_type, bptt, decoder_length, seed, scope, alg_name,
                  save_dir, decay_steps, decay_rate,
@@ -120,11 +121,12 @@ class RMTPP_DECRNN:
                  mark_triggers_time, mark_loss,
                  Wt, Wem, Wh, bh, Ws, bs, wt, Wy, Vy, Vt, Vw, bk, bt, bw, wt_hparam,
                  plot_pred_dev, plot_pred_test):
-        self.PARAMS_NAMED = params_named
+        self.PARAMS_NAMED = OrderedDict(params_named)
+        self.PARAMS_ALIAS_NAMED = params_alias_named
 
-        self.HIDDEN_LAYER_SIZE = hidden_layer_size
+        self.HIDDEN_LAYER_SIZE = self.PARAMS_NAMED['hidden_layer_size'] #hidden_layer_size
         self.BATCH_SIZE = batch_size
-        self.LEARNING_RATE = learning_rate
+        self.LEARNING_RATE = self.PARAMS_NAMED['learning_rate'] #learning_rate
         self.MOMENTUM = momentum
         self.L2_PENALTY = l2_penalty
         self.EMBED_SIZE = embed_size
@@ -141,7 +143,7 @@ class RMTPP_DECRNN:
         self.DEVICE_CPU = device_cpu
         self.DEVICE_GPU = device_gpu
 
-        self.wt_hparam = wt_hparam
+        self.wt_hparam = self.PARAMS_NAMED['wt_hparam'] #wt_hparam
 
         self.PATIENCE = patience
         self.STOP_CRITERIA = stop_criteria
@@ -152,7 +154,7 @@ class RMTPP_DECRNN:
         self.SHARE_DEC_PARAMS = share_dec_params
         self.INIT_ZERO_DEC_STATE = init_zero_dec_state
         self.CONCAT_FINAL_ENC_STATE = concat_final_enc_state
-        self.NUM_EXTRA_DEC_LAYER = num_extra_dec_layer
+        self.NUM_EXTRA_DEC_LAYER = self.PARAMS_NAMED['num_extra_dec_layer'] #num_extra_dec_layer
         self.CONCAT_BEFORE_DEC_UPDATE = concat_before_dec_update
         self.MARK_TRIGGERS_TIME = mark_triggers_time
         self.MARK_LOSS = mark_loss
@@ -824,7 +826,7 @@ class RMTPP_DECRNN:
                     plot_dir = os.path.join(self.SAVE_DIR,'dev_plots')
                     if not os.path.isdir(plot_dir): os.mkdir(plot_dir)
                     plot_hparam_dir = 'pred_plot_'
-                    for name, val in self.PARAMS_NAMED:
+                    for name, val in self.PARAMS_ALIAS_NAMED:
                         plot_hparam_dir += str(name) + '_' + str(val) + '_'
                     plot_dir = os.path.join(plot_dir, plot_hparam_dir)
                     if not os.path.isdir(plot_dir): os.mkdir(plot_dir)
@@ -880,7 +882,7 @@ class RMTPP_DECRNN:
                     plot_dir = os.path.join(self.SAVE_DIR,'test_plots')
                     if not os.path.isdir(plot_dir): os.mkdir(plot_dir)
                     plot_hparam_dir = 'pred_plot_'
-                    for name, val in self.PARAMS_NAMED:
+                    for name, val in self.PARAMS_ALIAS_NAMED:
                         plot_hparam_dir += str(name) + '_' + str(val) + '_'
                     plot_dir = os.path.join(plot_dir, plot_hparam_dir)
                     if not os.path.isdir(plot_dir): os.mkdir(plot_dir)

@@ -89,15 +89,18 @@ def cmd(dataset_name, alg_name, dataset_path,
         params_named, restart, num_epochs, save_dir, train_eval = params
         def_opts_local = def_opts
         print('params_named start')
+        params_named = [(name, val) for name, val in params_named]
         params_alias_named = [(hparams_aliases[name], val) for name, val in params_named]
-        for name, val in params_named:
-            print(name, val, '-------------')
-            def_opts_local = def_opts_local.set(name, val)
-        print('params_named end')
+        #params_named_print_ = params_named
+        #for name, val in params_named_print_:
+        #    print(name, val, '-------------')
+        #    def_opts_local = def_opts_local.set(name, val)
+        #print('params_named end')
         rmtpp_decrnn_mdl = rmtpp_decrnn.rmtpp_decrnn_core.RMTPP_DECRNN(
             sess=sess,
             num_categories=data['num_categories'],
-            params_named=params_alias_named,
+            params_named=params_named,
+            params_alias_named=params_alias_named,
             #hidden_layer_size=hidden_layer_size, # A hyperparameter
             alg_name=alg_name,
             save_dir=save_dir,
