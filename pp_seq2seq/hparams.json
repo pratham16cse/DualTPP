@@ -127,11 +127,19 @@
 	"zero_pred":
 	{
 		"hidden_layer_size": [16],
+	        "learning_rate": [0.001],
+		"num_extra_layer": [0],
+		"rnn_reg_param": [0.1],
+		"extlyr_reg_param": [0.1],
 		"wt_hparam": [1.0]
 	},
 	"average_gap_pred":
 	{
 		"hidden_layer_size": [16],
+	        "learning_rate": [0.001],
+		"num_extra_layer": [0],
+		"rnn_reg_param": [0.1],
+		"extlyr_reg_param": [0.1],
 		"wt_hparam": [1.0]
 	}
 }

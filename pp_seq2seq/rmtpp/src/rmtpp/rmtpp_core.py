@@ -9,7 +9,8 @@ import matplotlib
 matplotlib.use('agg')
 import matplotlib.pyplot as plt
 import time
-from collections import OrderedDict
+from collections import OrderedDict, Counter
+from operator import itemgetter
 
 ETH = 10.0
 __EMBED_SIZE = 4
@@ -384,7 +385,7 @@ class RMTPP:
                                 WT = tf.matmul(state, self.Vw) + base_intensity_bw
                                 WT = get_WT_constraint()(WT)
                                 WT = tf.clip_by_value(WT, 0.0, 10.0)
-                            elif self.ALG_NAME in ['rmtpp', 'rmtpp_mode', 'rmtpp_splusintensity']:
+                            elif self.ALG_NAME in ['rmtpp', 'rmtpp_mode', 'rmtpp_splusintensity', 'zero_pred', 'average_gap_pred']:
                                 WT = self.wt
                             elif self.ALG_NAME in ['rmtpp_whparam', 'rmtpp_mode_whparam']:
                                 WT = self.wt_hparam
@@ -1043,6 +1044,50 @@ class RMTPP:
     def predict(self, event_in_seq, time_in_seq, decoder_length, plt_tru_gaps, single_threaded=False, plot_dir=False):
         """Treats the entire dataset as a single batch and processes it."""
 
+
+        if self.ALG_NAME in ['zero_pred']:
+            start_time = time.time()
+            event_out_seq = np.tile(event_in_seq[:, -1:], [1, self.DEC_LEN])
+            time_out_seq = np.tile(time_in_seq[:, -1:], [1, self.DEC_LEN])
+            all_event_preds_softmax = np.zeros((len(event_in_seq), decoder_length, self.NUM_CATEGORIES))
+            for i, row in enumerate(event_in_seq):
+                last_event = row[-1]
+                events_id2freq = Counter(row)
+                max_freq = max(events_id2freq.items(), key=itemgetter(1))[1]
+                events_id2freq[last_event] = max_freq * 1.1
+                event_ids, event_freqs = events_id2freq.keys(), events_id2freq.values()
+                event_ids = np.array(list(event_ids))-1
+                event_freqs = list(event_freqs)
+                event_preds_softmax = np.zeros((1, 1, self.NUM_CATEGORIES))
+                event_preds_softmax[0, 0, event_ids] = event_freqs
+                all_event_preds_softmax[i] = np.repeat(event_preds_softmax, decoder_length, axis=1)
+            end_time = time.time()
+            inference_time = end_time - start_time
+            return time_out_seq, event_out_seq, all_event_preds_softmax, inference_time
+
+        if self.ALG_NAME in ['average_gap_pred']:
+            start_time = time.time()
+            event_out_seq = [max(Counter(row).items(), key=itemgetter(1))[0] for row in event_in_seq]
+            event_out_seq = np.expand_dims(np.array(event_out_seq), axis=1)
+            event_out_seq = np.tile(event_out_seq, [1, self.DEC_LEN])
+            input_gaps = time_in_seq[:, 1:] - time_in_seq[:, :-1]
+            output_gaps = np.mean(input_gaps, axis=1)
+            output_gaps = np.expand_dims(np.array(output_gaps), axis=1)
+            output_gaps = np.tile(output_gaps, [1, self.DEC_LEN])
+            output_gaps = np.cumsum(output_gaps, axis=1)
+            time_out_seq = time_in_seq[:, -1:] + output_gaps
+            all_event_preds_softmax = np.zeros((len(event_in_seq), decoder_length, self.NUM_CATEGORIES))
+            for i, row in enumerate(event_in_seq):
+                event_ids, event_freqs = Counter(row).keys(), Counter(row).values()
+                event_ids = np.array(list(event_ids))-1
+                event_freqs = list(event_freqs)
+                event_preds_softmax = np.zeros((1, 1, self.NUM_CATEGORIES))
+                event_preds_softmax[0, 0, event_ids] = event_freqs
+                all_event_preds_softmax[i] = np.repeat(event_preds_softmax, decoder_length, axis=1)
+            end_time = time.time()
+            inference_time = end_time - start_time
+            return time_out_seq, event_out_seq, all_event_preds_softmax, inference_time
+
         start_time = time.time()
         def get_wt_constraint():
             if self.CONSTRAINTS == 'default':
@@ -1227,7 +1272,10 @@ class RMTPP:
         else:
             gap_mae = None
 
-        mrr = MRR(event_preds_softmax, event_true)
+        if event_preds_softmax is not None:
+            mrr = MRR(event_preds_softmax, event_true)
+        else:
+            mrr = None
         return mae, total_valid, acc, gap_mae, mrr
 
     def predict_test(self, data, single_threaded=False):
