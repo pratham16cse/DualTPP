@@ -44,7 +44,7 @@
 	{
 		"hidden_layer_size": [32],
 	        "learning_rate": [0.001],
-		"num_extra_layer": [2],
+		"num_extra_dec_layer": [2],
 		"rnn_reg_param": [0.1, 1.0, 10.0, 100.0],
 		"extlyr_reg_param": [0.1],
 		"wt_hparam": [1.0]
