@@ -64,6 +64,7 @@ def_opts = Deco.Options(
 
     wt_hparam=1.0,
 
+
     embed_size=__EMBED_SIZE,
     Wem=lambda num_categories: np.random.RandomState(42).randn(num_categories, __EMBED_SIZE) * 0.01,
 
@@ -144,6 +145,13 @@ class RMTPP_DECRNN:
         self.DEVICE_GPU = device_gpu
 
         self.wt_hparam = self.PARAMS_NAMED['wt_hparam'] #wt_hparam
+
+        self.RNN_REG_PARAM = self.PARAMS_NAMED['rnn_reg_param'] #rnn_reg_param
+        self.EXTLYR_REG_PARAM = self.PARAMS_NAMED['extlyr_reg_param'] #extlyr_reg_param
+        print('RNN_REG_PARAM:', self.RNN_REG_PARAM)
+        print('EXTLYR_REG_PARAM:', self.EXTLYR_REG_PARAM)
+        self.RNN_REGULARIZER = tf.contrib.layers.l2_regularizer(scale=self.RNN_REG_PARAM)
+        self.EXTLYR_REGULARIZER = tf.contrib.layers.l2_regularizer(scale=self.EXTLYR_REG_PARAM)
 
         self.PATIENCE = patience
         self.STOP_CRITERIA = stop_criteria
@@ -227,55 +235,69 @@ class RMTPP_DECRNN:
                     self.Wt = tf.get_variable(name='Wt',
                                               shape=(1, self.HIDDEN_LAYER_SIZE),
                                               dtype=self.FLOAT_TYPE,
+                                              regularizer=self.RNN_REGULARIZER,
                                               initializer=tf.constant_initializer(Wt(self.HIDDEN_LAYER_SIZE)))
 
                     self.Wem = tf.get_variable(name='Wem', shape=(self.NUM_CATEGORIES, self.EMBED_SIZE),
                                                dtype=self.FLOAT_TYPE,
+                                               regularizer=self.RNN_REGULARIZER,
                                                initializer=tf.constant_initializer(Wem(self.NUM_CATEGORIES)))
                     self.Wh = tf.get_variable(name='Wh', shape=(self.HIDDEN_LAYER_SIZE, self.HIDDEN_LAYER_SIZE),
                                               dtype=self.FLOAT_TYPE,
+                                              regularizer=self.RNN_REGULARIZER,
                                               initializer=tf.constant_initializer(Wh(self.HIDDEN_LAYER_SIZE)))
                     self.bh = tf.get_variable(name='bh', shape=(1, self.HIDDEN_LAYER_SIZE),
                                               dtype=self.FLOAT_TYPE,
+                                              regularizer=self.RNN_REGULARIZER,
                                               initializer=tf.constant_initializer(bh(self.HIDDEN_LAYER_SIZE)))
 
                 with tf.variable_scope('decoder_state'):
                     self.Ws = tf.get_variable(name='Ws', shape=(self.HIDDEN_LAYER_SIZE, self.HIDDEN_LAYER_SIZE),
                                                   dtype=self.FLOAT_TYPE,
+                                                  regularizer=self.RNN_REGULARIZER,
                                                   initializer=tf.constant_initializer(Ws(self.HIDDEN_LAYER_SIZE)))
                     self.bs = tf.get_variable(name='bs', shape=(1, self.HIDDEN_LAYER_SIZE),
                                                   dtype=self.FLOAT_TYPE,
+                                                  regularizer=self.RNN_REGULARIZER,
                                                   initializer=tf.constant_initializer(bs(self.HIDDEN_LAYER_SIZE)))
 
 
                 with tf.variable_scope('output'):
                     self.wt = tf.get_variable(name='wt', shape=(1, 1),
                                               dtype=self.FLOAT_TYPE,
+                                              regularizer=self.RNN_REGULARIZER,
                                               initializer=tf.constant_initializer(wt),
                                               constraint=get_wt_constraint())
 
                     self.Wy = tf.get_variable(name='Wy', shape=(self.EMBED_SIZE, self.HIDDEN_LAYER_SIZE),
                                               dtype=self.FLOAT_TYPE,
+                                              regularizer=self.RNN_REGULARIZER,
                                               initializer=tf.constant_initializer(Wy(self.HIDDEN_LAYER_SIZE)))
 
                     # The first column of Vy is merely a placeholder (will not be trained).
                     self.Vy = tf.get_variable(name='Vy', shape=(self.HIDDEN_LAYER_SIZE, self.NUM_CATEGORIES),
                                               dtype=self.FLOAT_TYPE,
+                                              regularizer=self.RNN_REGULARIZER,
                                               initializer=tf.constant_initializer(Vy(self.HIDDEN_LAYER_SIZE, self.NUM_CATEGORIES)))
                     self.Vt = tf.get_variable(name='Vt', shape=(self.DEC_LEN, self.DEC_STATE_SIZE),
                                               dtype=self.FLOAT_TYPE,
+                                              regularizer=self.RNN_REGULARIZER,
                                               initializer=tf.constant_initializer(Vt(self.DEC_STATE_SIZE, self.DEC_LEN)))
                     self.bt = tf.get_variable(name='bt', shape=(1, self.DEC_LEN),
                                               dtype=self.FLOAT_TYPE,
+                                              regularizer=self.RNN_REGULARIZER,
                                               initializer=tf.constant_initializer(bt(self.DEC_LEN)))
                     self.bk = tf.get_variable(name='bk', shape=(1, self.NUM_CATEGORIES),
                                               dtype=self.FLOAT_TYPE,
+                                              regularizer=self.RNN_REGULARIZER,
                                               initializer=tf.constant_initializer(bk(self.DEC_STATE_SIZE, num_categories)))
                     self.Vw = tf.get_variable(name='Vw', shape=(self.DEC_LEN, self.DEC_STATE_SIZE),
                                               dtype=self.FLOAT_TYPE,
+                                              regularizer=self.RNN_REGULARIZER,
                                               initializer=tf.constant_initializer(Vw(self.DEC_STATE_SIZE, self.DEC_LEN)))
                     self.bw = tf.get_variable(name='bw', shape=(1, self.DEC_LEN),
                                               dtype=self.FLOAT_TYPE,
+                                              regularizer=self.RNN_REGULARIZER,
                                               initializer=tf.constant_initializer(bw(self.DEC_LEN)))
 
                     if self.SHARE_DEC_PARAMS:
@@ -419,7 +441,9 @@ class RMTPP_DECRNN:
                                                                 self.HIDDEN_LAYER_SIZE,
                                                                 name=name,
                                                                 kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed),
-                                                                activation=tf.nn.relu)
+                                                                activation=tf.nn.relu,
+                                                                kernel_regularizer=self.EXTLYR_REGULARIZER,
+                                                                bias_regularizer=self.EXTLYR_REGULARIZER)
                             # if self.CONCAT_FINAL_ENC_STATE:
                             #     new_state = tf.concat([new_state_, self.final_state], axis=-1)
                             # else:
@@ -487,6 +511,14 @@ class RMTPP_DECRNN:
 
                     self.mark_LLs = tf.squeeze(tf.stack(self.mark_LLs, axis=1), axis=-1)
                     self.time_LLs = log_f_star
+
+                    reg_variables = tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)
+                    print('REGULARIZATION VARIABLES:', reg_variables)
+                    if self.RNN_REG_PARAM:
+                        reg_term = tf.contrib.layers.apply_regularization(self.RNN_REGULARIZER, reg_variables)
+                    if self.EXTLYR_REG_PARAM:
+                        reg_term_dense_layers = tf.losses.get_regularization_loss()
+
                     step_LLs = self.time_LLs
                     if self.MARK_LOSS:
                         step_LLs += self.mark_LLs
@@ -507,6 +539,11 @@ class RMTPP_DECRNN:
                                  step_LLs,
                                  tf.zeros(shape=(self.inf_batch_size, self.DEC_LEN)))
                     )
+                    if self.RNN_REG_PARAM:
+                        self.loss = self.loss + reg_term
+                    if self.EXTLYR_REG_PARAM:
+                        self.loss = self.loss + reg_term_dense_layers
+
                     self.time_loss = (-1) * tf.reduce_sum(
                         tf.where(self.events_out > 0,
                                  self.time_LLs,
