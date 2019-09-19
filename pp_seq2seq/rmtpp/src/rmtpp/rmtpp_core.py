@@ -1049,21 +1049,32 @@ class RMTPP:
 
         for pred_idx in range(0, decoder_length):
             print('pred_idx', pred_idx, decoder_length)
+
+            bptt_range = range(pred_idx, self.BPTT)
             if pred_idx == 0:
-                bptt_range = range(pred_idx, (pred_idx + self.BPTT))
                 bptt_event_in = event_in_seq[:, bptt_range]
                 bptt_time_in = time_in_seq[:, bptt_range]
             else:
-                #bptt_event_in = event_in_seq[:, self.BPTT-1+pred_idx]
-                bptt_event_in = np.asarray(all_event_preds[-1])
-                bptt_event_in = np.concatenate([np.expand_dims(bptt_event_in, axis=-1),
-                                                np.zeros((bptt_event_in.shape[0], self.BPTT-1))],
-                                                axis=-1)
-                #bptt_time_in = time_in_seq[:, self.BPTT-1+pred_idx]
-                bptt_time_in = np.asarray(all_time_preds[-1])
-                bptt_time_in = np.concatenate([np.expand_dims(bptt_time_in, axis=-1),
-                                               np.zeros((bptt_time_in.shape[0], self.BPTT-1))],
-                                               axis=-1)
+                bptt_time_in = np.asarray(all_time_preds).T
+                bptt_time_in = np.concatenate([time_in_seq[:, bptt_range], bptt_time_in], axis=-1)
+                bptt_event_in = np.asarray(all_event_preds).T
+                bptt_event_in = np.concatenate([event_in_seq[:, bptt_range], bptt_event_in], axis=-1)
+
+            # if pred_idx == 0:
+            #     bptt_range = range(pred_idx, (pred_idx + self.BPTT))
+            #     bptt_event_in = event_in_seq[:, bptt_range]
+            #     bptt_time_in = time_in_seq[:, bptt_range]
+            # else:
+            #     #bptt_event_in = event_in_seq[:, self.BPTT-1+pred_idx]
+            #     bptt_event_in = np.asarray(all_event_preds[-1])
+            #     bptt_event_in = np.concatenate([np.expand_dims(bptt_event_in, axis=-1),
+            #                                     np.zeros((bptt_event_in.shape[0], self.BPTT-1))],
+            #                                     axis=-1)
+            #     #bptt_time_in = time_in_seq[:, self.BPTT-1+pred_idx]
+            #     bptt_time_in = np.asarray(all_time_preds[-1])
+            #     bptt_time_in = np.concatenate([np.expand_dims(bptt_time_in, axis=-1),
+            #                                    np.zeros((bptt_time_in.shape[0], self.BPTT-1))],
+            #                                    axis=-1)
 
             if pred_idx > 0:
                 initial_time = event_in_seq[:, pred_idx - 1]
