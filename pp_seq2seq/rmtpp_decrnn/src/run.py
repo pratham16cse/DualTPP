@@ -7,6 +7,7 @@ from operator import itemgetter
 import numpy as np
 import os
 import json
+import multiprocessing as MP
 from itertools import product
 import matplotlib
 matplotlib.use('agg')
