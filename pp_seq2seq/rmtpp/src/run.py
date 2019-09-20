@@ -48,11 +48,12 @@ def_opts = rmtpp.rmtpp_core.def_opts
 @click.option('--epsilon', 'epsilon', help='threshold for epsilon-stopping-criteria', default=def_opts.epsilon)
 @click.option('--num-extra-layer', 'num_extra_layer', help='Number of extra layer on top of hidden state ', default=def_opts.num_extra_layer)
 @click.option('--mark-loss/--no-mark-loss', 'mark_loss', help='If true, mark_LL is also added to the loss', default=def_opts.mark_loss)
+@click.option('--parallel-hparam/--no-parallel-hparam', 'parallel_hparam', help='If true, hparam will run in parallel', default=True)
 def cmd(dataset_name, alg_name, dataset_path,
         event_train_file, time_train_file, event_dev_file, time_dev_file, event_test_file, time_test_file,
         save_dir, summary_dir, num_epochs, restart, train_eval, test_eval, scale,
         batch_size, bptt, decoder_length, learning_rate, cpu_only, normalization, constraints,
-        patience, stop_criteria, epsilon, num_extra_layer, mark_loss):
+        patience, stop_criteria, epsilon, num_extra_layer, mark_loss, parallel_hparam):
     """Read data from EVENT_TRAIN_FILE, TIME_TRAIN_FILE and try to predict the values in EVENT_TEST_FILE, TIME_TEST_FILE."""
 
     data = rmtpp.utils.read_seq2seq_data(
@@ -156,28 +157,67 @@ def cmd(dataset_name, alg_name, dataset_path,
             # TODO(PD) Run hyperparameter tuning in parallel
             #results  = pp.ProcessPool().map(hyperparameter_worker, hidden_layer_size_list)
             results = []
-            param_names, param_values = zip(*hparams[alg_name].items())
-            for params in product(*param_values):
-                checkp_dir = old_save_dir+'/'+str(decoder_length_run[0])
-                checkp_dir_hparams = ''
-                params_named = zip(param_names, params)
-                for name, val in params_named:
-                    print(name, hparams_aliases[name], val)
-                    checkp_dir_hparams = checkp_dir_hparams+hparams_aliases[name]+'_'+str(val)+'_'
-                checkp_dir = checkp_dir + '/' + checkp_dir_hparams
-                state_restart=True
-                if dec_len==decoder_length_run[0]:
-                    #checkp_dir=None
-                    state_restart = False
-                print("check dir ", checkp_dir)
-                params_named = tuple([zip(param_names, params)])
-                args = (params_named) + (state_restart, num_epochs, save_dir, train_eval)
-                rmtpp_mdl = model_creator(args)
-                result = hyperparameter_worker(args, rmtpp_mdl, dec_len, checkp_dir)
-                for name, val in zip(param_names, params):
-                    result[name] = val
-                results.append(result)
-                # print(result['best_test_mae'], result['best_test_acc'])
+
+            if parallel_hparam:
+                global hparam_loop
+                def hparam_loop(all_params):
+                    loop_idx, (param_names, params) = all_params
+                    print('params', params, loop_idx)
+                    checkp_dir = old_save_dir+'/'+str(decoder_length_run[0])
+                    checkp_dir_hparams = ''
+                    params_named = zip(param_names, params)
+                    for name, val in params_named:
+                        print(name, hparams_aliases[name], val)
+                        checkp_dir_hparams = checkp_dir_hparams+hparams_aliases[name]+'_'+str(val)+'_'
+                    checkp_dir = checkp_dir + '/' + checkp_dir_hparams
+                    state_restart=True
+                    if dec_len==decoder_length_run[0]:
+                        #checkp_dir=None
+                        state_restart = False
+                    print("check dir ", checkp_dir)
+                    params_named = tuple([zip(param_names, params)])
+                    args = (params_named) + (state_restart, num_epochs, save_dir, train_eval)
+                    rmtpp_mdl = model_creator(args)
+                    result = hyperparameter_worker(args, rmtpp_mdl, dec_len, checkp_dir)
+                    for name, val in zip(param_names, params):
+                        result[name] = val
+                    return result
+                    # results.append(result)
+
+                param_names, param_values = zip(*hparams[alg_name].items())
+
+                param_values_lst=list()
+                param_names_lst=list()
+                for element in product(*param_values):
+                    param_values_lst.append(element)
+                    param_names_lst.append(param_names)
+
+                with MP.Pool() as pool:
+                        results = pool.map(hparam_loop, enumerate(zip(param_names_lst, param_values_lst)))
+
+            else:
+                param_names, param_values = zip(*hparams[alg_name].items())
+                for params in product(*param_values):
+                    checkp_dir = old_save_dir+'/'+str(decoder_length_run[0])
+                    checkp_dir_hparams = ''
+                    params_named = zip(param_names, params)
+                    for name, val in params_named:
+                        print(name, hparams_aliases[name], val)
+                        checkp_dir_hparams = checkp_dir_hparams+hparams_aliases[name]+'_'+str(val)+'_'
+                    checkp_dir = checkp_dir + '/' + checkp_dir_hparams
+                    state_restart=True
+                    if dec_len==decoder_length_run[0]:
+                        #checkp_dir=None
+                        state_restart = False
+                    print("check dir ", checkp_dir)
+                    params_named = tuple([zip(param_names, params)])
+                    args = (params_named) + (state_restart, num_epochs, save_dir, train_eval)
+                    rmtpp_mdl = model_creator(args)
+                    result = hyperparameter_worker(args, rmtpp_mdl, dec_len, checkp_dir)
+                    for name, val in zip(param_names, params):
+                        result[name] = val
+                    results.append(result)
+                    # print(result['best_test_mae'], result['best_test_acc'])
 
             best_result_idx, _ = min(enumerate([result['best_dev_mae'] for result in results]), key=itemgetter(1))
             best_result = results[best_result_idx]
