@@ -2,7 +2,7 @@
 	"rmtpp":
 	{
 		"hidden_layer_size": [16, 32, 64, 128],
-	        "learning_rate": [0.001],
+	        "learning_rate": [0.001, 0.005],
 		"num_extra_layer": [0, 1, 2],
 		"wt_hparam": [1.0]
 	},
@@ -41,7 +41,7 @@
 	"rmtpp_decrnn":
 	{
 		"hidden_layer_size": [16, 32, 64, 128],
-	        "learning_rate": [0.001],
+	        "learning_rate": [0.001, 0.005],
 		"num_extra_dec_layer": [0, 1, 2],
 		"wt_hparam": [1.0]
 	},
