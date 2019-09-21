@@ -661,7 +661,7 @@ class RMTPP_DECRNN:
         If with_evals is an integer, then that many elements from the test set
         will be tested.
         """
-        create_dir(self.SAVE_DIR)
+        # create_dir(self.SAVE_DIR)
         ckpt = tf.train.get_checkpoint_state(restore_path)
 
         # TODO: Why does this create new nodes in the graph? Possibly memory leak?

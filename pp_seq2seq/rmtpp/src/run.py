@@ -159,6 +159,9 @@ def cmd(dataset_name, alg_name, dataset_path,
             #results  = pp.ProcessPool().map(hyperparameter_worker, hidden_layer_size_list)
             results = []
 
+            if not os.path.exists(save_dir):
+                os.makedirs(save_dir)
+
             if parallel_hparam:
                 global hparam_loop
                 def hparam_loop(all_params):
