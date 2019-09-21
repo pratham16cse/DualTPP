@@ -1066,7 +1066,7 @@ class RMTPP:
                                                axis=-1)
 
             if pred_idx > 0:
-                initial_time = event_in_seq[:, pred_idx - 1]
+                initial_time = time_in_seq[:, pred_idx - 1]
             else:
                 initial_time = np.zeros(bptt_time_in.shape[0])
 
