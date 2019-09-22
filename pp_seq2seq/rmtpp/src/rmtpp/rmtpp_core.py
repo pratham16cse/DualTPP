@@ -60,6 +60,7 @@ def_opts = Deco.Options(
 
     wt_hparam=1.0,
 
+    rnn_cell_type='manual',
 
     embed_size=__EMBED_SIZE,
     Wem=lambda num_categories: np.random.RandomState(42).randn(num_categories, __EMBED_SIZE) * 0.01,
@@ -115,7 +116,7 @@ class RMTPP:
                  device_gpu, device_cpu, summary_dir, cpu_only, constraints,
                  patience, stop_criteria, epsilon, num_extra_layer, mark_loss,
                  Wt, Wem, Wh, bh, Ws, bs, wt, Wy, Vy, Vt, Vw, bk, bt, bw, wt_hparam,
-                 plot_pred_dev, plot_pred_test):
+                 plot_pred_dev, plot_pred_test, rnn_cell_type):
         self.PARAMS_NAMED = OrderedDict(params_named)
         self.PARAMS_ALIAS_NAMED = params_alias_named
 
@@ -140,6 +141,8 @@ class RMTPP:
         self.DEVICE_GPU = device_gpu
 
         self.wt_hparam = self.PARAMS_NAMED['wt_hparam'] #wt_hparam
+
+        self.RNN_CELL_TYPE = rnn_cell_type
 
         self.RNN_REG_PARAM = self.PARAMS_NAMED['rnn_reg_param'] #rnn_reg_param
         self.EXTLYR_REG_PARAM = self.PARAMS_NAMED['extlyr_reg_param'] #extlyr_reg_param
@@ -305,10 +308,11 @@ class RMTPP:
 
                 # Make graph
                 # RNNcell = RNN_CELL_TYPE(HIDDEN_LAYER_SIZE)
-                cell = tf.contrib.rnn.BasicLSTMCell(self.HIDDEN_LAYER_SIZE, forget_bias=1.0)
-                self.cell = tf.contrib.rnn.MultiRNNCell([cell for _ in range(self.NUM_RNN_LAYERS)],
-                                                        state_is_tuple=True)
-                internal_state = self.cell.zero_state(self.inf_batch_size, dtype = tf.float32)
+                if self.RNN_CELL_TYPE == 'lstm':
+                    cell = tf.contrib.rnn.BasicLSTMCell(self.HIDDEN_LAYER_SIZE, forget_bias=1.0)
+                    self.cell = tf.contrib.rnn.MultiRNNCell([cell for _ in range(self.NUM_RNN_LAYERS)],
+                                                            state_is_tuple=True)
+                    internal_state = self.cell.zero_state(self.inf_batch_size, dtype = tf.float32)
 
                 # Initial state for GRU cells
                 self.initial_state = state = tf.zeros([self.inf_batch_size, self.HIDDEN_LAYER_SIZE],
@@ -354,17 +358,18 @@ class RMTPP:
 
                         with tf.variable_scope('state_recursion', reuse=tf.AUTO_REUSE):
 
-                            inputs = tf.concat([events_embedded, delta_t_prev], axis=-1)
-                            new_state, internal_state = self.cell(inputs,  internal_state)
-
-                            #new_state = tf.tanh(
-                            #    tf.matmul(state, self.Wh) +
-                            #    tf.matmul(events_embedded, self.Wy) +
-                            #    # Two ways of interpretting this term
-                            #    (tf.matmul(delta_t_prev, self.Wt) if type_delta_t else tf.matmul(time_2d, self.Wt)) +
-                            #    tf.matmul(ones_2d, self.bh),
-                            #    name='h_t'
-                            #)
+                            if self.RNN_CELL_TYPE == 'manual':
+                                new_state = tf.tanh(
+                                    tf.matmul(state, self.Wh) +
+                                    tf.matmul(events_embedded, self.Wy) +
+                                    # Two ways of interpretting this term
+                                    (tf.matmul(delta_t_prev, self.Wt) if type_delta_t else tf.matmul(time_2d, self.Wt)) +
+                                    tf.matmul(ones_2d, self.bh),
+                                    name='h_t'
+                                )
+                            elif self.RNN_CELL_TYPE == 'lstm':
+                                inputs = tf.concat([events_embedded, delta_t_prev], axis=-1)
+                                new_state, internal_state = self.cell(inputs,  internal_state)
 
                             if self.NUM_EXTRA_LAYER:
                                 names = ['hidden_layer_'+str(hl_id) for hl_id in range(1, self.NUM_EXTRA_LAYER+1)]

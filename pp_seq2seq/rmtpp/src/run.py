@@ -48,11 +48,12 @@ def_opts = rmtpp.rmtpp_core.def_opts
 @click.option('--epsilon', 'epsilon', help='threshold for epsilon-stopping-criteria', default=def_opts.epsilon)
 @click.option('--num-extra-layer', 'num_extra_layer', help='Number of extra layer on top of hidden state ', default=def_opts.num_extra_layer)
 @click.option('--mark-loss/--no-mark-loss', 'mark_loss', help='If true, mark_LL is also added to the loss', default=def_opts.mark_loss)
+@click.option('--rnn-cell-type', 'rnn_cell_type', help='Type of RNN cell: manual, lstm', default=def_opts.rnn_cell_type)
 def cmd(dataset_name, alg_name, dataset_path,
         event_train_file, time_train_file, event_dev_file, time_dev_file, event_test_file, time_test_file,
         save_dir, summary_dir, num_epochs, restart, train_eval, test_eval, scale,
         batch_size, bptt, decoder_length, learning_rate, cpu_only, normalization, constraints,
-        patience, stop_criteria, epsilon, num_extra_layer, mark_loss):
+        patience, stop_criteria, epsilon, num_extra_layer, mark_loss, rnn_cell_type):
     """Read data from EVENT_TRAIN_FILE, TIME_TRAIN_FILE and try to predict the values in EVENT_TEST_FILE, TIME_TEST_FILE."""
 
     data = rmtpp.utils.read_seq2seq_data(
@@ -111,6 +112,7 @@ def cmd(dataset_name, alg_name, dataset_path,
             epsilon=epsilon,
             #num_extra_layer=num_extra_layer,
             mark_loss=mark_loss,
+            rnn_cell_type=rnn_cell_type,
             _opts=def_opts_local
         )
 
