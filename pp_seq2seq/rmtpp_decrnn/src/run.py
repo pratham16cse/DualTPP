@@ -63,6 +63,8 @@ def cmd(dataset_name, alg_name, dataset_path,
         mark_triggers_time, mark_loss, parallel_hparam):
     """Read data from EVENT_TRAIN_FILE, TIME_TRAIN_FILE and try to predict the values in EVENT_TEST_FILE, TIME_TEST_FILE."""
 
+    clear_clutter = True
+
     data = rmtpp_decrnn.utils.read_seq2seq_data(
         event_train_file=event_train_file,
         event_dev_file=event_dev_file,
@@ -92,6 +94,13 @@ def cmd(dataset_name, alg_name, dataset_path,
                 with open(fname) as infile:
                     for line in infile:
                         outfile.write(line)
+
+        if clear_clutter:
+            for x in decoder_length_run:
+                for y in range(total_files):
+                    file_del = old_save_dir+'/'+str(x)+'_'+str(y)+'_print_dump.txt'
+                    if os.path.isfile(file_del):
+                        os.remove(file_del)
 
     def model_creator(params):
         tf.reset_default_graph()
