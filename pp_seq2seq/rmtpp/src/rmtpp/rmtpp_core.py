@@ -772,7 +772,7 @@ class RMTPP:
                 dev_time_in_seq = training_data['dev_time_in_seq']
                 gaps = dev_time_preds - np.concatenate([dev_time_in_seq[:, -1:], dev_time_preds[:, :-1]], axis=-1)
                 unnorm_gaps = gaps * training_data['devND']
-                dev_time_preds = np.cumsum(unnorm_gaps, axis=1) + training_data['dev_actual_time_in_seq']
+                dev_time_preds = np.cumsum(unnorm_gaps, axis=1) + training_data['dev_actual_time_in_seq'] - training_data['devIG']
                 tru_gaps = dev_time_out_seq - np.concatenate([training_data['dev_actual_time_in_seq'], dev_time_out_seq[:, :-1]], axis=1)
 
                 dev_mae, dev_total_valid, dev_acc, dev_gap_mae, dev_mrr = self.eval(dev_time_preds, dev_time_out_seq,
@@ -786,7 +786,8 @@ class RMTPP:
                     random_plot_number = 4
                     true_gaps_plot = tru_gaps[random_plot_number,:]
                     pred_gaps_plot = unnorm_gaps[random_plot_number,:]
-                    inp_tru_gaps = np.concatenate([training_data['dev_time_in_seq'][random_plot_number, 1:], training_data['dev_time_out_seq'][random_plot_number, :1]]) - training_data['dev_time_in_seq'][random_plot_number,:]
+                    inp_tru_gaps = training_data['dev_time_in_seq'][random_plot_number, 1:] \
+                                   - training_data['dev_time_in_seq'][random_plot_number, :-1]
                     inp_tru_gaps = inp_tru_gaps * training_data['devND'][random_plot_number]
                     true_gaps_plot = list(inp_tru_gaps) + list(true_gaps_plot)
                     pred_gaps_plot = list(inp_tru_gaps) + list(pred_gaps_plot)
@@ -825,7 +826,7 @@ class RMTPP:
                 gaps = test_time_preds - np.concatenate([test_time_in_seq[:, -1:], test_time_preds[:, :-1]], axis=-1)
                 tru_gaps = test_time_out_seq - np.concatenate([training_data['test_actual_time_in_seq'], test_time_out_seq[:, :-1]], axis=-1)
                 unnorm_gaps = gaps * training_data['testND']
-                test_time_preds = np.cumsum(unnorm_gaps, axis=1) + training_data['test_actual_time_in_seq']
+                test_time_preds = np.cumsum(unnorm_gaps, axis=1) + training_data['test_actual_time_in_seq'] - training_data['testIG']
 
                 test_mae, test_total_valid, test_acc, test_gap_mae, test_mrr = self.eval(test_time_preds, test_time_out_seq,
                                                                                          test_event_preds, training_data['test_event_out_seq'],
@@ -838,7 +839,8 @@ class RMTPP:
                     random_plot_number = 4
                     true_gaps_plot = tru_gaps[random_plot_number,:]
                     pred_gaps_plot = unnorm_gaps[random_plot_number,:]
-                    inp_tru_gaps = np.concatenate([training_data['test_time_in_seq'][random_plot_number, 1:], training_data['test_time_out_seq'][random_plot_number, :1]]) - training_data['test_time_in_seq'][random_plot_number,:]
+                    inp_tru_gaps = training_data['test_time_in_seq'][random_plot_number, 1:] \
+                                   - training_data['test_time_in_seq'][random_plot_number, :-1]
                     inp_tru_gaps = inp_tru_gaps * training_data['testND'][random_plot_number]
                     true_gaps_plot = list(inp_tru_gaps) + list(true_gaps_plot)
                     pred_gaps_plot = list(inp_tru_gaps) + list(pred_gaps_plot)
@@ -947,7 +949,7 @@ class RMTPP:
             gaps = dev_time_preds - np.concatenate([dev_time_in_seq[:, -1:], dev_time_preds[:, :-1]], axis=-1)
             unnorm_gaps = gaps * training_data['devND']
             unnorm_gaps = np.cumsum(unnorm_gaps, axis=1)
-            dev_time_preds = unnorm_gaps + training_data['dev_actual_time_in_seq']
+            dev_time_preds = unnorm_gaps + training_data['dev_actual_time_in_seq'] - training_data['devIG']
             
             dev_mae, dev_total_valid, dev_acc, dev_gap_mae, dev_mrr = self.eval(dev_time_preds, dev_time_out_seq,
                                                                                 dev_event_preds, training_data['dev_event_out_seq'],
@@ -972,7 +974,7 @@ class RMTPP:
             unnorm_gaps = gaps * training_data['testND']
             unnorm_gaps = np.cumsum(unnorm_gaps, axis=1)
             tru_gaps = test_time_out_seq - np.concatenate([training_data['test_actual_time_in_seq'], test_time_out_seq[:, :-1]], axis=1)
-            test_time_preds = unnorm_gaps + training_data['test_actual_time_in_seq']
+            test_time_preds = unnorm_gaps + training_data['test_actual_time_in_seq'] - training_data['testIG']
 
             test_mae, test_total_valid, test_acc, test_gap_mae, test_mrr = self.eval(test_time_preds, test_time_out_seq,
                                                                                      test_event_preds, training_data['test_event_out_seq'],
@@ -1147,10 +1149,12 @@ class RMTPP:
                                                np.zeros((bptt_time_in.shape[0], self.BPTT-1))],
                                                axis=-1)
 
-            if pred_idx > 0:
-                initial_time = event_in_seq[:, pred_idx - 1]
-            else:
+            if pred_idx == 0:
                 initial_time = np.zeros(bptt_time_in.shape[0])
+            elif pred_idx == 1:
+                initial_time = time_in_seq[:, -1]
+            elif pred_idx > 1:
+                initial_time = all_time_preds[-2]
 
             feed_dict = {
                 self.initial_state: cur_state,
