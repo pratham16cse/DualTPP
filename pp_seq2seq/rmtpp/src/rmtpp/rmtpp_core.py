@@ -120,6 +120,7 @@ class RMTPP:
         self.PARAMS_ALIAS_NAMED = params_alias_named
 
         self.HIDDEN_LAYER_SIZE = self.PARAMS_NAMED['hidden_layer_size'] #hidden_layer_size
+        self.NUM_RNN_LAYERS = self.PARAMS_NAMED['num_rnn_layers']
         self.BATCH_SIZE = batch_size
         self.LEARNING_RATE = self.PARAMS_NAMED['learning_rate'] #learning_rate
         self.MOMENTUM = momentum
@@ -304,6 +305,10 @@ class RMTPP:
 
                 # Make graph
                 # RNNcell = RNN_CELL_TYPE(HIDDEN_LAYER_SIZE)
+                cell = tf.contrib.rnn.BasicLSTMCell(self.HIDDEN_LAYER_SIZE, forget_bias=1.0)
+                self.cell = tf.contrib.rnn.MultiRNNCell([cell for _ in range(self.NUM_RNN_LAYERS)],
+                                                        state_is_tuple=True)
+                internal_state = self.cell.zero_state(self.inf_batch_size, dtype = tf.float32)
 
                 # Initial state for GRU cells
                 self.initial_state = state = tf.zeros([self.inf_batch_size, self.HIDDEN_LAYER_SIZE],
@@ -348,14 +353,19 @@ class RMTPP:
                         type_delta_t = True
 
                         with tf.variable_scope('state_recursion', reuse=tf.AUTO_REUSE):
-                            new_state = tf.tanh(
-                                tf.matmul(state, self.Wh) +
-                                tf.matmul(events_embedded, self.Wy) +
-                                # Two ways of interpretting this term
-                                (tf.matmul(delta_t_prev, self.Wt) if type_delta_t else tf.matmul(time_2d, self.Wt)) +
-                                tf.matmul(ones_2d, self.bh),
-                                name='h_t'
-                            )
+
+                            inputs = tf.concat([events_embedded, delta_t_prev], axis=-1)
+                            new_state, internal_state = self.cell(inputs,  internal_state)
+
+                            #new_state = tf.tanh(
+                            #    tf.matmul(state, self.Wh) +
+                            #    tf.matmul(events_embedded, self.Wy) +
+                            #    # Two ways of interpretting this term
+                            #    (tf.matmul(delta_t_prev, self.Wt) if type_delta_t else tf.matmul(time_2d, self.Wt)) +
+                            #    tf.matmul(ones_2d, self.bh),
+                            #    name='h_t'
+                            #)
+
                             if self.NUM_EXTRA_LAYER:
                                 names = ['hidden_layer_'+str(hl_id) for hl_id in range(1, self.NUM_EXTRA_LAYER+1)]
                                 for name in names:
