@@ -5,7 +5,7 @@ import tensorflow as tf
 import tempfile
 from operator import itemgetter
 import numpy as np
-import os
+import os, sys
 import json
 import multiprocessing as MP
 from itertools import product
@@ -74,13 +74,24 @@ def cmd(dataset_name, alg_name, dataset_path,
         dataset_path=dataset_path
     )
 
-    print('scaling with ', scale)
     data['train_time_out_seq'] /= scale
     data['train_time_in_seq'] /= scale
     data['dev_time_out_seq'] /= scale
     data['dev_time_in_seq'] /= scale
     data['test_time_out_seq'] /= scale
     data['test_time_in_seq'] /= scale
+
+    def print_dump_merger(old_save_dir, decoder_length_run, total_files):
+        filenames = list()
+        for x in decoder_length_run:
+            for y in range(total_files):
+                filenames.append(old_save_dir+'/'+str(x)+'_'+str(y)+'_print_dump.txt')
+
+        with open(old_save_dir+'/../print_dump', 'w') as outfile:
+            for fname in filenames:
+                with open(fname) as infile:
+                    for line in infile:
+                        outfile.write(line)
 
     def model_creator(params):
         tf.reset_default_graph()
@@ -151,6 +162,7 @@ def cmd(dataset_name, alg_name, dataset_path,
     decoder_length_run = [0, 1, 2, 3]
 
     old_save_dir = save_dir
+    th_loop_cnt = 0
     for dec_len in decoder_length_run:
         save_dir = old_save_dir+'/'+str(dec_len)
         if dec_len != decoder_length_run[0]:
@@ -168,6 +180,7 @@ def cmd(dataset_name, alg_name, dataset_path,
         else:
             # TODO(PD) Run hyperparameter tuning in parallel
             #results  = pp.ProcessPool().map(hyperparameter_worker, hidden_layer_size_list)
+            orig_stdout = sys.stdout
             results = []
 
             if not os.path.exists(save_dir):
@@ -177,6 +190,10 @@ def cmd(dataset_name, alg_name, dataset_path,
                 global hparam_loop
                 def hparam_loop(all_params):
                     loop_idx, (param_names, params) = all_params
+
+                    f = open(old_save_dir+'/'+str(dec_len)+'_'+str(loop_idx)+'_print_dump.txt', 'w')
+                    sys.stdout = f
+
                     print('params', params, loop_idx)
                     checkp_dir = old_save_dir+'/'+str(decoder_length_run[0])
                     checkp_dir_hparams = ''
@@ -196,6 +213,10 @@ def cmd(dataset_name, alg_name, dataset_path,
                     result = hyperparameter_worker(args, rmtpp_decrnn_mdl, dec_len, checkp_dir)
                     for name, val in zip(param_names, params):
                         result[name] = val
+
+                    sys.stdout = orig_stdout
+                    f.close()
+
                     return result
 
                 param_names, param_values = zip(*hparams[alg_name].items())
@@ -205,6 +226,8 @@ def cmd(dataset_name, alg_name, dataset_path,
                 for element in product(*param_values):
                     param_values_lst.append(element)
                     param_names_lst.append(param_names)
+
+                th_loop_cnt = len(param_names_lst)
 
                 with MP.Pool() as pool:
                         results = pool.map(hparam_loop, enumerate(zip(param_names_lst, param_values_lst)))
@@ -236,7 +259,17 @@ def cmd(dataset_name, alg_name, dataset_path,
             best_result_idx, _ = min(enumerate([result['best_dev_mae'] for result in results]), key=itemgetter(1))
             best_result = results[best_result_idx]
             for param in hparams[alg_name].keys(): assert param in best_result.keys() # Check whether all hyperparameters are stored
+            
+            if parallel_hparam != 0:
+                f = open(old_save_dir+'/'+str(dec_len)+'_'+str(th_loop_cnt)+'_print_dump.txt', 'w')
+                sys.stdout = f
+
             print('best test mae:', best_result['best_test_mae'])
+
+            if parallel_hparam != 0:
+                sys.stdout = orig_stdout
+                f.close()
+
             if save_dir:
                 np.savetxt(os.path.join(save_dir)+'/test.pred.events.out.csv', best_result['best_test_event_preds'], delimiter=',')
                 np.savetxt(os.path.join(save_dir)+'/test.pred.times.out.csv', best_result['best_test_time_preds'], delimiter=',')
@@ -279,6 +312,9 @@ def cmd(dataset_name, alg_name, dataset_path,
                 plt.xlabel('epoch')
                 plt.savefig(os.path.join(save_dir, 'wt.png'))
                 plt.close()
+
+    if parallel_hparam:
+        print_dump_merger(old_save_dir, decoder_length_run, th_loop_cnt+1)
 
 
 if __name__ == '__main__':
