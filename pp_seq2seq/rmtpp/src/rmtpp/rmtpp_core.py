@@ -117,6 +117,10 @@ class RMTPP:
                  patience, stop_criteria, epsilon, num_extra_layer, mark_loss,
                  Wt, Wem, Wh, bh, Ws, bs, wt, Wy, Vy, Vt, Vw, bk, bt, bw, wt_hparam,
                  plot_pred_dev, plot_pred_test, rnn_cell_type):
+
+        self.seed = seed
+        tf.set_random_seed(self.seed)
+
         self.PARAMS_NAMED = OrderedDict(params_named)
         self.PARAMS_ALIAS_NAMED = params_alias_named
 
@@ -166,7 +170,6 @@ class RMTPP:
             self.DEC_STATE_SIZE = 2 * self.HIDDEN_LAYER_SIZE
 
         self.sess = sess
-        self.seed = seed
         self.last_epoch = 0
 
         self.rs = np.random.RandomState(seed + 42)

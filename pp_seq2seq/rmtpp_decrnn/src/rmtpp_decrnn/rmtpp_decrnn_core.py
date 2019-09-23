@@ -125,6 +125,10 @@ class RMTPP_DECRNN:
                  mark_triggers_time, mark_loss,
                  Wt, Wem, Wh, bh, Ws, bs, wt, Wy, Vy, Vt, Vw, bk, bt, bw, wt_hparam,
                  plot_pred_dev, plot_pred_test, enc_cell_type, dec_cell_type):
+
+        self.seed = seed
+        tf.set_random_seed(self.seed)
+
         self.PARAMS_NAMED = OrderedDict(params_named)
         self.PARAMS_ALIAS_NAMED = params_alias_named
 
@@ -183,7 +187,6 @@ class RMTPP_DECRNN:
             self.DEC_STATE_SIZE = self.HIDDEN_LAYER_SIZE
 
         self.sess = sess
-        self.seed = seed
         self.last_epoch = 0
 
         self.rs = np.random.RandomState(seed + 42)
