@@ -368,7 +368,7 @@ class RMTPP:
                                     name='h_t'
                                 )
                             elif self.RNN_CELL_TYPE == 'lstm':
-                                inputs = tf.concat([events_embedded, delta_t_prev], axis=-1)
+                                inputs = tf.concat([state, events_embedded, delta_t_prev], axis=-1)
                                 new_state, internal_state = self.cell(inputs,  internal_state)
 
                             if self.NUM_EXTRA_LAYER:
