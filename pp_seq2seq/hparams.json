@@ -1,9 +1,9 @@
 {
 	"rmtpp":
 	{
-		"hidden_layer_size": [32],
-	        "learning_rate": [0.001],
-		"num_extra_layer": [2],
+		"hidden_layer_size": [16, 32, 64, 128],
+	        "learning_rate": [0.001, 0.005],
+		"num_extra_layer": [0, 1, 2],
 		"rnn_reg_param": [0.1, 1.0, 10.0, 100.0],
 		"extlyr_reg_param": [0.1],
 		"wt_hparam": [1.0]
@@ -44,9 +44,9 @@
 	},
 	"rmtpp_decrnn":
 	{
-		"hidden_layer_size": [32],
-	        "learning_rate": [0.001],
-		"num_extra_dec_layer": [2],
+		"hidden_layer_size": [16, 32, 64, 128],
+	        "learning_rate": [0.001, 0.005],
+		"num_extra_layer": [0, 1, 2],
 		"rnn_reg_param": [0.1, 1.0, 10.0, 100.0],
 		"extlyr_reg_param": [0.1],
 		"wt_hparam": [1.0]
