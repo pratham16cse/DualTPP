@@ -24,6 +24,9 @@ def generate_norm_seq(timeTrain, timeDev, timeTest, enc_len, normalization, chec
     def _generate_norm_seq(sequences, enc_len, normalization, check=0):
         sequences = np.array(sequences)
         gap_seqs = sequences[:, 1:]-sequences[:, :-1]
+        #initial_gaps = np.mean(gap_seqs[:, :enc_len-1], axis=1, keepdims=True)
+        initial_gaps = np.zeros_like(np.mean(gap_seqs[:, :enc_len-1], axis=1, keepdims=True))
+        gap_seqs = np.hstack((initial_gaps, gap_seqs))
         N = len(gap_seqs)
         if normalization == 'minmax':
             max_gaps = np.clip(np.max(gap_seqs[:, :enc_len-1], keepdims=True), 1.0, np.inf)
@@ -47,21 +50,21 @@ def generate_norm_seq(timeTrain, timeDev, timeTest, enc_len, normalization, chec
 
         avg_gaps_norm = gap_seqs/normalizer_d + normalizer_a
         avg_gaps_norm = np.cumsum(avg_gaps_norm, axis=1)
-        gap_norm_seq = np.hstack((np.zeros((N, 1)), avg_gaps_norm))
+        #gap_norm_seq = np.hstack((np.zeros((N, 1)), avg_gaps_norm))
 
         if check==1:
             print("sequences[:,:1]")
             print(sequences[:,:1])
 
-        return gap_norm_seq, normalizer_d, normalizer_a
+        return avg_gaps_norm, normalizer_d, normalizer_a, initial_gaps
 
-    timeTrain, trainND, trainNA = _generate_norm_seq(timeTrain, enc_len, normalization)
-    timeDev, devND, devNA = _generate_norm_seq(timeDev, enc_len, normalization)
-    timeTest, testND, testNA = _generate_norm_seq(timeTest, enc_len, normalization)
+    timeTrain, trainND, trainNA, trainIG = _generate_norm_seq(timeTrain, enc_len, normalization)
+    timeDev, devND, devNA, devIG = _generate_norm_seq(timeDev, enc_len, normalization)
+    timeTest, testND, testNA, testIG = _generate_norm_seq(timeTest, enc_len, normalization)
 
-    return timeTrain, trainND, trainNA, \
-            timeDev, devND, devNA, \
-            timeTest, testND, testNA
+    return timeTrain, trainND, trainNA, trainIG, \
+            timeDev, devND, devNA, devIG, \
+            timeTest, testND, testNA, testIG
 
 def read_seq2seq_data(event_train_file, event_dev_file, event_test_file,
                       time_train_file, time_dev_file, time_test_file,
@@ -136,7 +139,9 @@ def read_seq2seq_data(event_train_file, event_dev_file, event_test_file,
     devActualTimeOut, testActualTimeOut = timeDevOut, timeTestOut
 
     # ----- Normalization by gaps ----- #
-    timeTrain, trainND, trainNA, timeDev, devND, devNA, timeTest, testND, testNA \
+    timeTrain, trainND, trainNA, trainIG, \
+            timeDev, devND, devNA, devIG, \
+            timeTest, testND, testNA, testIG \
             = generate_norm_seq(timeTrain, timeDev, timeTest, enc_len, normalization)
 
     timeTrainIn, timeTrainOut = timeTrain[:, :enc_len], timeTrain[:, enc_len:]
@@ -214,10 +219,15 @@ def read_seq2seq_data(event_train_file, event_dev_file, event_test_file,
         'encoder_length': len(eventTrainIn[0]),
         'decoder_length': len(eventTrainOut[0]),
 
+        'trainND': trainND,
+        'trainNA': trainNA,
+        'trainIG': trainIG,
         'devND': devND,
         'devNA': devNA,
+        'devIG': devIG,
         'testND': testND,
         'testNA': testNA,
+        'testIG': testIG,
     }
 
 

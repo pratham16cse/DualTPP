@@ -54,13 +54,15 @@ def_opts = rmtpp_decrnn.rmtpp_decrnn_core.def_opts
 @click.option('--concat-before-dec-update/--no-concat-before-dec-update', 'concat_before_dec_update', help='Concatenate final encoder state before updating decoder state', default=False)
 @click.option('--mark-triggers-time/--no-mark-triggers-time', 'mark_triggers_time', help='If true, m_i is used to predict t_i, otherwise m_i, t_i predicted together', default=True)
 @click.option('--mark-loss/--no-mark-loss', 'mark_loss', help='If true, mark_LL is also added to the loss', default=def_opts.mark_loss)
+@click.option('--enc-cell-type', 'enc_cell_type', help='Type of Encoder cell: manual, lstm', default=def_opts.enc_cell_type)
+@click.option('--dec-cell-type', 'dec_cell_type', help='Type of Decoder cell: manual, lstm', default=def_opts.dec_cell_type)
 @click.option('--parallel-hparam/--no-parallel-hparam', 'parallel_hparam', help='If true, hparam will run in parallel', default=True)
 def cmd(dataset_name, alg_name, dataset_path,
         event_train_file, time_train_file, event_dev_file, time_dev_file, event_test_file, time_test_file,
         save_dir, summary_dir, num_epochs, restart, train_eval, test_eval, scale,
         batch_size, bptt, decoder_length, learning_rate, cpu_only, normalization, constraints,
         patience, stop_criteria, epsilon, share_dec_params, init_zero_dec_state, concat_final_enc_state, num_extra_dec_layer, concat_before_dec_update,
-        mark_triggers_time, mark_loss, parallel_hparam):
+        mark_triggers_time, mark_loss, enc_cell_type, dec_cell_type, parallel_hparam):
     """Read data from EVENT_TRAIN_FILE, TIME_TRAIN_FILE and try to predict the values in EVENT_TEST_FILE, TIME_TEST_FILE."""
 
     clear_clutter = True
@@ -144,6 +146,8 @@ def cmd(dataset_name, alg_name, dataset_path,
             concat_before_dec_update=concat_before_dec_update,
             mark_triggers_time=mark_triggers_time,
             mark_loss=mark_loss,
+            enc_cell_type=enc_cell_type,
+            dec_cell_type=dec_cell_type,
             _opts=def_opts_local
         )
 

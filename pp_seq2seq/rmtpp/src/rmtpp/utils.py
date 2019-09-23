@@ -24,7 +24,8 @@ def generate_norm_seq(timeTrain, timeDev, timeTest, enc_len, normalization, chec
     def _generate_norm_seq(sequences, enc_len, normalization, check=0):
         sequences = np.array(sequences)
         gap_seqs = sequences[:, 1:]-sequences[:, :-1]
-        initial_gaps = np.mean(gap_seqs[:, :enc_len-1], axis=1, keepdims=True)
+        #initial_gaps = np.mean(gap_seqs[:, :enc_len-1], axis=1, keepdims=True)
+        initial_gaps = np.zeros_like(np.mean(gap_seqs[:, :enc_len-1], axis=1, keepdims=True))
         gap_seqs = np.hstack((initial_gaps, gap_seqs))
         N = len(gap_seqs)
         if normalization == 'minmax':

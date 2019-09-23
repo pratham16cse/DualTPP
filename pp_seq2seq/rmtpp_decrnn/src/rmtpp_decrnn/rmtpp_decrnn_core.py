@@ -9,7 +9,8 @@ import matplotlib
 matplotlib.use('agg')
 import matplotlib.pyplot as plt
 import time
-from collections import OrderedDict
+from collections import OrderedDict, Counter
+from operator import itemgetter
 
 ETH = 10.0
 __EMBED_SIZE = 4
@@ -64,6 +65,8 @@ def_opts = Deco.Options(
 
     wt_hparam=1.0,
 
+    enc_cell_type='manual',
+    dec_cell_type='manual',
 
     embed_size=__EMBED_SIZE,
     Wem=lambda num_categories: np.random.RandomState(42).randn(num_categories, __EMBED_SIZE) * 0.01,
@@ -121,11 +124,13 @@ class RMTPP_DECRNN:
                  init_zero_dec_state, concat_final_enc_state, num_extra_dec_layer, concat_before_dec_update,
                  mark_triggers_time, mark_loss,
                  Wt, Wem, Wh, bh, Ws, bs, wt, Wy, Vy, Vt, Vw, bk, bt, bw, wt_hparam,
-                 plot_pred_dev, plot_pred_test):
+                 plot_pred_dev, plot_pred_test, enc_cell_type, dec_cell_type):
         self.PARAMS_NAMED = OrderedDict(params_named)
         self.PARAMS_ALIAS_NAMED = params_alias_named
 
         self.HIDDEN_LAYER_SIZE = self.PARAMS_NAMED['hidden_layer_size'] #hidden_layer_size
+        self.NUM_ENC_LAYERS = self.PARAMS_NAMED['num_enc_layers']
+        self.NUM_DEC_LAYERS = self.PARAMS_NAMED['num_dec_layers']
         self.BATCH_SIZE = batch_size
         self.LEARNING_RATE = self.PARAMS_NAMED['learning_rate'] #learning_rate
         self.MOMENTUM = momentum
@@ -145,6 +150,9 @@ class RMTPP_DECRNN:
         self.DEVICE_GPU = device_gpu
 
         self.wt_hparam = self.PARAMS_NAMED['wt_hparam'] #wt_hparam
+
+        self.ENC_CELL_TYPE = enc_cell_type
+        self.DEC_CELL_TYPE = dec_cell_type
 
         self.RNN_REG_PARAM = self.PARAMS_NAMED['rnn_reg_param'] #rnn_reg_param
         self.EXTLYR_REG_PARAM = self.PARAMS_NAMED['extlyr_reg_param'] #extlyr_reg_param
@@ -319,6 +327,17 @@ class RMTPP_DECRNN:
 
                 # Make graph
                 # RNNcell = RNN_CELL_TYPE(HIDDEN_LAYER_SIZE)
+                if self.ENC_CELL_TYPE == 'lstm':
+                    enc_cell = tf.contrib.rnn.BasicLSTMCell(self.HIDDEN_LAYER_SIZE, forget_bias=1.0)
+                    self.enc_cell = tf.contrib.rnn.MultiRNNCell([enc_cell for _ in range(self.NUM_ENC_LAYERS)],
+                                                            state_is_tuple=True)
+                    enc_internal_state = self.enc_cell.zero_state(self.inf_batch_size, dtype = tf.float32)
+
+                if self.DEC_CELL_TYPE == 'lstm':
+                    dec_cell = tf.contrib.rnn.BasicLSTMCell(self.HIDDEN_LAYER_SIZE, forget_bias=1.0)
+                    self.dec_cell = tf.contrib.rnn.MultiRNNCell([dec_cell for _ in range(self.NUM_DEC_LAYERS)],
+                                                            state_is_tuple=True)
+                    dec_internal_state = self.dec_cell.zero_state(self.inf_batch_size, dtype = tf.float32)
 
                 # Initial state for GRU cells
                 self.initial_state = state = tf.zeros([self.inf_batch_size, self.HIDDEN_LAYER_SIZE],
@@ -365,14 +384,20 @@ class RMTPP_DECRNN:
                         type_delta_t = True
 
                         with tf.name_scope('state_recursion'):
-                            new_state = tf.tanh(
-                                tf.matmul(state, self.Wh) +
-                                tf.matmul(events_embedded, self.Wy) +
-                                # Two ways of interpretting this term
-                                (tf.matmul(delta_t_prev, self.Wt) if type_delta_t else tf.matmul(time_2d, self.Wt)) +
-                                tf.matmul(ones_2d, self.bh),
-                                name='h_t'
-                            )
+
+                            if self.ENC_CELL_TYPE == 'manual':
+                                new_state = tf.tanh(
+                                    tf.matmul(state, self.Wh) +
+                                    tf.matmul(events_embedded, self.Wy) +
+                                    # Two ways of interpretting this term
+                                    (tf.matmul(delta_t_prev, self.Wt) if type_delta_t else tf.matmul(time_2d, self.Wt)) +
+                                    tf.matmul(ones_2d, self.bh),
+                                    name='h_t'
+                                )
+                            elif self.ENC_CELL_TYPE == 'lstm':
+                                inputs = tf.concat([state, events_embedded, delta_t_prev], axis=-1)
+                                new_state, enc_internal_state = self.enc_cell(inputs,  enc_internal_state)
+
                             state = tf.where(self.events_in[:, i] > 0, new_state, state)
                         self.hidden_states.append(state)
                     self.final_state = self.hidden_states[-1]
@@ -426,12 +451,18 @@ class RMTPP_DECRNN:
                                                                  tf.mod(events - 1, self.NUM_CATEGORIES))
 
                         with tf.variable_scope('state_recursion', reuse=tf.AUTO_REUSE):
-                            new_state = tf.tanh(
-                                tf.matmul(s_state, self.Ws) +
-                                tf.matmul(events_embedded, self.Wy) +
-                                tf.matmul(ones_2d, self.bs),
-                                name='s_t'
-                            )
+
+                            if self.DEC_CELL_TYPE == 'manual':
+                                new_state = tf.tanh(
+                                    tf.matmul(s_state, self.Ws) +
+                                    tf.matmul(events_embedded, self.Wy) +
+                                    tf.matmul(ones_2d, self.bs),
+                                    name='s_t'
+                                )
+                            elif self.DEC_CELL_TYPE == 'lstm':
+                                inputs = tf.concat([s_state, events_embedded], axis=-1)
+                                new_state, dec_internal_state = self.dec_cell(inputs,  dec_internal_state)
+
                             if self.CONCAT_BEFORE_DEC_UPDATE:
                                 new_state = tf.concat([new_state, self.final_state], axis=-1)
                             if self.NUM_EXTRA_DEC_LAYER:
@@ -841,7 +872,7 @@ class RMTPP_DECRNN:
                 dev_time_in_seq = training_data['dev_time_in_seq']
                 gaps = dev_time_preds - np.concatenate([dev_time_in_seq[:, -1:], dev_time_preds[:, :-1]], axis=-1)
                 unnorm_gaps = gaps * training_data['devND']
-                dev_time_preds = np.cumsum(unnorm_gaps, axis=1) + training_data['dev_actual_time_in_seq']
+                dev_time_preds = np.cumsum(unnorm_gaps, axis=1) + training_data['dev_actual_time_in_seq'] - training_data['devIG']
                 tru_gaps = dev_time_out_seq - np.concatenate([training_data['dev_actual_time_in_seq'], dev_time_out_seq[:, :-1]], axis=1)
 
                 dev_mae, dev_total_valid, dev_acc, dev_gap_mae, dev_mrr = self.eval(dev_time_preds, dev_time_out_seq,
@@ -855,7 +886,8 @@ class RMTPP_DECRNN:
                     random_plot_number = 4
                     true_gaps_plot = tru_gaps[random_plot_number,:]
                     pred_gaps_plot = unnorm_gaps[random_plot_number,:]
-                    inp_tru_gaps = np.concatenate([training_data['dev_time_in_seq'][random_plot_number, 1:], training_data['dev_time_out_seq'][random_plot_number, :1]]) - training_data['dev_time_in_seq'][random_plot_number,:]
+                    inp_tru_gaps = training_data['dev_time_in_seq'][random_plot_number, 1:] \
+                                   - training_data['dev_time_in_seq'][random_plot_number, :-1]
                     inp_tru_gaps = inp_tru_gaps * training_data['devND'][random_plot_number]
                     true_gaps_plot = list(inp_tru_gaps) + list(true_gaps_plot)
                     pred_gaps_plot = list(inp_tru_gaps) + list(pred_gaps_plot)
@@ -894,7 +926,7 @@ class RMTPP_DECRNN:
                 gaps = test_time_preds - np.concatenate([test_time_in_seq[:, -1:], test_time_preds[:, :-1]], axis=-1)
                 tru_gaps = test_time_out_seq - np.concatenate([training_data['test_actual_time_in_seq'], test_time_out_seq[:, :-1]], axis=-1)
                 unnorm_gaps = gaps * training_data['testND']
-                test_time_preds = np.cumsum(unnorm_gaps, axis=1) + training_data['test_actual_time_in_seq']
+                test_time_preds = np.cumsum(unnorm_gaps, axis=1) + training_data['test_actual_time_in_seq'] - training_data['testIG']
 
                 test_mae, test_total_valid, test_acc, test_gap_mae, test_mrr = self.eval(test_time_preds, test_time_out_seq,
                                                                                          test_event_preds, training_data['test_event_out_seq'],
@@ -907,7 +939,8 @@ class RMTPP_DECRNN:
                     random_plot_number = 4
                     true_gaps_plot = tru_gaps[random_plot_number,:]
                     pred_gaps_plot = unnorm_gaps[random_plot_number,:]
-                    inp_tru_gaps = np.concatenate([training_data['test_time_in_seq'][random_plot_number, 1:], training_data['test_time_out_seq'][random_plot_number, :1]]) - training_data['test_time_in_seq'][random_plot_number,:]
+                    inp_tru_gaps = training_data['test_time_in_seq'][random_plot_number, 1:] \
+                                   - training_data['test_time_in_seq'][random_plot_number, :-1]
                     inp_tru_gaps = inp_tru_gaps * training_data['testND'][random_plot_number]
                     true_gaps_plot = list(inp_tru_gaps) + list(true_gaps_plot)
                     pred_gaps_plot = list(inp_tru_gaps) + list(pred_gaps_plot)
@@ -1016,7 +1049,7 @@ class RMTPP_DECRNN:
             gaps = dev_time_preds - np.concatenate([dev_time_in_seq[:, -1:], dev_time_preds[:, :-1]], axis=-1)
             unnorm_gaps = gaps * training_data['devND']
             unnorm_gaps = np.cumsum(unnorm_gaps, axis=1)
-            dev_time_preds = unnorm_gaps + training_data['dev_actual_time_in_seq']
+            dev_time_preds = unnorm_gaps + training_data['dev_actual_time_in_seq'] - training_data['devIG']
             
             dev_mae, dev_total_valid, dev_acc, dev_gap_mae, dev_mrr = self.eval(dev_time_preds, dev_time_out_seq,
                                                                                 dev_event_preds, training_data['dev_event_out_seq'],
@@ -1041,7 +1074,7 @@ class RMTPP_DECRNN:
             unnorm_gaps = gaps * training_data['testND']
             unnorm_gaps = np.cumsum(unnorm_gaps, axis=1)
             tru_gaps = test_time_out_seq - np.concatenate([training_data['test_actual_time_in_seq'], test_time_out_seq[:, :-1]], axis=1)
-            test_time_preds = unnorm_gaps + training_data['test_actual_time_in_seq']
+            test_time_preds = unnorm_gaps + training_data['test_actual_time_in_seq'] - training_data['testIG']
 
             test_mae, test_total_valid, test_acc, test_gap_mae, test_mrr = self.eval(test_time_preds, test_time_out_seq,
                                                                                      test_event_preds, training_data['test_event_out_seq'],
