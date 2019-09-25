@@ -511,35 +511,35 @@ class RMTPP_DECRNN:
                     newVt = tf.tile(tf.expand_dims(self.Vt, axis=0), [tf.shape(self.decoder_states)[0], 1, 1]) 
                     newVw = tf.tile(tf.expand_dims(self.Vw, axis=0), [tf.shape(self.decoder_states)[0], 1, 1]) 
 
-                    D = tf.reduce_sum(decoder_states_concat * newVt, axis=2) + base_intensity_bt
+                    self.D = tf.reduce_sum(decoder_states_concat * newVt, axis=2) + base_intensity_bt
 
-                    # D = tf.squeeze(tf.tensordot(self.decoder_states, self.Vt, axes=[[2],[0]]), axis=-1) + base_intensity_bt
-                    D = get_D_constraint()(D)
+                    # self.D = tf.squeeze(tf.tensordot(self.decoder_states, self.Vt, axes=[[2],[0]]), axis=-1) + base_intensity_bt
+                    self.D = get_D_constraint()(self.D)
                     if self.ALG_NAME in ['rmtpp_decrnn_splusintensity']:
-                        D = tf.nn.softplus(D)
+                        self.D = tf.nn.softplus(self.D)
 
                     if self.ALG_NAME in ['rmtpp_decrnn_wcmpt', 'rmtpp_decrnn_mode_wcmpt']:
-                        WT = tf.reduce_sum(decoder_states_concat * newVw, axis=2) + base_intensity_bw
-                        # WT = tf.squeeze(tf.tensordot(self.decoder_states, self.Vw, axes=[[2],[0]]), axis=-1) + base_intensity_bw
-                        WT = get_WT_constraint()(WT)
-                        WT = tf.clip_by_value(WT, 0.0, 10.0)
+                        self.WT = tf.reduce_sum(decoder_states_concat * newVw, axis=2) + base_intensity_bw
+                        # self.WT = tf.squeeze(tf.tensordot(self.decoder_states, self.Vw, axes=[[2],[0]]), axis=-1) + base_intensity_bw
+                        self.WT = get_WT_constraint()(self.WT)
+                        self.WT = tf.clip_by_value(self.WT, 0.0, 10.0)
                     elif self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_mode', 'rmtpp_decrnn_splusintensity']:
-                        WT = self.wt
+                        self.WT = self.wt
                     elif self.ALG_NAME in ['rmtpp_decrnn_whparam', 'rmtpp_decrnn_mode_whparam']:
-                        WT = self.wt_hparam
+                        self.WT = self.wt_hparam
 
                     if self.ALG_NAME in ['rmtpp_decrnn_splusintensity']:
-                        lambda_ = (D + gaps * WT)
+                        lambda_ = (self.D + gaps * self.WT)
                         log_lambda_ = tf.log(lambda_)
                         log_f_star = (log_lambda_
-                                      - D * gaps
-                                      - (WT/2.0) * tf.square(gaps))
+                                      - self.D * gaps
+                                      - (self.WT/2.0) * tf.square(gaps))
                     else:
-                        log_lambda_ = (D + gaps * WT)
+                        log_lambda_ = (self.D + gaps * self.WT)
                         lambda_ = tf.exp(tf.minimum(ETH, log_lambda_), name='lambda_')
                         log_f_star = (log_lambda_
-                                      + (1.0 / WT) * tf.exp(tf.minimum(ETH, D))
-                                      - (1.0 / WT) * lambda_)
+                                      + (1.0 / self.WT) * tf.exp(tf.minimum(ETH, self.D))
+                                      - (1.0 / self.WT) * lambda_)
 
                 with tf.name_scope('loss_calc'):
 
@@ -1198,10 +1198,16 @@ class RMTPP_DECRNN:
             self.mode: 0.0 #Test Mode
         }
 
-        all_encoder_states, all_decoder_states, all_event_preds, cur_state = self.sess.run(
-            [self.hidden_states, self.decoder_states, self.event_preds, self.final_state],
+        all_encoder_states, all_decoder_states, all_event_preds, cur_state, D, WT = self.sess.run(
+            [self.hidden_states, self.decoder_states, self.event_preds, self.final_state, self.D, self.WT],
             feed_dict=feed_dict
         )
+        if self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_mode', 'rmtpp_decrnn_splusintensity']:
+            WT = np.ones((len(event_in_seq), self.DEC_LEN, 1)) * WT
+        elif self.ALG_NAME in ['rmtpp_decrnn_whparam', 'rmtpp_decrnn_mode_whparam']:
+            raise NotImplemented('For whparam methods')
+            WT = self.wt_hparam
+
         all_event_preds_softmax = all_event_preds
         all_event_preds = np.argmax(all_event_preds, axis=-1) + 1
         all_event_preds = np.transpose(all_event_preds)
@@ -1212,38 +1218,38 @@ class RMTPP_DECRNN:
 
         global _quad_worker
         def _quad_worker(params):
-            batch_idx, (decoder_states, time_pred_last, tru_gap) = params
+            batch_idx, (D_i, WT_i, decoder_states, time_pred_last, tru_gap) = params
             preds_i = []
             #print(np.matmul(decoder_states, Vt) + bt)
-            for pred_idx, s_i in enumerate(decoder_states):
+            for pred_idx, (D_j, WT_j, s_i) in enumerate(zip(D_i, WT_i, decoder_states)):
                 t_last = time_pred_last if pred_idx==0 else preds_i[-1]
-                D = (np.dot(s_i, Vt[pred_idx,:]) + bt[:,pred_idx]).reshape(-1)
-                D = np.clip(D, np.ones_like(D)*-50.0, np.ones_like(D)*50.0)
-                D = get_D_constraint()(D)
-                if self.ALG_NAME in ['rmtpp_decrnn_splusintensity']:
-                    D = softplus(D)
+                # D = (np.dot(s_i, Vt[pred_idx,:]) + bt[:,pred_idx]).reshape(-1)
+                # D = np.clip(D, np.ones_like(D)*-50.0, np.ones_like(D)*50.0)
+                # D = get_D_constraint()(D)
+                # if self.ALG_NAME in ['rmtpp_decrnn_splusintensity']:
+                #     D = softplus(D)
 
-                c_ = np.exp(np.maximum(D, np.ones_like(D)*-87.0))
-                if self.ALG_NAME in ['rmtpp_decrnn_wcmpt', 'rmtpp_decrnn_mode_wcmpt']:
-                    WT = (np.dot(s_i, Vw[pred_idx,:]) + bw[:,pred_idx]).reshape(-1)
-                    WT = get_WT_constraint()(WT)
-                    WT = np.clip(WT, 0.0, 10.0)
-                elif self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_mode', 'rmtpp_decrnn_splusintensity']:
-                    WT = wt
-                elif self.ALG_NAME in ['rmtpp_decrnn_whparam', 'rmtpp_decrnn_mode_whparam']:
-                    WT = self.wt_hparam
+                c_ = np.exp(np.maximum(D_j, np.ones_like(D_j)*-87.0))
+                # if self.ALG_NAME in ['rmtpp_decrnn_wcmpt', 'rmtpp_decrnn_mode_wcmpt']:
+                #     WT = (np.dot(s_i, Vw[pred_idx,:]) + bw[:,pred_idx]).reshape(-1)
+                #     WT = get_WT_constraint()(WT)
+                #     WT = np.clip(WT, 0.0, 10.0)
+                # elif self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_mode', 'rmtpp_decrnn_splusintensity']:
+                #     WT = wt
+                # elif self.ALG_NAME in ['rmtpp_decrnn_whparam', 'rmtpp_decrnn_mode_whparam']:
+                #     WT = self.wt_hparam
 
                 if self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_wcmpt', 'rmtpp_decrnn_whparam']:
-                    args = (c_, WT)
+                    args = (c_, WT_j)
                     val, _err = quad(quad_func, 0, np.inf, args=args)
-                    #print(batch_idx, D, c_, WT, val)
+                    #print(batch_idx, D_j, c_, WT_j, val)
                 elif self.ALG_NAME in ['rmtpp_decrnn_mode', 'rmtpp_decrnn_mode_wcmpt', 'rmtpp_decrnn_mode_whparam']:
-                    val_raw = (np.log(WT) - D)/WT
+                    val_raw = (np.log(WT_j) - D_j)/WT_j
                     val = np.where(val_raw<0.0, 0.0, val_raw)
                     val = val.reshape(-1)[0]
-                    #print(batch_idx, D, c_, WT, val, val_raw)
+                    #print(batch_idx, D_j, c_, WT_j, val, val_raw)
                 elif self.ALG_NAME in ['rmtpp_decrnn_splusintensity']:
-                    args = (D, WT)
+                    args = (D_j, WT_j)
                     val, _err = quad(quad_func_splusintensity, 0, np.inf, args=args)
                     #print(val)
 
@@ -1253,16 +1259,16 @@ class RMTPP_DECRNN:
                 if plot_dir:
                     if self.ALG_NAME in ['rmtpp', 'rmtpp_wcmpt']:
                         mean = val
-                        mode = (np.log(WT) - D)/WT
+                        mode = (np.log(WT_j) - D_j)/WT_j
                         mode = np.where(mode<0.0, 0.0, mode)
                         mode = mode.reshape(-1)[0]
                     elif self.ALG_NAME in ['rmtpp_mode', 'rmtpp_mode_wcmpt']:
-                        args = (c_, WT)
+                        args = (c_, WT_j)
                         mode = val
                         mean, _ = quad(quad_func, 0, np.inf, args=args)
 
                     plt_x = np.arange(val-2.0, val+2.0, 0.05)
-                    plt_y = density_func(plt_x, c_, WT)
+                    plt_y = density_func(plt_x, c_, WT_j)
                     plt.plot(plt_x, plt_y.reshape(-1), label='Density')
                     plt.plot(mean, 0.0, 'go', label='mean')
                     plt.plot(mode, 0.0, 'r*', label='mode')
@@ -1273,8 +1279,8 @@ class RMTPP_DECRNN:
                     plt.savefig(os.path.join(plot_dir,'instance_'+str(batch_idx)+'.png'))
                     plt.close()
     
-                    #print(batch_idx, D, wt, mode, mean, density_func(mode, D, wt), density_func(mean, D, wt))
-                    print(batch_idx, D, c_, WT, mean, density_func(mean, c_, WT))
+                    #print(batch_idx, D_j, wt, mode, mean, density_func(mode, D_j, wt), density_func(mean, D_j, wt))
+                    print(batch_idx, D_j, c_, WT_j, mean, density_func(mean, c_, WT_j))
 
             return preds_i
 
@@ -1283,10 +1289,10 @@ class RMTPP_DECRNN:
             all_decoder_states = np.concatenate([all_decoder_states, np.tile(np.expand_dims(cur_state, axis=1), [1, self.DEC_LEN, 1])], axis=-1)
 
         if single_threaded:
-            all_time_preds = [_quad_worker((idx, (state, t_last, tru_gap))) for idx, (state, t_last, tru_gap) in enumerate(zip(all_decoder_states, time_pred_last, plt_tru_gaps))]
+            all_time_preds = [_quad_worker((idx, (D_i, WT_i, state, t_last, tru_gap))) for idx, (D_i, WT_i, state, t_last, tru_gap) in enumerate(zip(D, WT, all_decoder_states, time_pred_last, plt_tru_gaps))]
         else:
             with MP.Pool() as pool:
-                all_time_preds = pool.map(_quad_worker, enumerate(zip(all_decoder_states, time_pred_last, plt_tru_gaps)))
+                all_time_preds = pool.map(_quad_worker, enumerate(zip(D, WT, all_decoder_states, time_pred_last, plt_tru_gaps)))
 
         all_time_preds = np.asarray(all_time_preds).T
         assert np.isfinite(all_time_preds).sum() == all_time_preds.size

@@ -392,34 +392,34 @@ class RMTPP:
                             base_intensity_bw = tf.matmul(ones_2d, self.bw)
                             # wt_non_zero = tf.sign(self.wt) * tf.maximum(1e-9, tf.abs(self.wt))
                             #base_intensity_bt = tf.Print(base_intensity_bt, [base_intensity_bt, self.Vt], message='Printing Vt and bt')
-                            D = tf.matmul(state, self.Vt) + base_intensity_bt
-                            D = get_D_constraint()(D)
-                            #D = tf.Print(D, [D], message='Printing D Before')
+                            self.D = tf.matmul(state, self.Vt) + base_intensity_bt
+                            self.D = get_D_constraint()(self.D)
+                            #self.D = tf.Print(self.D, [self.D], message='Printing D Before')
                             if self.ALG_NAME in ['rmtpp_splusintensity']:
-                                D = tf.nn.softplus(D)
-                            #D = tf.Print(D, [D], message='Printing D After')
+                                self.D = tf.nn.softplus(self.D)
+                            #self.D = tf.Print(self.D, [self.D], message='Printing D After')
 
                             if self.ALG_NAME in ['rmtpp_wcmpt', 'rmtpp_mode_wcmpt']:
-                                WT = tf.matmul(state, self.Vw) + base_intensity_bw
-                                WT = get_WT_constraint()(WT)
-                                WT = tf.clip_by_value(WT, 0.0, 10.0)
+                                self.WT = tf.matmul(state, self.Vw) + base_intensity_bw
+                                self.WT = get_WT_constraint()(self.WT)
+                                self.WT = tf.clip_by_value(self.WT, 0.0, 10.0)
                             elif self.ALG_NAME in ['rmtpp', 'rmtpp_mode', 'rmtpp_splusintensity', 'zero_pred', 'average_gap_pred']:
-                                WT = self.wt
+                                self.WT = self.wt
                             elif self.ALG_NAME in ['rmtpp_whparam', 'rmtpp_mode_whparam']:
-                                WT = self.wt_hparam
+                                self.WT = self.wt_hparam
 
                             if self.ALG_NAME in ['rmtpp_splusintensity']:
-                                lambda_ = D + (delta_t_next * WT)
+                                lambda_ = self.D + (delta_t_next * self.WT)
                                 log_lambda_ = tf.log(lambda_)
                                 log_f_star = (log_lambda_
-                                              - D * delta_t_next
-                                              - (WT/2.0) * tf.square(delta_t_next))
+                                              - self.D * delta_t_next
+                                              - (self.WT/2.0) * tf.square(delta_t_next))
                             else:
-                                log_lambda_ = (D + (delta_t_next * WT))
+                                log_lambda_ = (self.D + (delta_t_next * self.WT))
                                 lambda_ = tf.exp(tf.minimum(ETH, log_lambda_), name='lambda_')
                                 log_f_star = (log_lambda_
-                                              + (1.0 / WT) * tf.exp(tf.minimum(ETH, D))
-                                              - (1.0 / WT) * lambda_)
+                                              + (1.0 / self.WT) * tf.exp(tf.minimum(ETH, self.D))
+                                              - (1.0 / self.WT) * lambda_)
 
                             events_pred = tf.nn.softmax(
                                 tf.minimum(ETH,
@@ -1181,10 +1181,15 @@ class RMTPP:
                 self.times_in: bptt_time_in,
             }
 
-            bptt_hidden_states, bptt_events_pred, cur_state = self.sess.run(
-                [self.hidden_states, self.event_preds, self.final_state],
+            bptt_hidden_states, bptt_events_pred, cur_state, D, WT = self.sess.run(
+                [self.hidden_states, self.event_preds, self.final_state, self.D, self.WT],
                 feed_dict=feed_dict
             )
+            if self.ALG_NAME in ['rmtpp', 'rmtpp_mode', 'rmtpp_splusintensity']:
+                WT = np.ones((len(event_in_seq), 1)) * WT
+            elif self.ALG_NAME in ['rmtpp_whparam', 'rmtpp_mode_whparam']:
+                raise NotImplemented('For whparam methods')
+                WT = self.wt_hparam
 
             all_hidden_states.extend(bptt_hidden_states)
             all_event_preds_softmax.append(bptt_events_pred[-1])
@@ -1197,35 +1202,35 @@ class RMTPP:
     
             global _quad_worker
             def _quad_worker(params):
-                batch_idx, (h_i, t_last, tru_gap) = params
+                batch_idx, (D_i, WT_i, h_i, t_last, tru_gap) = params
                 preds_i = []
-                D = (np.dot(h_i, Vt) + bt).reshape(-1)
-                D = np.clip(D, np.ones_like(D)*-50.0, np.ones_like(D)*50.0)
-                D = get_D_constraint()(D)
-                if self.ALG_NAME in ['rmtpp_splusintensity']:
-                    D = softplus(D)
+                # D = (np.dot(h_i, Vt) + bt).reshape(-1)
+                # D = np.clip(D, np.ones_like(D)*-50.0, np.ones_like(D)*50.0)
+                # D = get_D_constraint()(D)
+                # if self.ALG_NAME in ['rmtpp_splusintensity']:
+                #     D = softplus(D)
 
-                c_ = np.exp(np.maximum(D, np.ones_like(D)*-87.0))
-                if self.ALG_NAME in ['rmtpp_wcmpt', 'rmtpp_mode_wcmpt']:
-                    WT = (np.dot(h_i, Vw) + bw).reshape(-1)
-                    WT = get_WT_constraint()(WT)
-                    WT = np.clip(WT, 0.0, 10.0)
-                elif self.ALG_NAME in ['rmtpp', 'rmtpp_mode', 'rmtpp_splusintensity']:
-                    WT = wt
-                elif self.ALG_NAME in ['rmtpp_whparam', 'rmtpp_mode_whparam']:
-                    WT = self.wt_hparam
+                c_ = np.exp(np.maximum(D_i, np.ones_like(D_i)*-87.0))
+                # if self.ALG_NAME in ['rmtpp_wcmpt', 'rmtpp_mode_wcmpt']:
+                #     WT = (np.dot(h_i, Vw) + bw).reshape(-1)
+                #     WT = get_WT_constraint()(WT)
+                #     WT = np.clip(WT, 0.0, 10.0)
+                # elif self.ALG_NAME in ['rmtpp', 'rmtpp_mode', 'rmtpp_splusintensity']:
+                #     WT = wt
+                # elif self.ALG_NAME in ['rmtpp_whparam', 'rmtpp_mode_whparam']:
+                #     WT = self.wt_hparam
 
                 if self.ALG_NAME in ['rmtpp', 'rmtpp_wcmpt', 'rmtpp_whparam']:
-                    args = (c_, WT)
+                    args = (c_, WT_i)
                     val, _err = quad(quad_func, 0, np.inf, args=args)
-                    #print(batch_idx, D, c_, WT, val)
+                    #print(batch_idx, D_i, c_, WT_i, val)
                 elif self.ALG_NAME in ['rmtpp_mode', 'rmtpp_mode_wcmpt', 'rmtpp_mode_whparam']:
-                    val_raw = (np.log(WT) - D)/WT
+                    val_raw = (np.log(WT_i) - D_i)/WT_i
                     val = np.where(val_raw<0.0, 0.0, val_raw)
                     val = val.reshape(-1)[0]
-                    #print(batch_idx, D, c_, WT, val, val_raw)
+                    #print(batch_idx, D_i, c_, WT_i, val, val_raw)
                 elif self.ALG_NAME in ['rmtpp_splusintensity']:
-                    args = (D, WT)
+                    args = (D_i, WT_i)
                     val, _err = quad(quad_func_splusintensity, 0, np.inf, args=args)
                     #print(val)
 
@@ -1235,16 +1240,16 @@ class RMTPP:
                 if plot_dir:
                     if self.ALG_NAME in ['rmtpp', 'rmtpp_wcmpt']:
                         mean = val
-                        mode = (np.log(WT) - D)/WT
+                        mode = (np.log(WT_i) - D_i)/WT_i
                         mode = np.where(mode<0.0, 0.0, mode)
                         mode = mode.reshape(-1)[0]
                     elif self.ALG_NAME in ['rmtpp_mode', 'rmtpp_mode_wcmpt']:
-                        args = (c_, WT)
+                        args = (c_, WT_i)
                         mode = val
                         mean, _ = quad(quad_func, 0, np.inf, args=args)
 
                     plt_x = np.arange(val-2.0, val+2.0, 0.05)
-                    plt_y = density_func(plt_x, c_, WT)
+                    plt_y = density_func(plt_x, c_, WT_i)
                     plt.plot(plt_x, plt_y.reshape(-1), label='Density')
                     plt.plot(mean, 0.0, 'go', label='mean')
                     plt.plot(mode, 0.0, 'r*', label='mode')
@@ -1255,18 +1260,18 @@ class RMTPP:
                     plt.savefig(os.path.join(plot_dir,'instance_'+str(batch_idx)+'.png'))
                     plt.close()
     
-                    #print(batch_idx, D, wt, mode, mean, density_func(mode, D, wt), density_func(mean, D, wt))
-                    print(batch_idx, D, c_, WT, mean, density_func(mean, c_, WT))
+                    #print(batch_idx, D_i, wt, mode, mean, density_func(mode, D_i, wt), density_func(mean, D_i, wt))
+                    print(batch_idx, D_i, c_, WT_i, mean, density_func(mean, c_, WT_i))
 
     
                 return preds_i
     
             time_pred_last = time_in_seq[:, -1] if pred_idx==0 else all_time_preds[-1]
             if single_threaded:
-                step_time_preds = [_quad_worker((idx, (state, t_last, tru_gap))) for idx, (state, t_last, tru_gap) in enumerate(zip(cur_state, time_pred_last, plt_tru_gaps))]
+                step_time_preds = [_quad_worker((idx, (D_i, WT_i, state, t_last, tru_gap))) for idx, (D_i, WT_i, state, t_last, tru_gap) in enumerate(zip(D, WT, cur_state, time_pred_last, plt_tru_gaps))]
             else:
                 with MP.Pool() as pool:
-                    step_time_preds = pool.map(_quad_worker, enumerate(zip(cur_state, time_pred_last, plt_tru_gaps)))
+                    step_time_preds = pool.map(_quad_worker, enumerate(zip(D, WT, cur_state, time_pred_last, plt_tru_gaps)))
 
             all_time_preds.append(step_time_preds)
 
