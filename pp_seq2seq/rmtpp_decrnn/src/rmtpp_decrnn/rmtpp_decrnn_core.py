@@ -25,6 +25,7 @@ def_opts = Deco.Options(
     batch_size=64,          # 16, 32, 64
 
     learning_rate=0.1,      # 0.1, 0.01, 0.001
+    temperature=5.0,
     momentum=0.9,
     decay_steps=100,
     decay_rate=0.001,
@@ -67,6 +68,8 @@ def_opts = Deco.Options(
 
     enc_cell_type='manual',
     dec_cell_type='manual',
+
+    num_discrete_states = 10,
 
     embed_size=__EMBED_SIZE,
     Wem=lambda num_categories: np.random.RandomState(42).randn(num_categories, __EMBED_SIZE) * 0.01,
@@ -116,7 +119,7 @@ class RMTPP_DECRNN:
 
     @Deco.optioned()
     def __init__(self, sess, num_categories, params_named, params_alias_named, hidden_layer_size, batch_size,
-                 learning_rate, momentum, l2_penalty, embed_size,
+                 learning_rate, temperature, momentum, l2_penalty, embed_size,
                  float_type, bptt, decoder_length, seed, scope, alg_name,
                  save_dir, decay_steps, decay_rate,
                  device_gpu, device_cpu, summary_dir, cpu_only, constraints,
@@ -124,7 +127,7 @@ class RMTPP_DECRNN:
                  init_zero_dec_state, concat_final_enc_state, num_extra_dec_layer, concat_before_dec_update,
                  mark_triggers_time, mark_loss,
                  Wt, Wem, Wh, bh, Ws, bs, wt, Wy, Vy, Vt, Vw, bk, bt, bw, wt_hparam,
-                 plot_pred_dev, plot_pred_test, enc_cell_type, dec_cell_type):
+                 plot_pred_dev, plot_pred_test, enc_cell_type, dec_cell_type, num_discrete_states):
 
         self.seed = seed
         tf.set_random_seed(self.seed)
@@ -137,6 +140,7 @@ class RMTPP_DECRNN:
         self.NUM_DEC_LAYERS = self.PARAMS_NAMED['num_dec_layers']
         self.BATCH_SIZE = batch_size
         self.LEARNING_RATE = self.PARAMS_NAMED['learning_rate'] #learning_rate
+        self.TEMPERATURE = temperature
         self.MOMENTUM = momentum
         self.L2_PENALTY = l2_penalty
         self.EMBED_SIZE = embed_size
@@ -157,6 +161,8 @@ class RMTPP_DECRNN:
 
         self.ENC_CELL_TYPE = enc_cell_type
         self.DEC_CELL_TYPE = dec_cell_type
+
+        self.NUM_DISCRETE_STATES = num_discrete_states
 
         self.RNN_REG_PARAM = self.PARAMS_NAMED['rnn_reg_param'] #rnn_reg_param
         self.EXTLYR_REG_PARAM = self.PARAMS_NAMED['extlyr_reg_param'] #extlyr_reg_param
@@ -323,6 +329,15 @@ class RMTPP_DECRNN:
                 self.all_vars = [self.Wt, self.Wem, self.Wh, self.bh, self.Ws, self.bs,
                                  self.wt, self.Wy, self.Vy, self.Vt, self.bt, self.bk, self.Vw, self.bw]
 
+                with tf.device(device_cpu):
+                    # Global step needs to be on the CPU (Why?)
+                    self.global_step = tf.Variable(0, name='global_step', trainable=False)
+
+                self.temperature = tf.train.inverse_time_decay(self.TEMPERATURE,
+                                                               global_step=self.global_step,
+                                                               decay_steps=decay_steps,
+                                                               decay_rate=decay_rate)
+
                 # Add summaries for all (trainable) variables
                 with tf.device(device_cpu):
                     for v in self.all_vars:
@@ -415,6 +430,8 @@ class RMTPP_DECRNN:
                     s_state = self.final_state
                 #s_state = tf.Print(s_state, [self.mode, tf.equal(self.mode, 1.0)], message='mode ')
                 self.decoder_states = []
+                z_current = self.sample_z(s_state)
+                self.z_list = []
                 with tf.name_scope('Decoder'):
                     for i in range(self.DEC_LEN):
 
@@ -453,6 +470,7 @@ class RMTPP_DECRNN:
                         events_embedded = tf.nn.embedding_lookup(self.Wem,
                                                                  tf.mod(events - 1, self.NUM_CATEGORIES))
 
+
                         with tf.variable_scope('state_recursion', reuse=tf.AUTO_REUSE):
 
                             if self.DEC_CELL_TYPE == 'manual':
@@ -463,7 +481,7 @@ class RMTPP_DECRNN:
                                     name='s_t'
                                 )
                             elif self.DEC_CELL_TYPE == 'lstm':
-                                inputs = tf.concat([s_state, events_embedded], axis=-1)
+                                inputs = tf.concat([s_state, events_embedded, z_current], axis=-1)
                                 new_state, dec_internal_state = self.dec_cell(inputs,  dec_internal_state)
 
                             if self.CONCAT_BEFORE_DEC_UPDATE:
@@ -478,12 +496,11 @@ class RMTPP_DECRNN:
                                                                 activation=tf.nn.relu,
                                                                 kernel_regularizer=self.EXTLYR_REGULARIZER,
                                                                 bias_regularizer=self.EXTLYR_REGULARIZER)
-                            # if self.CONCAT_FINAL_ENC_STATE:
-                            #     new_state = tf.concat([new_state_, self.final_state], axis=-1)
-                            # else:
-                            #     new_state = new_state_
 
                             s_state = new_state
+
+                            z_current = self.sample_z(s_state)
+                            self.z_list.append(z_current)
 
                         if mark_triggers_time:
                             self.decoder_states.append(s_state)
@@ -492,6 +509,7 @@ class RMTPP_DECRNN:
 
                     # ------ Begin time-prediction ------ #
                     self.decoder_states = tf.stack(self.decoder_states, axis=1)
+                    self.z_list = tf.stack(self.z_list, axis=1)
                     if self.CONCAT_FINAL_ENC_STATE:
                         decoder_states_concat = tf.concat([self.decoder_states,
                                                            tf.tile(tf.expand_dims(self.final_state, axis=1),
@@ -512,6 +530,9 @@ class RMTPP_DECRNN:
                     newVw = tf.tile(tf.expand_dims(self.Vw, axis=0), [tf.shape(self.decoder_states)[0], 1, 1]) 
 
                     self.D = tf.reduce_sum(decoder_states_concat * newVt, axis=2) + base_intensity_bt
+                    self.D += tf.squeeze(tf.layers.dense(self.z_list, 1, name='z_to_lambda_layer',
+                                                         kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed)),
+                                         axis=-1)
 
                     # self.D = tf.squeeze(tf.tensordot(self.decoder_states, self.Vt, axes=[[2],[0]]), axis=-1) + base_intensity_bt
                     self.D = get_D_constraint()(self.D)
@@ -603,10 +624,6 @@ class RMTPP_DECRNN:
                 self.times = self.times_in
 
 
-                with tf.device(device_cpu):
-                    # Global step needs to be on the CPU (Why?)
-                    self.global_step = tf.Variable(0, name='global_step', trainable=False)
-
                 self.learning_rate = tf.train.inverse_time_decay(self.LEARNING_RATE,
                                                                  global_step=self.global_step,
                                                                  decay_steps=decay_steps,
@@ -662,6 +679,15 @@ class RMTPP_DECRNN:
 
                 self.tf_init = tf.global_variables_initializer()
                 # self.check_nan = tf.add_check_numerics_ops()
+
+    def sample_z(self, inputs):
+        with tf.variable_scope('latent_discrete_state', reuse=tf.AUTO_REUSE):
+
+            z_logits = tf.layers.dense(inputs, self.NUM_DISCRETE_STATES, name='z_layer',
+                                       kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed))
+            z_distribution = tf.contrib.distributions.RelaxedOneHotCategorical(self.temperature, logits=z_logits)
+            z_sampled = z_distribution.sample(seed=self.seed)
+            return z_sampled
 
     def initialize(self, finalize=False):
         """Initialize the global trainable variables."""
