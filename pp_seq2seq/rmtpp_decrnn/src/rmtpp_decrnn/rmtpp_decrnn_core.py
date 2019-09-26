@@ -1223,22 +1223,8 @@ class RMTPP_DECRNN:
             #print(np.matmul(decoder_states, Vt) + bt)
             for pred_idx, (D_j, WT_j, s_i) in enumerate(zip(D_i, WT_i, decoder_states)):
                 t_last = time_pred_last if pred_idx==0 else preds_i[-1]
-                # D = (np.dot(s_i, Vt[pred_idx,:]) + bt[:,pred_idx]).reshape(-1)
-                # D = np.clip(D, np.ones_like(D)*-50.0, np.ones_like(D)*50.0)
-                # D = get_D_constraint()(D)
-                # if self.ALG_NAME in ['rmtpp_decrnn_splusintensity']:
-                #     D = softplus(D)
 
                 c_ = np.exp(np.maximum(D_j, np.ones_like(D_j)*-87.0))
-                # if self.ALG_NAME in ['rmtpp_decrnn_wcmpt', 'rmtpp_decrnn_mode_wcmpt']:
-                #     WT = (np.dot(s_i, Vw[pred_idx,:]) + bw[:,pred_idx]).reshape(-1)
-                #     WT = get_WT_constraint()(WT)
-                #     WT = np.clip(WT, 0.0, 10.0)
-                # elif self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_mode', 'rmtpp_decrnn_splusintensity']:
-                #     WT = wt
-                # elif self.ALG_NAME in ['rmtpp_decrnn_whparam', 'rmtpp_decrnn_mode_whparam']:
-                #     WT = self.wt_hparam
-
                 if self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_wcmpt', 'rmtpp_decrnn_whparam']:
                     args = (c_, WT_j)
                     val, _err = quad(quad_func, 0, np.inf, args=args)

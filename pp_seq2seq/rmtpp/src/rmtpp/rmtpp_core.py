@@ -1204,22 +1204,8 @@ class RMTPP:
             def _quad_worker(params):
                 batch_idx, (D_i, WT_i, h_i, t_last, tru_gap) = params
                 preds_i = []
-                # D = (np.dot(h_i, Vt) + bt).reshape(-1)
-                # D = np.clip(D, np.ones_like(D)*-50.0, np.ones_like(D)*50.0)
-                # D = get_D_constraint()(D)
-                # if self.ALG_NAME in ['rmtpp_splusintensity']:
-                #     D = softplus(D)
 
                 c_ = np.exp(np.maximum(D_i, np.ones_like(D_i)*-87.0))
-                # if self.ALG_NAME in ['rmtpp_wcmpt', 'rmtpp_mode_wcmpt']:
-                #     WT = (np.dot(h_i, Vw) + bw).reshape(-1)
-                #     WT = get_WT_constraint()(WT)
-                #     WT = np.clip(WT, 0.0, 10.0)
-                # elif self.ALG_NAME in ['rmtpp', 'rmtpp_mode', 'rmtpp_splusintensity']:
-                #     WT = wt
-                # elif self.ALG_NAME in ['rmtpp_whparam', 'rmtpp_mode_whparam']:
-                #     WT = self.wt_hparam
-
                 if self.ALG_NAME in ['rmtpp', 'rmtpp_wcmpt', 'rmtpp_whparam']:
                     args = (c_, WT_i)
                     val, _err = quad(quad_func, 0, np.inf, args=args)
