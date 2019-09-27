@@ -661,7 +661,7 @@ class RMTPP:
         train_time_loss_list = list()
         train_mark_loss_list = list()
         wt_list = list()
-        train_inference_times = list()
+        train_epoch_times, train_inference_times = list(), list()
         dev_inference_times = list()
         test_inference_times = list()
 
@@ -676,6 +676,7 @@ class RMTPP:
             total_loss_prev = total_loss
             total_loss = 0.0
             time_loss, mark_loss = 0.0, 0.0
+            epoch_start_time = time.time()
 
             for batch_idx in range(n_batches):
                 batch_idxes = idxes[batch_idx * self.BATCH_SIZE:(batch_idx + 1) * self.BATCH_SIZE]
@@ -750,6 +751,8 @@ class RMTPP:
                 if batch_idx % 10 == 0:
                     print('Loss during batch {} last BPTT = {:.3f}, lr = {:.5f}'
                           .format(batch_idx, batch_loss, self.sess.run(self.learning_rate)))
+            epoch_end_time = time.time()
+            train_epoch_times.append(epoch_end_time - epoch_start_time)
 
             if self.STOP_CRITERIA == 'per_epoch_val_err' and epoch >= self.PATIENCE:
 
@@ -1018,6 +1021,7 @@ class RMTPP:
                 print('Model saved at {}'.format(checkpoint_path))
 
 
+        avg_train_epoch_time = np.average(train_epoch_times)
         avg_dev_inference_time = np.average(dev_inference_times)
         avg_train_inference_time = np.average(train_inference_times)
         avg_test_inference_time = np.average(test_inference_times)
@@ -1041,7 +1045,6 @@ class RMTPP:
                 'best_test_event_preds': best_test_event_preds.tolist(),
                 'best_test_time_preds': best_test_time_preds.tolist(),
                 'best_w': best_w,
-                'hidden_layer_size': self.HIDDEN_LAYER_SIZE,
                 'wt_hparam': self.wt_hparam,
                 'checkpoint_dir': checkpoint_dir,
                 'train_loss_list': train_loss_list,
@@ -1051,6 +1054,7 @@ class RMTPP:
                 'avg_train_inference_time':avg_train_inference_time,
                 'avg_dev_inference_time':avg_dev_inference_time,
                 'avg_test_inference_time':avg_test_inference_time,
+                'avg_train_epoch_time': avg_train_epoch_time,
                }
 
 
@@ -1223,33 +1227,6 @@ class RMTPP:
                 assert np.isfinite(val)
                 preds_i = (t_last + val)
 
-                if plot_dir:
-                    if self.ALG_NAME in ['rmtpp', 'rmtpp_wcmpt']:
-                        mean = val
-                        mode = (np.log(WT_i) - D_i)/WT_i
-                        mode = np.where(mode<0.0, 0.0, mode)
-                        mode = mode.reshape(-1)[0]
-                    elif self.ALG_NAME in ['rmtpp_mode', 'rmtpp_mode_wcmpt']:
-                        args = (c_, WT_i)
-                        mode = val
-                        mean, _ = quad(quad_func, 0, np.inf, args=args)
-
-                    plt_x = np.arange(val-2.0, val+2.0, 0.05)
-                    plt_y = density_func(plt_x, c_, WT_i)
-                    plt.plot(plt_x, plt_y.reshape(-1), label='Density')
-                    plt.plot(mean, 0.0, 'go', label='mean')
-                    plt.plot(mode, 0.0, 'r*', label='mode')
-                    plt.plot(tru_gap, 0.0, 'b^', label='True gap')
-                    plt.xlabel('Gap')
-                    plt.ylabel('Density')
-                    plt.legend(loc='best')
-                    plt.savefig(os.path.join(plot_dir,'instance_'+str(batch_idx)+'.png'))
-                    plt.close()
-    
-                    #print(batch_idx, D_i, wt, mode, mean, density_func(mode, D_i, wt), density_func(mean, D_i, wt))
-                    print(batch_idx, D_i, c_, WT_i, mean, density_func(mean, c_, WT_i))
-
-    
                 return preds_i
     
             time_pred_last = time_in_seq[:, -1] if pred_idx==0 else all_time_preds[-1]
