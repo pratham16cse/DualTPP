@@ -551,7 +551,7 @@ class RMTPP_DECRNN:
                         # self.WT = tf.squeeze(tf.tensordot(self.decoder_states, self.Vw, axes=[[2],[0]]), axis=-1) + base_intensity_bw
                         self.WT = get_WT_constraint()(self.WT)
                         self.WT = tf.clip_by_value(self.WT, 0.0, 10.0)
-                    elif self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_mode', 'rmtpp_decrnn_splusintensity', 'rmtpp_decrnn_latentz']:
+                    elif self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_mode', 'rmtpp_decrnn_splusintensity', 'rmtpp_decrnn_latentz', 'rmtpp_decrnn_truemarks']:
                         self.WT = self.wt
                     elif self.ALG_NAME in ['rmtpp_decrnn_whparam', 'rmtpp_decrnn_mode_whparam']:
                         self.WT = self.wt_hparam
@@ -884,7 +884,8 @@ class RMTPP_DECRNN:
                                            training_data['train_time_in_seq'],
                                            training_data['decoder_length'],
                                            plt_tru_gaps,
-                                           single_threaded=True)
+                                           single_threaded=True,
+                                           event_out_seq=training_data['train_event_out_seq'] if self.ALG_NAME=='rmtpp_decrnn_truemarks' else None)
                     train_inference_times.append(inference_time)
                     train_time_out_seq = training_data['train_time_out_seq']
                     train_mae, train_total_valid, train_acc, train_mrr = self.eval(train_time_preds, train_time_out_seq,
@@ -902,7 +903,8 @@ class RMTPP_DECRNN:
                                        training_data['dev_time_in_seq'],
                                        training_data['decoder_length'],
                                        plt_tru_gaps,
-                                       single_threaded=True)
+                                       single_threaded=True,
+                                       event_out_seq=training_data['dev_event_out_seq'] if self.ALG_NAME=='rmtpp_decrnn_truemarks' else None)
                 dev_inference_times.append(inference_time)
                 dev_time_out_seq = np.array(training_data['dev_actual_time_out_seq'])
                 dev_time_in_seq = training_data['dev_time_in_seq']
@@ -955,7 +957,8 @@ class RMTPP_DECRNN:
                                        training_data['test_time_in_seq'],
                                        training_data['decoder_length'],
                                        plt_tru_gaps,
-                                       single_threaded=True)
+                                       single_threaded=True,
+                                       event_out_seq=training_data['test_event_out_seq'] if self.ALG_NAME=='rmtpp_decrnn_truemarks' else None)
                 test_inference_times.append(inference_time)
                 test_time_out_seq = np.array(training_data['test_actual_time_out_seq'])
                 test_time_in_seq = training_data['test_time_in_seq']
@@ -1077,7 +1080,8 @@ class RMTPP_DECRNN:
                                    training_data['dev_time_in_seq'],
                                    training_data['decoder_length'],
                                    plt_tru_gaps,
-                                   single_threaded=True)
+                                   single_threaded=True,
+                                   event_out_seq=training_data['dev_event_out_seq'] if self.ALG_NAME=='rmtpp_decrnn_truemarks' else None)
             dev_inference_times.append(inference_time)
             dev_time_preds = dev_time_preds[:,:dec_len_for_eval]
             dev_time_out_seq = np.array(training_data['dev_actual_time_out_seq'])[:,:dec_len_for_eval]
@@ -1101,7 +1105,8 @@ class RMTPP_DECRNN:
                                    training_data['test_time_in_seq'],
                                    training_data['decoder_length'],
                                    plt_tru_gaps,
-                                   single_threaded=True)
+                                   single_threaded=True,
+                                   event_out_seq=training_data['test_event_out_seq'] if self.ALG_NAME=='rmtpp_decrnn_truemarks' else None)
             test_inference_times.append(inference_time)
             test_time_preds = test_time_preds[:,:dec_len_for_eval]
             test_time_out_seq = np.array(training_data['test_actual_time_out_seq'])[:,:dec_len_for_eval]
@@ -1179,7 +1184,7 @@ class RMTPP_DECRNN:
         print('Loading the model from {}'.format(ckpt.model_checkpoint_path))
         saver.restore(self.sess, ckpt.model_checkpoint_path)
 
-    def predict(self, event_in_seq, time_in_seq, decoder_length, plt_tru_gaps, single_threaded=False, plot_dir=False):
+    def predict(self, event_in_seq, time_in_seq, decoder_length, plt_tru_gaps, single_threaded=False, plot_dir=False, event_out_seq=None):
         """Treats the entire dataset as a single batch and processes it."""
 
         start_time = time.time()
@@ -1219,7 +1224,13 @@ class RMTPP_DECRNN:
         cur_state = np.zeros((len(event_in_seq), self.HIDDEN_LAYER_SIZE))
         initial_time = np.zeros(time_in_seq.shape[0])
         # Feeding dummy values to self.<events/tims>_out placeholders
-        event_out_seq = time_out_seq = np.zeros((event_in_seq.shape[0], self.DEC_LEN))
+        time_out_seq = np.zeros((event_in_seq.shape[0], self.DEC_LEN))
+        if self.ALG_NAME in ['rmtpp_decrnn_truemarks']:
+            assert event_out_seq is not None
+            mode = 0.0
+        else:
+            assert event_out_seq is None
+            mode = 1.0
 
         feed_dict = {
             self.initial_state: cur_state,
@@ -1228,22 +1239,25 @@ class RMTPP_DECRNN:
             self.times_in: time_in_seq,
             self.events_out: event_out_seq,
             self.times_out: time_out_seq,
-            self.mode: 0.0 #Test Mode
+            self.mode: mode #Test Mode
         }
 
         all_encoder_states, all_decoder_states, all_event_preds, cur_state, D, WT = self.sess.run(
             [self.hidden_states, self.decoder_states, self.event_preds, self.final_state, self.D, self.WT],
             feed_dict=feed_dict
         )
-        if self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_mode', 'rmtpp_decrnn_splusintensity', 'rmtpp_decrnn_latentz']:
+        if self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_mode', 'rmtpp_decrnn_splusintensity', 'rmtpp_decrnn_latentz', 'rmtpp_decrnn_truemarks']:
             WT = np.ones((len(event_in_seq), self.DEC_LEN, 1)) * WT
         elif self.ALG_NAME in ['rmtpp_decrnn_whparam', 'rmtpp_decrnn_mode_whparam']:
             raise NotImplemented('For whparam methods')
             WT = self.wt_hparam
 
         all_event_preds_softmax = all_event_preds
-        all_event_preds = np.argmax(all_event_preds, axis=-1) + 1
-        all_event_preds = np.transpose(all_event_preds)
+        if self.ALG_NAME in ['rmtpp_decrnn_truemarks']:
+            all_event_preds = np.transpose(event_out_seq)
+        else:
+            all_event_preds = np.argmax(all_event_preds, axis=-1) + 1
+            all_event_preds = np.transpose(all_event_preds)
 
         # TODO: This calculation is completely ignoring the clipping which
         # happens during the inference step.
@@ -1258,7 +1272,7 @@ class RMTPP_DECRNN:
                 t_last = time_pred_last if pred_idx==0 else preds_i[-1]
 
                 c_ = np.exp(np.maximum(D_j, np.ones_like(D_j)*-87.0))
-                if self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_wcmpt', 'rmtpp_decrnn_whparam', 'rmtpp_decrnn_latentz']:
+                if self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_wcmpt', 'rmtpp_decrnn_whparam', 'rmtpp_decrnn_latentz', 'rmtpp_decrnn_truemarks']:
                     args = (c_, WT_j)
                     val, _err = quad(quad_func, 0, np.inf, args=args)
                     #print(batch_idx, D_j, c_, WT_j, val)
