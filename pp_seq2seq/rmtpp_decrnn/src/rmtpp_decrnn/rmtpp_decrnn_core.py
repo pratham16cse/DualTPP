@@ -430,8 +430,9 @@ class RMTPP_DECRNN:
                     s_state = self.final_state
                 #s_state = tf.Print(s_state, [self.mode, tf.equal(self.mode, 1.0)], message='mode ')
                 self.decoder_states = []
-                z_current = self.sample_z(s_state)
-                self.z_list = []
+                if self.ALG_NAME in ['rmtpp_decrnn_latentz']:
+                    z_current = self.sample_z(s_state)
+                    self.z_list = []
                 with tf.name_scope('Decoder'):
                     for i in range(self.DEC_LEN):
 
@@ -481,7 +482,10 @@ class RMTPP_DECRNN:
                                     name='s_t'
                                 )
                             elif self.DEC_CELL_TYPE == 'lstm':
-                                inputs = tf.concat([s_state, events_embedded, z_current], axis=-1)
+                                if self.ALG_NAME in ['rmtpp_decrnn_latentz']:
+                                    inputs = tf.concat([s_state, events_embedded, z_current], axis=-1)
+                                else:
+                                    inputs = tf.concat([s_state, events_embedded], axis=-1)
                                 new_state, dec_internal_state = self.dec_cell(inputs,  dec_internal_state)
 
                             if self.CONCAT_BEFORE_DEC_UPDATE:
@@ -499,8 +503,9 @@ class RMTPP_DECRNN:
 
                             s_state = new_state
 
-                            z_current = self.sample_z(s_state)
-                            self.z_list.append(z_current)
+                            if self.ALG_NAME in ['rmtpp_decrnn_latentz']:
+                                z_current = self.sample_z(s_state)
+                                self.z_list.append(z_current)
 
                         if mark_triggers_time:
                             self.decoder_states.append(s_state)
@@ -509,7 +514,8 @@ class RMTPP_DECRNN:
 
                     # ------ Begin time-prediction ------ #
                     self.decoder_states = tf.stack(self.decoder_states, axis=1)
-                    self.z_list = tf.stack(self.z_list, axis=1)
+                    if self.ALG_NAME in ['rmtpp_decrnn_latentz']:
+                        self.z_list = tf.stack(self.z_list, axis=1)
                     if self.CONCAT_FINAL_ENC_STATE:
                         decoder_states_concat = tf.concat([self.decoder_states,
                                                            tf.tile(tf.expand_dims(self.final_state, axis=1),
@@ -530,9 +536,10 @@ class RMTPP_DECRNN:
                     newVw = tf.tile(tf.expand_dims(self.Vw, axis=0), [tf.shape(self.decoder_states)[0], 1, 1]) 
 
                     self.D = tf.reduce_sum(decoder_states_concat * newVt, axis=2) + base_intensity_bt
-                    self.D += tf.squeeze(tf.layers.dense(self.z_list, 1, name='z_to_lambda_layer',
-                                                         kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed)),
-                                         axis=-1)
+                    if self.ALG_NAME in ['rmtpp_decrnn_latentz']:
+                        self.D += tf.squeeze(tf.layers.dense(self.z_list, 1, name='z_to_lambda_layer',
+                                                             kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed)),
+                                             axis=-1)
 
                     # self.D = tf.squeeze(tf.tensordot(self.decoder_states, self.Vt, axes=[[2],[0]]), axis=-1) + base_intensity_bt
                     self.D = get_D_constraint()(self.D)
@@ -544,7 +551,7 @@ class RMTPP_DECRNN:
                         # self.WT = tf.squeeze(tf.tensordot(self.decoder_states, self.Vw, axes=[[2],[0]]), axis=-1) + base_intensity_bw
                         self.WT = get_WT_constraint()(self.WT)
                         self.WT = tf.clip_by_value(self.WT, 0.0, 10.0)
-                    elif self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_mode', 'rmtpp_decrnn_splusintensity']:
+                    elif self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_mode', 'rmtpp_decrnn_splusintensity', 'rmtpp_decrnn_latentz']:
                         self.WT = self.wt
                     elif self.ALG_NAME in ['rmtpp_decrnn_whparam', 'rmtpp_decrnn_mode_whparam']:
                         self.WT = self.wt_hparam
@@ -1228,7 +1235,7 @@ class RMTPP_DECRNN:
             [self.hidden_states, self.decoder_states, self.event_preds, self.final_state, self.D, self.WT],
             feed_dict=feed_dict
         )
-        if self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_mode', 'rmtpp_decrnn_splusintensity']:
+        if self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_mode', 'rmtpp_decrnn_splusintensity', 'rmtpp_decrnn_latentz']:
             WT = np.ones((len(event_in_seq), self.DEC_LEN, 1)) * WT
         elif self.ALG_NAME in ['rmtpp_decrnn_whparam', 'rmtpp_decrnn_mode_whparam']:
             raise NotImplemented('For whparam methods')
@@ -1251,7 +1258,7 @@ class RMTPP_DECRNN:
                 t_last = time_pred_last if pred_idx==0 else preds_i[-1]
 
                 c_ = np.exp(np.maximum(D_j, np.ones_like(D_j)*-87.0))
-                if self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_wcmpt', 'rmtpp_decrnn_whparam']:
+                if self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_wcmpt', 'rmtpp_decrnn_whparam', 'rmtpp_decrnn_latentz']:
                     args = (c_, WT_j)
                     val, _err = quad(quad_func, 0, np.inf, args=args)
                     #print(batch_idx, D_j, c_, WT_j, val)
