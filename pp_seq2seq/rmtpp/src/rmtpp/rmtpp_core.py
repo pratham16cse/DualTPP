@@ -680,74 +680,56 @@ class RMTPP:
 
             for batch_idx in range(n_batches):
                 batch_idxes = idxes[batch_idx * self.BATCH_SIZE:(batch_idx + 1) * self.BATCH_SIZE]
-                batch_event_train_in = train_event_in_seq[batch_idxes, :]
-                batch_event_train_out = train_event_out_seq[batch_idxes, :]
-                batch_time_train_in = train_time_in_seq[batch_idxes, :]
-                batch_time_train_out = train_time_out_seq[batch_idxes, :]
+                batch_event_train_in = train_event_in_seq[batch_idxes, :self.BPTT]
+                batch_event_train_out = train_event_out_seq[batch_idxes, :self.BPTT]
+                batch_time_train_in = train_time_in_seq[batch_idxes, :self.BPTT]
+                batch_time_train_out = train_time_out_seq[batch_idxes, :self.BPTT]
 
                 cur_state = np.zeros((self.BATCH_SIZE, self.HIDDEN_LAYER_SIZE))
                 batch_loss, batch_time_loss, batch_mark_loss = 0.0, 0.0, 0.0
 
                 batch_num_events = np.sum(batch_event_train_in > 0)
-                for bptt_idx in range(0, len(batch_event_train_in[0]) - self.BPTT + 1, self.BPTT):
-                    bptt_range = range(bptt_idx, (bptt_idx + self.BPTT))
-                    bptt_event_in = batch_event_train_in[:, bptt_range]
-                    bptt_event_out = batch_event_train_out[:, bptt_range]
-                    bptt_time_in = batch_time_train_in[:, bptt_range]
-                    bptt_time_out = batch_time_train_out[:, bptt_range]
 
-                    if np.all(bptt_event_in[:, 0] == 0):
-                        # print('Breaking at bptt_idx {} / {}'
-                        #       .format(bptt_idx // self.BPTT,
-                        #               (len(batch_event_train_in[0]) - self.BPTT) // self.BPTT))
-                        break
+                initial_time = np.zeros(batch_time_train_in.shape[0])
 
-                    if bptt_idx > 0:
-                        initial_time = batch_time_train_in[:, bptt_idx - 1]
+                feed_dict = {
+                    self.initial_state: cur_state,
+                    self.initial_time: initial_time,
+                    self.events_in: batch_event_train_in,
+                    self.events_out: batch_event_train_out,
+                    self.times_in: batch_time_train_in,
+                    self.times_out: batch_time_train_out,
+                    self.batch_num_events: batch_num_events
+                }
+
+                if check_nans:
+                    raise NotImplemented('tf.add_check_numerics_ops is '
+                                         'incompatible with tf.cond and '
+                                         'tf.while_loop.')
+                    # _, _, cur_state, loss_ = \
+                    #     self.sess.run([self.check_nan, self.update,
+                    #                    self.final_state, self.loss],
+                    #                   feed_dict=feed_dict)
+                else:
+                    if with_summaries:
+                        _, summaries, cur_state, loss_, step = \
+                            self.sess.run([self.update,
+                                           self.tf_merged_summaries,
+                                           self.final_state,
+                                           self.loss,
+                                           self.global_step],
+                                          feed_dict=feed_dict)
+                        train_writer.add_summary(summaries, step)
                     else:
-                        initial_time = np.zeros(batch_time_train_in.shape[0])
-
-                    feed_dict = {
-                        self.initial_state: cur_state,
-                        self.initial_time: initial_time,
-                        self.events_in: bptt_event_in,
-                        self.events_out: bptt_event_out,
-                        self.times_in: bptt_time_in,
-                        self.times_out: bptt_time_out,
-                        self.batch_num_events: batch_num_events
-                    }
-
-                    if check_nans:
-                        raise NotImplemented('tf.add_check_numerics_ops is '
-                                             'incompatible with tf.cond and '
-                                             'tf.while_loop.')
-                        # _, _, cur_state, loss_ = \
-                        #     self.sess.run([self.check_nan, self.update,
-                        #                    self.final_state, self.loss],
-                        #                   feed_dict=feed_dict)
-                    else:
-                        if with_summaries:
-                            _, summaries, cur_state, loss_, step = \
-                                self.sess.run([self.update,
-                                               self.tf_merged_summaries,
-                                               self.final_state,
-                                               self.loss,
-                                               self.global_step],
-                                              feed_dict=feed_dict)
-                            train_writer.add_summary(summaries, step)
-                        else:
-                            _, cur_state, loss_, time_loss_, mark_loss_ = \
-                                self.sess.run([self.update,
-                                               self.final_state, self.loss,
-                                               self.time_loss, self.mark_loss],
-                                              feed_dict=feed_dict)
-                    batch_loss += loss_
-                    batch_time_loss += time_loss_
-                    batch_mark_loss += mark_loss_
-
+                        _, cur_state, loss_, time_loss_, mark_loss_ = \
+                            self.sess.run([self.update,
+                                           self.final_state, self.loss,
+                                           self.time_loss, self.mark_loss],
+                                          feed_dict=feed_dict)
+                batch_loss = loss_
                 total_loss += batch_loss
-                time_loss += batch_time_loss
-                mark_loss += batch_mark_loss
+                time_loss += time_loss_
+                mark_loss += mark_loss_
                 if batch_idx % 10 == 0:
                     print('Loss during batch {} last BPTT = {:.3f}, lr = {:.5f}'
                           .format(batch_idx, batch_loss, self.sess.run(self.learning_rate)))
