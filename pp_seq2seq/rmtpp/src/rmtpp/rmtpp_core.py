@@ -762,13 +762,10 @@ class RMTPP:
                     print('Running evaluation on dev, test: ...')
 
                 if eval_train_data:
-                    plt_time_out_seq = training_data['train_time_out_seq']
-                    plt_tru_gaps = plt_time_out_seq - np.concatenate([training_data['train_time_in_seq'][:, -1:], plt_time_out_seq[:, :-1]], axis=1)
                     train_time_preds, train_event_preds, train_event_preds_softmax, inference_time \
                             = self.predict(training_data['train_event_in_seq'],
                                            training_data['train_time_in_seq'],
                                            training_data['decoder_length'],
-                                           plt_tru_gaps,
                                            single_threaded=True)
                     train_inference_times.append(inference_time)
                     train_time_out_seq = training_data['train_time_out_seq']
@@ -780,13 +777,10 @@ class RMTPP:
                 else:
                     train_mae, train_acc, train_mrr, train_time_preds, train_event_preds = None, None, None, np.array([]), np.array([])
 
-                plt_time_out_seq = training_data['dev_time_out_seq']
-                plt_tru_gaps = plt_time_out_seq - np.concatenate([training_data['dev_time_in_seq'][:, -1:], plt_time_out_seq[:, :-1]], axis=1)
                 dev_time_preds, dev_event_preds, dev_event_preds_softmax, inference_time \
                         = self.predict(training_data['dev_event_in_seq'],
                                        training_data['dev_time_in_seq'],
                                        training_data['decoder_length'],
-                                       plt_tru_gaps,
                                        single_threaded=True)
                 dev_inference_times.append(inference_time)
                 dev_time_out_seq = np.array(training_data['dev_actual_time_out_seq'])
@@ -833,13 +827,10 @@ class RMTPP:
                     plt.savefig(name_plot+'.png')
                     plt.close()
     
-                plt_time_out_seq = training_data['test_time_out_seq']
-                plt_tru_gaps = plt_time_out_seq - np.concatenate([training_data['test_time_in_seq'][:, -1:], plt_time_out_seq[:, :-1]], axis=1)
                 test_time_preds, test_event_preds, test_event_preds_softmax, inference_time \
                         = self.predict(training_data['test_event_in_seq'],
                                        training_data['test_time_in_seq'],
                                        training_data['decoder_length'],
-                                       plt_tru_gaps,
                                        single_threaded=True)
                 test_inference_times.append(inference_time)
                 test_time_out_seq = np.array(training_data['test_actual_time_out_seq'])
@@ -938,12 +929,9 @@ class RMTPP:
             if eval_train_data: 
                 assert 1==0
                 #Not yet Implemented
-                plt_time_out_seq = training_data['train_time_out_seq']
-                plt_tru_gaps = plt_time_out_seq - np.concatenate([training_data['train_time_in_seq'][:, -1:], plt_time_out_seq[:, :-1]], axis=1)
                 train_time_preds, train_event_preds, inference_time = self.predict(training_data['train_event_in_seq'],
                                                                                    training_data['train_time_in_seq'],
                                                                                    training_data['decoder_length'],
-                                                                                   plt_tru_gaps,
                                                                                    single_threaded=True)
                 train_inference_times.append(inference_time)
                 train_time_out_seq = training_data['train_time_out_seq']
@@ -955,13 +943,10 @@ class RMTPP:
                 train_mae, train_acc, train_mrr, train_time_preds, train_event_preds = None, None, None, np.array([]), np.array([])
 
 
-            plt_time_out_seq = training_data['dev_time_out_seq']
-            plt_tru_gaps = plt_time_out_seq[:,:dec_len_for_eval] - np.concatenate([training_data['dev_time_in_seq'][:, -1:], plt_time_out_seq[:, :dec_len_for_eval-1]], axis=1)
             dev_time_preds, dev_event_preds, dev_event_preds_softmax, inference_time \
                     = self.predict(training_data['dev_event_in_seq'],
                                    training_data['dev_time_in_seq'],
                                    training_data['decoder_length'],
-                                   plt_tru_gaps,
                                    single_threaded=True)
             dev_inference_times.append(inference_time)
             dev_time_preds = dev_time_preds[:,:dec_len_for_eval]
@@ -979,13 +964,10 @@ class RMTPP:
             print('DEV: MAE = {:.5f}; valid = {}, ACC = {:.5f}, MAGE = {:.5f}'.format(
                 dev_mae, dev_total_valid, dev_acc, dev_gap_mae))
 
-            plt_time_out_seq = training_data['test_time_out_seq']
-            plt_tru_gaps = plt_time_out_seq[:,:dec_len_for_eval] - np.concatenate([training_data['test_time_in_seq'][:, -1:], plt_time_out_seq[:, :dec_len_for_eval-1]], axis=1)
             test_time_preds, test_event_preds, test_event_preds_softmax, inference_time \
                     = self.predict(training_data['test_event_in_seq'],
                                    training_data['test_time_in_seq'],
                                    training_data['decoder_length'],
-                                   plt_tru_gaps,
                                    single_threaded=True)
             test_inference_times.append(inference_time)
             test_time_preds = test_time_preds[:,:dec_len_for_eval]
@@ -1065,7 +1047,7 @@ class RMTPP:
         print('Loading the model from {}'.format(ckpt.model_checkpoint_path))
         saver.restore(self.sess, ckpt.model_checkpoint_path)
 
-    def predict(self, event_in_seq, time_in_seq, decoder_length, plt_tru_gaps, single_threaded=False, plot_dir=False):
+    def predict(self, event_in_seq, time_in_seq, decoder_length, single_threaded=False, plot_dir=False):
         """Treats the entire dataset as a single batch and processes it."""
 
 
@@ -1206,7 +1188,7 @@ class RMTPP:
     
             global _quad_worker
             def _quad_worker(params):
-                batch_idx, (D_i, WT_i, h_i, t_last, tru_gap) = params
+                batch_idx, (D_i, WT_i, h_i, t_last) = params
                 preds_i = []
 
                 c_ = np.exp(np.maximum(D_i, np.ones_like(D_i)*-87.0))
@@ -1231,10 +1213,10 @@ class RMTPP:
     
             time_pred_last = time_in_seq[:, -1] if pred_idx==0 else all_time_preds[-1]
             if single_threaded:
-                step_time_preds = [_quad_worker((idx, (D_i, WT_i, state, t_last, tru_gap))) for idx, (D_i, WT_i, state, t_last, tru_gap) in enumerate(zip(D, WT, cur_state, time_pred_last, plt_tru_gaps))]
+                step_time_preds = [_quad_worker((idx, (D_i, WT_i, state, t_last))) for idx, (D_i, WT_i, state, t_last) in enumerate(zip(D, WT, cur_state, time_pred_last))]
             else:
                 with MP.Pool() as pool:
-                    step_time_preds = pool.map(_quad_worker, enumerate(zip(D, WT, cur_state, time_pred_last, plt_tru_gaps)))
+                    step_time_preds = pool.map(_quad_worker, enumerate(zip(D, WT, cur_state, time_pred_last)))
 
             all_time_preds.append(step_time_preds)
 

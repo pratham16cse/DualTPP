@@ -880,13 +880,10 @@ class RMTPP_DECRNN:
                     print('Running evaluation on dev, test: ...')
 
                 if eval_train_data:
-                    plt_time_out_seq = training_data['train_time_out_seq']
-                    plt_tru_gaps = plt_time_out_seq - np.concatenate([training_data['train_time_in_seq'][:, -1:], plt_time_out_seq[:, :-1]], axis=1)
                     train_time_preds, train_event_preds, train_event_preds_softmax, inference_time \
                             = self.predict(training_data['train_event_in_seq'],
                                            training_data['train_time_in_seq'],
                                            training_data['decoder_length'],
-                                           plt_tru_gaps,
                                            single_threaded=True,
                                            event_out_seq=training_data['train_event_out_seq'] if self.ALG_NAME=='rmtpp_decrnn_truemarks' else None)
                     train_inference_times.append(inference_time)
@@ -899,13 +896,10 @@ class RMTPP_DECRNN:
                 else:
                     train_mae, train_acc, train_mrr, train_time_preds, train_event_preds = None, None, None, np.array([]), np.array([])
 
-                plt_time_out_seq = training_data['dev_time_out_seq']
-                plt_tru_gaps = plt_time_out_seq - np.concatenate([training_data['dev_time_in_seq'][:, -1:], plt_time_out_seq[:, :-1]], axis=1)
                 dev_time_preds, dev_event_preds, dev_event_preds_softmax, inference_time \
                         = self.predict(training_data['dev_event_in_seq'],
                                        training_data['dev_time_in_seq'],
                                        training_data['decoder_length'],
-                                       plt_tru_gaps,
                                        single_threaded=True,
                                        event_out_seq=training_data['dev_event_out_seq'] if self.ALG_NAME=='rmtpp_decrnn_truemarks' else None)
                 dev_inference_times.append(inference_time)
@@ -953,13 +947,10 @@ class RMTPP_DECRNN:
                     plt.savefig(name_plot+'.png')
                     plt.close()
     
-                plt_time_out_seq = training_data['test_time_out_seq']
-                plt_tru_gaps = plt_time_out_seq - np.concatenate([training_data['test_time_in_seq'][:, -1:], plt_time_out_seq[:, :-1]], axis=1)
                 test_time_preds, test_event_preds, test_event_preds_softmax, inference_time \
                         = self.predict(training_data['test_event_in_seq'],
                                        training_data['test_time_in_seq'],
                                        training_data['decoder_length'],
-                                       plt_tru_gaps,
                                        single_threaded=True,
                                        event_out_seq=training_data['test_event_out_seq'] if self.ALG_NAME=='rmtpp_decrnn_truemarks' else None)
                 test_inference_times.append(inference_time)
@@ -1059,12 +1050,9 @@ class RMTPP_DECRNN:
             if eval_train_data: 
                 assert 1==0
                 #Not yet Implemented
-                plt_time_out_seq = training_data['train_time_out_seq']
-                plt_tru_gaps = plt_time_out_seq[:,:dec_len_for_eval] - np.concatenate([training_data['train_time_in_seq'][:, -1:], plt_time_out_seq[:, :dec_len_for_eval-1]], axis=1)
                 train_time_preds, train_event_preds, inference_time = self.predict(training_data['train_event_in_seq'],
                                                                training_data['train_time_in_seq'],
                                                                training_data['decoder_length'],
-                                                               plt_tru_gaps,
                                                                single_threaded=True)
                 train_time_preds = train_time_preds[:,:dec_len_for_eval] * (maxTime - minTime) + minTime
                 train_time_out_seq = training_data['train_time_out_seq'] * (maxTime - minTime) + minTime
@@ -1076,13 +1064,10 @@ class RMTPP_DECRNN:
                 train_mae, train_acc, train_mrr, train_time_preds, train_event_preds = None, None, None, np.array([]), np.array([])
 
 
-            plt_time_out_seq = training_data['dev_time_out_seq']
-            plt_tru_gaps = plt_time_out_seq[:,:dec_len_for_eval] - np.concatenate([training_data['dev_time_in_seq'][:, -1:], plt_time_out_seq[:, :dec_len_for_eval-1]], axis=1)
             dev_time_preds, dev_event_preds, dev_event_preds_softmax, inference_time \
                     = self.predict(training_data['dev_event_in_seq'],
                                    training_data['dev_time_in_seq'],
                                    training_data['decoder_length'],
-                                   plt_tru_gaps,
                                    single_threaded=True,
                                    event_out_seq=training_data['dev_event_out_seq'] if self.ALG_NAME=='rmtpp_decrnn_truemarks' else None)
             dev_inference_times.append(inference_time)
@@ -1101,13 +1086,10 @@ class RMTPP_DECRNN:
             print('DEV: MAE = {:.5f}; valid = {}, ACC = {:.5f}, MAGE = {:.5f}'.format(
                 dev_mae, dev_total_valid, dev_acc, dev_gap_mae))
 
-            plt_time_out_seq = training_data['test_time_out_seq']
-            plt_tru_gaps = plt_time_out_seq[:,:dec_len_for_eval] - np.concatenate([training_data['test_time_in_seq'][:, -1:], plt_time_out_seq[:, :dec_len_for_eval-1]], axis=1)
             test_time_preds, test_event_preds, test_event_preds_softmax, inference_time \
                     = self.predict(training_data['test_event_in_seq'],
                                    training_data['test_time_in_seq'],
                                    training_data['decoder_length'],
-                                   plt_tru_gaps,
                                    single_threaded=True,
                                    event_out_seq=training_data['test_event_out_seq'] if self.ALG_NAME=='rmtpp_decrnn_truemarks' else None)
             test_inference_times.append(inference_time)
@@ -1188,7 +1170,7 @@ class RMTPP_DECRNN:
         print('Loading the model from {}'.format(ckpt.model_checkpoint_path))
         saver.restore(self.sess, ckpt.model_checkpoint_path)
 
-    def predict(self, event_in_seq, time_in_seq, decoder_length, plt_tru_gaps, single_threaded=False, plot_dir=False, event_out_seq=None):
+    def predict(self, event_in_seq, time_in_seq, decoder_length, single_threaded=False, plot_dir=False, event_out_seq=None):
         """Treats the entire dataset as a single batch and processes it."""
 
         start_time = time.time()
@@ -1270,7 +1252,7 @@ class RMTPP_DECRNN:
 
         global _quad_worker
         def _quad_worker(params):
-            batch_idx, (D_i, WT_i, decoder_states, time_pred_last, tru_gap) = params
+            batch_idx, (D_i, WT_i, decoder_states, time_pred_last) = params
             preds_i = []
             #print(np.matmul(decoder_states, Vt) + bt)
             for pred_idx, (D_j, WT_j, s_i) in enumerate(zip(D_i, WT_i, decoder_states)):
@@ -1301,10 +1283,10 @@ class RMTPP_DECRNN:
             all_decoder_states = np.concatenate([all_decoder_states, np.tile(np.expand_dims(cur_state, axis=1), [1, self.DEC_LEN, 1])], axis=-1)
 
         if single_threaded:
-            all_time_preds = [_quad_worker((idx, (D_i, WT_i, state, t_last, tru_gap))) for idx, (D_i, WT_i, state, t_last, tru_gap) in enumerate(zip(D, WT, all_decoder_states, time_pred_last, plt_tru_gaps))]
+            all_time_preds = [_quad_worker((idx, (D_i, WT_i, state, t_last))) for idx, (D_i, WT_i, state, t_last) in enumerate(zip(D, WT, all_decoder_states, time_pred_last))]
         else:
             with MP.Pool() as pool:
-                all_time_preds = pool.map(_quad_worker, enumerate(zip(D, WT, all_decoder_states, time_pred_last, plt_tru_gaps)))
+                all_time_preds = pool.map(_quad_worker, enumerate(zip(D, WT, all_decoder_states, time_pred_last)))
 
         all_time_preds = np.asarray(all_time_preds).T
         assert np.isfinite(all_time_preds).sum() == all_time_preds.size
