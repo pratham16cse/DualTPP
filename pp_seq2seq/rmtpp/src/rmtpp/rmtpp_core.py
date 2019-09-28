@@ -453,21 +453,22 @@ class RMTPP:
                                                        tf.zeros(shape=(self.inf_batch_size,), dtype=self.FLOAT_TYPE)),
                                                        name='num_events')
 
-                            self.loss -= tf.reduce_sum(
-                                tf.where(self.events_in[:, i] > 0,
-                                         tf.squeeze(step_LL),
-                                         tf.zeros(shape=(self.inf_batch_size,)))
-                            )
-                            self.time_loss -= tf.reduce_sum(
-                                tf.where(self.events_in[:, i] > 0,
-                                         tf.squeeze(time_LL),
-                                         tf.zeros(shape=(self.inf_batch_size,)))
-                            )
-                            self.mark_loss -= tf.reduce_sum(
-                                tf.where(self.events_in[:, i] > 0,
-                                         tf.squeeze(mark_LL),
-                                         tf.zeros(shape=(self.inf_batch_size,)))
-                            )
+                            if i + self.DEC_LEN > self.BPTT - 1:
+                                self.loss -= tf.reduce_sum(
+                                    tf.where(self.events_in[:, i] > 0,
+                                             tf.squeeze(step_LL),
+                                             tf.zeros(shape=(self.inf_batch_size,)))
+                                )
+                                self.time_loss -= tf.reduce_sum(
+                                    tf.where(self.events_in[:, i] > 0,
+                                             tf.squeeze(time_LL),
+                                             tf.zeros(shape=(self.inf_batch_size,)))
+                                )
+                                self.mark_loss -= tf.reduce_sum(
+                                    tf.where(self.events_in[:, i] > 0,
+                                             tf.squeeze(mark_LL),
+                                             tf.zeros(shape=(self.inf_batch_size,)))
+                                )
 
                             # self.loss -= tf.cond(num_events > 0,
                             #                      lambda: tf.reduce_sum(
