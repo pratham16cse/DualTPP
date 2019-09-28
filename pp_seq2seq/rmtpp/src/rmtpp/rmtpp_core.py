@@ -1120,9 +1120,11 @@ class RMTPP:
         for pred_idx in range(0, decoder_length):
             print('pred_idx', pred_idx, decoder_length)
             if pred_idx == 0:
-                bptt_range = range(pred_idx, (pred_idx + self.BPTT))
-                bptt_event_in = event_in_seq[:, bptt_range]
-                bptt_time_in = time_in_seq[:, bptt_range]
+                #bptt_range = range(pred_idx, (pred_idx + self.BPTT))
+                #bptt_event_in = event_in_seq[:, bptt_range]
+                #bptt_time_in = time_in_seq[:, bptt_range]
+                bptt_event_in = np.concatenate([event_in_seq, np.zeros((event_in_seq.shape[0], self.DEC_LEN-1))], axis=1)
+                bptt_time_in = np.concatenate([time_in_seq, np.zeros((time_in_seq.shape[0], self.DEC_LEN-1))], axis=1)
             else:
                 #bptt_event_in = event_in_seq[:, self.BPTT-1+pred_idx]
                 bptt_event_in = np.asarray(all_event_preds[-1])
