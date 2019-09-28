@@ -1213,11 +1213,11 @@ class RMTPP_DECRNN:
         time_out_seq = np.zeros((event_in_seq.shape[0], self.DEC_LEN))
         if self.ALG_NAME in ['rmtpp_decrnn_truemarks']:
             assert event_out_seq is not None
-            mode = 0.0
+            mode = 1.0
         else:
             assert event_out_seq is None
             event_out_seq = np.zeros_like(time_out_seq)
-            mode = 1.0
+            mode = 0.0
 
         feed_dict = {
             self.initial_state: cur_state,
