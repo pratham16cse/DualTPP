@@ -658,9 +658,9 @@ class RMTPP:
         best_test_time_preds, best_test_event_preds = [], []
         best_epoch = 0
         total_loss = 0.0
-        train_loss_list = list()
-        train_time_loss_list = list()
-        train_mark_loss_list = list()
+        train_loss_list, dev_loss_list, test_loss_list = list(), list(), list()
+        train_time_loss_list, dev_time_loss_list, test_time_loss_list = list(), list(), list()
+        train_mark_loss_list, dev_mark_loss_list, test_mark_loss_list = list(), list(), list()
         wt_list = list()
         train_epoch_times, train_inference_times = list(), list()
         dev_inference_times = list()
@@ -765,6 +765,14 @@ class RMTPP:
                                        training_data['dev_time_in_seq'],
                                        training_data['decoder_length'],
                                        single_threaded=True)
+                dev_loss, dev_time_loss, dev_mark_loss = self.evaluate_likelihood(training_data['dev_event_in_seq'],
+                                                                                  training_data['dev_time_in_seq'],
+                                                                                  training_data['dev_event_out_seq'],
+                                                                                  training_data['dev_time_out_seq'],
+                                                                                  dec_len_for_eval)
+                dev_loss_list.append(dev_loss)
+                dev_time_loss_list.append(dev_time_loss)
+                dev_mark_loss_list.append(dev_mark_loss)
                 dev_inference_times.append(inference_time)
                 dev_time_out_seq = np.array(training_data['dev_actual_time_out_seq'])
                 dev_time_in_seq = training_data['dev_time_in_seq']
@@ -815,6 +823,14 @@ class RMTPP:
                                        training_data['test_time_in_seq'],
                                        training_data['decoder_length'],
                                        single_threaded=True)
+                test_loss, test_time_loss, test_mark_loss = self.evaluate_likelihood(training_data['test_event_in_seq'],
+                                                                                     training_data['test_time_in_seq'],
+                                                                                     training_data['test_event_out_seq'],
+                                                                                     training_data['test_time_out_seq'],
+                                                                                     dec_len_for_eval)
+                test_loss_list.append(test_loss)
+                test_time_loss_list.append(test_time_loss)
+                test_mark_loss_list.append(test_mark_loss)
                 test_inference_times.append(inference_time)
                 test_time_out_seq = np.array(training_data['test_actual_time_out_seq'])
                 test_time_in_seq = training_data['test_time_in_seq']
@@ -872,6 +888,9 @@ class RMTPP:
                     best_train_event_preds, best_train_time_preds  = train_event_preds, train_time_preds
                     best_dev_event_preds, best_dev_time_preds  = dev_event_preds, dev_time_preds
                     best_test_event_preds, best_test_time_preds  = test_event_preds, test_time_preds
+                    best_dev_loss, best_test_loss = dev_loss, test_loss
+                    best_dev_time_loss, best_test_time_loss = dev_time_loss, test_time_loss
+                    best_dev_mark_loss, best_test_mark_loss = dev_mark_loss, test_mark_loss
                     best_w = self.sess.run(self.wt).tolist()
     
                     #checkpoint_dir = os.path.join(self.SAVE_DIR, 'hls_'+str(self.HIDDEN_LAYER_SIZE))
@@ -931,15 +950,21 @@ class RMTPP:
                                    training_data['dev_time_in_seq'],
                                    training_data['decoder_length'],
                                    single_threaded=True)
+            dev_loss, dev_time_loss, dev_mark_loss = self.evaluate_likelihood(training_data['dev_event_in_seq'],
+                                                                              training_data['dev_time_in_seq'],
+                                                                              training_data['dev_event_out_seq'],
+                                                                              training_data['dev_time_out_seq'],
+                                                                              dec_len_for_eval)
             dev_inference_times.append(inference_time)
-            dev_time_preds = dev_time_preds[:,:dec_len_for_eval]
-            dev_time_out_seq = np.array(training_data['dev_actual_time_out_seq'])[:,:dec_len_for_eval]
+            train_dec_len_for_eval = dec_len_for_eval if dec_len_for_eval>0 else dev_time_preds.shape[1]
+            dev_time_preds = dev_time_preds[:,:train_dec_len_for_eval]
+            dev_time_out_seq = np.array(training_data['dev_actual_time_out_seq'])[:,:train_dec_len_for_eval]
             dev_time_in_seq = training_data['dev_time_in_seq']
             gaps = dev_time_preds - np.concatenate([dev_time_in_seq[:, -1:], dev_time_preds[:, :-1]], axis=-1)
             unnorm_gaps = gaps * training_data['devND']
             unnorm_gaps = np.cumsum(unnorm_gaps, axis=1)
             dev_time_preds = unnorm_gaps + training_data['dev_actual_time_in_seq'] - training_data['devIG']
-            
+
             dev_mae, dev_total_valid, dev_acc, dev_gap_mae, dev_mrr = self.eval(dev_time_preds, dev_time_out_seq,
                                                                                 dev_event_preds, training_data['dev_event_out_seq'],
                                                                                 training_data['dev_actual_time_in_seq'],
@@ -952,9 +977,14 @@ class RMTPP:
                                    training_data['test_time_in_seq'],
                                    training_data['decoder_length'],
                                    single_threaded=True)
+            test_loss, test_time_loss, test_mark_loss = self.evaluate_likelihood(training_data['test_event_in_seq'],
+                                                                                 training_data['test_time_in_seq'],
+                                                                                 training_data['test_event_out_seq'],
+                                                                                 training_data['test_time_out_seq'],
+                                                                                 dec_len_for_eval)
             test_inference_times.append(inference_time)
-            test_time_preds = test_time_preds[:,:dec_len_for_eval]
-            test_time_out_seq = np.array(training_data['test_actual_time_out_seq'])[:,:dec_len_for_eval]
+            test_time_preds = test_time_preds[:,:train_dec_len_for_eval]
+            test_time_out_seq = np.array(training_data['test_actual_time_out_seq'])[:,:train_dec_len_for_eval]
             test_time_in_seq = training_data['test_time_in_seq']
             gaps = test_time_preds - np.concatenate([test_time_in_seq[:, -1:], test_time_preds[:, :-1]], axis=-1)
             unnorm_gaps = gaps * training_data['testND']
@@ -977,6 +1007,9 @@ class RMTPP:
                 best_train_event_preds, best_train_time_preds  = train_event_preds, train_time_preds
                 best_dev_event_preds, best_dev_time_preds  = dev_event_preds, dev_time_preds
                 best_test_event_preds, best_test_time_preds  = test_event_preds, test_time_preds
+                best_dev_loss, best_test_loss = dev_loss, test_loss
+                best_dev_time_loss, best_test_time_loss = dev_time_loss, test_time_loss
+                best_dev_mark_loss, best_test_mark_loss = dev_mark_loss, test_mark_loss
                 best_w = self.sess.run(self.wt).tolist()
 
                 #checkpoint_dir = os.path.join(self.SAVE_DIR, 'hls_'+str(self.HIDDEN_LAYER_SIZE))
@@ -1003,6 +1036,8 @@ class RMTPP:
                 'best_test_mrr': best_test_mrr,
                 'best_dev_gap_mae': best_dev_gap_mae,
                 'best_test_gap_mae': best_test_gap_mae,
+                'best_dev_loss': best_dev_loss,
+                'best_test_loss': best_test_loss,
                 'best_train_event_preds': best_train_event_preds.tolist(),
                 'best_train_time_preds': best_train_time_preds.tolist(),
                 'best_dev_event_preds': best_dev_event_preds.tolist(),
@@ -1015,6 +1050,12 @@ class RMTPP:
                 'train_loss_list': train_loss_list,
                 'train_time_loss_list': train_time_loss_list,
                 'train_mark_loss_list': train_mark_loss_list,
+                'dev_loss_list': dev_loss_list,
+                'dev_time_loss_list': dev_time_loss_list,
+                'dev_mark_loss_list': dev_mark_loss_list,
+                'test_loss_list': test_loss_list,
+                'test_time_loss_list': test_time_loss_list,
+                'test_mark_loss_list': test_mark_loss_list,
                 'wt_list': wt_list,
                 'avg_train_inference_time':avg_train_inference_time,
                 'avg_dev_inference_time':avg_dev_inference_time,
@@ -1029,6 +1070,34 @@ class RMTPP:
         ckpt = tf.train.get_checkpoint_state(self.SAVE_DIR)
         print('Loading the model from {}'.format(ckpt.model_checkpoint_path))
         saver.restore(self.sess, ckpt.model_checkpoint_path)
+
+    def evaluate_likelihood(self, event_in_seq, time_in_seq, event_out_seq, time_out_seq, decoder_length):
+
+        num_events = np.sum(event_in_seq > 0)
+        cur_state = np.zeros((event_in_seq.shape[0], self.HIDDEN_LAYER_SIZE))
+        initial_time = np.zeros(event_in_seq.shape[0])
+
+        event_seq = np.concatenate([event_in_seq, event_out_seq], axis=1)
+        time_seq = np.concatenate([time_in_seq, time_out_seq], axis=1)
+
+        feed_dict = {
+            self.initial_state: cur_state,
+            self.initial_time: initial_time,
+            self.events_in: event_seq[:, :-1],
+            self.events_out: event_seq[:, 1:],
+            self.times_in: time_seq[:, :-1],
+            self.times_out: time_seq[:, 1:],
+            self.batch_num_events: num_events
+        }
+
+        _, cur_state, loss_, time_loss_, mark_loss_ = self.sess.run([self.update,
+                                                                     self.final_state, self.loss,
+                                                                     self.time_loss, self.mark_loss],
+                                                                     feed_dict=feed_dict)
+
+        print("Log Likelihood:", loss_)
+        return float(loss_), float(time_loss_), float(mark_loss_)
+
 
     def predict(self, event_in_seq, time_in_seq, decoder_length, single_threaded=False, plot_dir=False):
         """Treats the entire dataset as a single batch and processes it."""
