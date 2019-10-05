@@ -172,8 +172,8 @@ class RMTPP:
         self.sess = sess
         self.last_epoch = 0
 
-        self.rs = np.random.RandomState(seed + 42)
-        np.random.seed(42)
+        self.rs = np.random.RandomState(self.seed)
+        np.random.seed(self.seed)
 
         def get_wt_constraint():
             if self.CONSTRAINTS == 'default':
