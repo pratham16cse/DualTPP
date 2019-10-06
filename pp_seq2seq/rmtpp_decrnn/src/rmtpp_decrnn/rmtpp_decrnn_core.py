@@ -1229,10 +1229,9 @@ class RMTPP_DECRNN:
             self.mode: 1.0,
         }
 
-        _, cur_state, loss_, time_loss_, mark_loss_ = self.sess.run([self.update,
-                                                                     self.final_state, self.loss,
-                                                                     self.time_loss, self.mark_loss],
-                                                                     feed_dict=feed_dict)
+        loss_, time_loss_, mark_loss_ = self.sess.run([self.loss,
+                                                       self.time_loss, self.mark_loss],
+                                                       feed_dict=feed_dict)
 
         print("Log Likelihood:", loss_)
         return float(loss_), float(time_loss_), float(mark_loss_)
