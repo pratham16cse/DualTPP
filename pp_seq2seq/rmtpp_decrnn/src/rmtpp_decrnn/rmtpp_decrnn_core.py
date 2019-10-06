@@ -63,6 +63,7 @@ def_opts = Deco.Options(
     mark_loss=True,
     plot_pred_dev=True,
     plot_pred_test=False,
+    position_encode=False,
 
     wt_hparam=1.0,
 
@@ -87,6 +88,7 @@ def_opts = Deco.Options(
     bt=lambda decoder_length: np.random.normal(size=(decoder_length)), # bt is provided by the base_rate
     bw=lambda decoder_length: np.random.normal(size=(decoder_length)), # bw is provided by the base_rate
     bk=lambda hidden_layer_size, num_categories: np.random.normal(size=(1, num_categories)),
+    Wem_position=lambda num_categories: np.random.RandomState(42).randn(num_categories, __EMBED_SIZE) * 0.01,
 )
 
 
@@ -126,8 +128,9 @@ class RMTPP_DECRNN:
                  patience, stop_criteria, epsilon, share_dec_params,
                  init_zero_dec_state, concat_final_enc_state, num_extra_dec_layer, concat_before_dec_update,
                  mark_triggers_time, mark_loss,
-                 Wt, Wem, Wh, bh, Ws, bs, wt, Wy, Vy, Vt, Vw, bk, bt, bw, wt_hparam,
-                 plot_pred_dev, plot_pred_test, enc_cell_type, dec_cell_type, num_discrete_states):
+                 Wt, Wem, Wh, bh, Ws, bs, wt, Wy, Vy, Vt, Vw, bk, bt, bw, wt_hparam, Wem_position,
+                 plot_pred_dev, plot_pred_test, enc_cell_type, dec_cell_type, num_discrete_states,
+                 position_encode):
 
         self.seed = seed
         tf.set_random_seed(self.seed)
@@ -186,6 +189,7 @@ class RMTPP_DECRNN:
         self.MARK_LOSS = mark_loss
         self.PLOT_PRED_DEV = plot_pred_dev
         self.PLOT_PRED_TEST = plot_pred_test
+        self.POSITION_ENCODE = position_encode
 
         if self.CONCAT_FINAL_ENC_STATE:
             self.DEC_STATE_SIZE = 2 * self.HIDDEN_LAYER_SIZE
@@ -316,6 +320,10 @@ class RMTPP_DECRNN:
                                               dtype=self.FLOAT_TYPE,
                                               regularizer=self.RNN_REGULARIZER,
                                               initializer=tf.constant_initializer(bw(self.DEC_LEN)))
+                    self.Wem_position = tf.get_variable(name='Wem_position', shape=(self.DEC_LEN, self.EMBED_SIZE),
+                                               dtype=self.FLOAT_TYPE,
+                                               regularizer=self.RNN_REGULARIZER,
+                                               initializer=tf.constant_initializer(Wem_position(self.DEC_LEN)))
 
                     if self.SHARE_DEC_PARAMS:
                         print('Sharing Decoder Parameters')
@@ -327,7 +335,7 @@ class RMTPP_DECRNN:
                         print('NOT Sharing Decoder Parameters')
 
                 self.all_vars = [self.Wt, self.Wem, self.Wh, self.bh, self.Ws, self.bs,
-                                 self.wt, self.Wy, self.Vy, self.Vt, self.bt, self.bk, self.Vw, self.bw]
+                                 self.wt, self.Wy, self.Vy, self.Vt, self.bt, self.bk, self.Vw, self.bw, Wem_position]
 
                 with tf.device(device_cpu):
                     # Global step needs to be on the CPU (Why?)
@@ -339,9 +347,9 @@ class RMTPP_DECRNN:
                                                                decay_rate=decay_rate)
 
                 # Add summaries for all (trainable) variables
-                with tf.device(device_cpu):
-                    for v in self.all_vars:
-                        variable_summaries(v)
+                # with tf.device(device_cpu):
+                #     for v in self.all_vars:
+                #         variable_summaries(v)
 
                 # Make graph
                 # RNNcell = RNN_CELL_TYPE(HIDDEN_LAYER_SIZE)
@@ -486,6 +494,11 @@ class RMTPP_DECRNN:
                                     inputs = tf.concat([s_state, events_embedded, z_current], axis=-1)
                                 else:
                                     inputs = tf.concat([s_state, events_embedded], axis=-1)
+
+                                if self.POSITION_ENCODE:
+                                    p_embedded = tf.nn.embedding_lookup(self.Wem_position,
+                                                                        i * tf.ones((self.inf_batch_size), dtype=tf.int32))
+                                    inputs = tf.concat([inputs, p_embedded], axis=-1)
                                 new_state, dec_internal_state = self.dec_cell(inputs,  dec_internal_state)
 
                             if self.CONCAT_BEFORE_DEC_UPDATE:
