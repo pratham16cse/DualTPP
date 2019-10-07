@@ -549,10 +549,10 @@ class RMTPP_DECRNN:
                     newVw = tf.tile(tf.expand_dims(self.Vw, axis=0), [tf.shape(self.decoder_states)[0], 1, 1]) 
 
                     self.D = tf.reduce_sum(decoder_states_concat * newVt, axis=2) + base_intensity_bt
-                    if self.ALG_NAME in ['rmtpp_decrnn_latentz']:
-                        self.D += tf.squeeze(tf.layers.dense(self.z_list, 1, name='z_to_lambda_layer',
-                                                             kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed)),
-                                             axis=-1)
+                    # if self.ALG_NAME in ['rmtpp_decrnn_latentz']:
+                    #     self.D += tf.squeeze(tf.layers.dense(self.z_list, 1, name='z_to_lambda_layer',
+                    #                                          kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed)),
+                    #                          axis=-1)
 
                     # self.D = tf.squeeze(tf.tensordot(self.decoder_states, self.Vt, axes=[[2],[0]]), axis=-1) + base_intensity_bt
                     self.D = get_D_constraint()(self.D)
@@ -564,10 +564,17 @@ class RMTPP_DECRNN:
                         # self.WT = tf.squeeze(tf.tensordot(self.decoder_states, self.Vw, axes=[[2],[0]]), axis=-1) + base_intensity_bw
                         self.WT = get_WT_constraint()(self.WT)
                         self.WT = tf.clip_by_value(self.WT, 0.0, 10.0)
-                    elif self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_mode', 'rmtpp_decrnn_splusintensity', 'rmtpp_decrnn_latentz', 'rmtpp_decrnn_truemarks']:
+                    elif self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_mode', 'rmtpp_decrnn_splusintensity', 'rmtpp_decrnn_truemarks']:
                         self.WT = self.wt
                     elif self.ALG_NAME in ['rmtpp_decrnn_whparam', 'rmtpp_decrnn_mode_whparam']:
                         self.WT = self.wt_hparam
+                    elif self.ALG_NAME in ['rmtpp_decrnn_latentz']:
+                        self.WT = tf.squeeze(tf.layers.dense(self.z_list, 1, name='z_to_wt_layer',
+                                                             kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed),
+                                                             activation=tf.nn.softplus),
+                                             axis=-1)
+                    #self.WT = tf.Print(self.WT, [tf.shape(self.WT)], message='Printing wt shape')
+
 
                     if self.ALG_NAME in ['rmtpp_decrnn_splusintensity']:
                         lambda_ = (self.D + gaps * self.WT)
@@ -1314,7 +1321,7 @@ class RMTPP_DECRNN:
             [self.hidden_states, self.decoder_states, self.event_preds, self.final_state, self.D, self.WT],
             feed_dict=feed_dict
         )
-        if self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_mode', 'rmtpp_decrnn_splusintensity', 'rmtpp_decrnn_latentz', 'rmtpp_decrnn_truemarks']:
+        if self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_mode', 'rmtpp_decrnn_splusintensity', 'rmtpp_decrnn_truemarks']:
             WT = np.ones((len(event_in_seq), self.DEC_LEN, 1)) * WT
         elif self.ALG_NAME in ['rmtpp_decrnn_whparam', 'rmtpp_decrnn_mode_whparam']:
             raise NotImplemented('For whparam methods')
