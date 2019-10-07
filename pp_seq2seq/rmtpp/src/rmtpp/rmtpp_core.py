@@ -654,6 +654,7 @@ class RMTPP:
         train_time_out_seq = training_data['train_time_out_seq']
 
         best_dev_mae, best_test_mae = np.inf, np.inf
+        best_dev_gap_mae, best_test_gap_mae = np.inf, np.inf
         best_dev_time_preds, best_dev_event_preds = [], []
         best_test_time_preds, best_test_event_preds = [], []
         best_epoch = 0
@@ -880,7 +881,7 @@ class RMTPP:
                     plt.savefig(name_plot)
                     plt.close()
 
-                if dev_mae < best_dev_mae:
+                if dev_gap_mae < best_dev_gap_mae:
                     best_epoch = epoch
                     best_train_mae, best_dev_mae, best_test_mae, best_dev_gap_mae, best_test_gap_mae = train_mae, dev_mae, test_mae, dev_gap_mae, test_gap_mae
                     best_train_acc, best_dev_acc, best_test_acc = train_acc, dev_acc, test_acc
@@ -999,7 +1000,7 @@ class RMTPP:
             print('TEST: MAE = {:.5f}; valid = {}, ACC = {:.5f}, MAGE = {:.5f}'.format(
                 test_mae, test_total_valid, test_acc, test_gap_mae))
 
-            if dev_mae < best_dev_mae:
+            if dev_gap_mae < best_dev_gap_mae:
                 best_epoch = num_epochs
                 best_train_mae, best_dev_mae, best_test_mae, best_dev_gap_mae, best_test_gap_mae = train_mae, dev_mae, test_mae, dev_gap_mae, test_gap_mae
                 best_train_acc, best_dev_acc, best_test_acc = train_acc, dev_acc, test_acc

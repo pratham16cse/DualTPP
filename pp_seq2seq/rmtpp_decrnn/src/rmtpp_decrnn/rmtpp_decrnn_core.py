@@ -801,6 +801,7 @@ class RMTPP_DECRNN:
         train_time_out_seq = training_data['train_time_out_seq']
 
         best_dev_mae, best_test_mae = np.inf, np.inf
+        best_dev_gap_mae, best_test_gap_mae = np.inf, np.inf
         best_dev_time_preds, best_dev_event_preds = [], []
         best_test_time_preds, best_test_event_preds = [], []
         best_epoch = 0
@@ -1031,7 +1032,7 @@ class RMTPP_DECRNN:
                     plt.savefig(name_plot)
                     plt.close()
 
-                if dev_mae < best_dev_mae:
+                if dev_gap_mae < best_dev_gap_mae:
                     best_epoch = epoch
                     best_train_mae, best_dev_mae, best_test_mae, best_dev_gap_mae, best_test_gap_mae = train_mae, dev_mae, test_mae, dev_gap_mae, test_gap_mae
                     best_train_acc, best_dev_acc, best_test_acc = train_acc, dev_acc, test_acc
@@ -1116,7 +1117,7 @@ class RMTPP_DECRNN:
             unnorm_gaps = gaps * training_data['devND']
             unnorm_gaps = np.cumsum(unnorm_gaps, axis=1)
             dev_time_preds = unnorm_gaps + training_data['dev_actual_time_in_seq'] - training_data['devIG']
-            
+
             dev_mae, dev_total_valid, dev_acc, dev_gap_mae, dev_mrr = self.eval(dev_time_preds, dev_time_out_seq,
                                                                                 dev_event_preds, training_data['dev_event_out_seq'],
                                                                                 training_data['dev_actual_time_in_seq'],
@@ -1152,7 +1153,7 @@ class RMTPP_DECRNN:
             print('TEST: MAE = {:.5f}; valid = {}, ACC = {:.5f}, MAGE = {:.5f}'.format(
                 test_mae, test_total_valid, test_acc, test_gap_mae))
 
-            if dev_mae < best_dev_mae:
+            if dev_gap_mae < best_dev_gap_mae:
                 best_epoch = num_epochs
                 best_train_mae, best_dev_mae, best_test_mae, best_dev_gap_mae, best_test_gap_mae = train_mae, dev_mae, test_mae, dev_gap_mae, test_gap_mae
                 best_train_acc, best_dev_acc, best_test_acc = train_acc, dev_acc, test_acc
