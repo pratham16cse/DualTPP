@@ -421,7 +421,7 @@ class RMTPP_DECRNN:
                                     name='h_t'
                                 )
                             elif self.ENC_CELL_TYPE == 'lstm':
-                                inputs = tf.concat([state, events_embedded, delta_t_prev], axis=-1)
+                                inputs = tf.concat([events_embedded, delta_t_prev], axis=-1)
                                 new_state, enc_internal_state = self.enc_cell(inputs,  enc_internal_state)
 
                             state = tf.where(self.events_in[:, i] > 0, new_state, state)
@@ -491,9 +491,9 @@ class RMTPP_DECRNN:
                                 )
                             elif self.DEC_CELL_TYPE == 'lstm':
                                 if self.ALG_NAME in ['rmtpp_decrnn_latentz']:
-                                    inputs = tf.concat([s_state, events_embedded, z_current], axis=-1)
+                                    inputs = tf.concat([self.final_state, events_embedded, z_current], axis=-1)
                                 else:
-                                    inputs = tf.concat([s_state, events_embedded], axis=-1)
+                                    inputs = tf.concat([self.final_state, events_embedded], axis=-1)
 
                                 if self.POSITION_ENCODE:
                                     p_embedded = tf.nn.embedding_lookup(self.Wem_position,
