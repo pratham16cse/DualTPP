@@ -374,7 +374,10 @@ class RMTPP_DECRNN_PRE:
                 self.initial_time = last_time = tf.zeros((self.inf_batch_size,),
                                                          dtype=self.FLOAT_TYPE,
                                                          name='initial_time')
-                self.past_pred_time = self.past_pred_last_time = tf.zeros((self.inf_batch_size,),
+                self.past_pred_time = tf.zeros((self.inf_batch_size,),
+                                                         dtype=self.FLOAT_TYPE,
+                                                         name='initial_time')
+                self.past_pred_last_time = tf.zeros((self.inf_batch_size,),
                                                          dtype=self.FLOAT_TYPE,
                                                          name='initial_time')
 
@@ -448,8 +451,6 @@ class RMTPP_DECRNN_PRE:
                                          lambda: s_state,
                                          lambda: self.past_state)
                 # TODO:KM Print s_state
-                # s_state = tf.Print(s_state, [s_state], message='s_state in tf')
-
                 with tf.name_scope('Decoder'):
                     for i in range(self.DEC_LEN):
 
@@ -492,11 +493,16 @@ class RMTPP_DECRNN_PRE:
                         time = tf.cond(tf.equal(self.mode, 1.0),
                                          lambda: self.times_out[:, i],
                                          lambda: self.past_pred_time)
+                        temp_last_time = last_time
                         last_time = tf.cond(tf.equal(self.mode, 1.0),
                                          lambda: last_time,
                                          lambda: self.past_pred_last_time)
 
                         delta_t_prev = tf.expand_dims(time - last_time, axis=-1)
+
+                        # if i==0:
+                        #     time = tf.Print(time, [self.mode, time, self.times_out[:,i], self.past_pred_time, last_time, temp_last_time, self.past_pred_last_time, delta_t_prev], message='time at '+str(i))
+
                         last_time = time
 
                         time_2d = tf.expand_dims(time, axis=-1)
@@ -515,7 +521,7 @@ class RMTPP_DECRNN_PRE:
                                 if self.ALG_NAME in ['rmtpp_decrnn_latentz']:
                                     inputs = tf.concat([s_state, events_embedded, z_current], axis=-1)
                                 else:
-                                    inputs = tf.concat([s_state, events_embedded], axis=-1)
+                                    inputs = tf.concat([s_state, events_embedded, delta_t_prev], axis=-1)
                                 new_state, dec_internal_state = self.dec_cell(inputs,  dec_internal_state)
 
                             if self.CONCAT_BEFORE_DEC_UPDATE:
@@ -533,7 +539,7 @@ class RMTPP_DECRNN_PRE:
                                                                 bias_regularizer=self.EXTLYR_REGULARIZER)
 
                             # s_state = new_state
-                            state = tf.where(self.events_in[:, i] > 0, new_state, state)
+                            s_state = tf.where(self.events_in[:, i] > 0, new_state, s_state)
 
                             if self.ALG_NAME in ['rmtpp_decrnn_latentz']:
                                 z_current = self.sample_z(s_state)
@@ -1317,7 +1323,7 @@ class RMTPP_DECRNN_PRE:
             self.initial_time: initial_time,
             self.events_in: event_in_seq,
             self.times_in: time_in_seq,
-            self.mode: 0.0
+            self.mode: 1.0
         }
 
         all_encoder_states, encoder_final_state = self.sess.run(
@@ -1325,46 +1331,50 @@ class RMTPP_DECRNN_PRE:
             feed_dict=feed_dict
         )
 
-        cur_state = encoder_final_state
+        cur_state = encoder_final_state.copy()
 
         [Vt, Vw, bt, bw, wt]  = self.sess.run([self.Vt, self.Vw, self.bt, self.bw, self.wt])
         all_time_preds = list()
         all_marker_preds = list()
 
         for dec_idx in range(0, decoder_length):
-            print('dec_idx', dec_idx, decoder_length)
-            print('cur_state', cur_state)
+            # print('dec_idx', dec_idx, decoder_length)
+            # print('cur_state', cur_state)
             if self.MARK_TRIGGERS_TIME:
                 if dec_idx == 0:
-                    past_state_infer = cur_state
+                    past_state_infer = cur_state.copy()
                     past_pred_time_infer = time_in_seq[:, -1]
                     past_pred_last_time_infer = time_in_seq[:, -2]
                 elif dec_idx == 1:
-                    past_state_infer = cur_state
+                    past_state_infer = cur_state.copy()
                     past_pred_time_infer = all_time_preds[-1]
                     past_pred_last_time_infer = time_in_seq[:, -1]
                 else:
-                    past_state_infer = cur_state
+                    past_state_infer = cur_state.copy()
                     past_pred_time_infer = all_time_preds[-1]
                     past_pred_last_time_infer = all_time_preds[-2]
 
+            time_out_seq = np.zeros((event_in_seq.shape[0], self.DEC_LEN))
+            event_out_seq = np.zeros_like(time_out_seq)
             bptt_event_in = np.asarray(event_in_seq[:, -1])
             bptt_event_in = np.concatenate([np.expand_dims(bptt_event_in, axis=-1),
                                             np.zeros((bptt_event_in.shape[0], self.BPTT-1))],
                                             axis=-1)
 
-            print('self.past_state: past_state_infer', past_state_infer)
-            print('self.past_pred_time: past_pred_time_infer', past_pred_time_infer)
-            print('self.past_pred_last_time: past_pred_last_time_infer', past_pred_last_time_infer)
-            print('self.events_in: bptt_event_in', bptt_event_in)
-            print('self.final_state: encoder_final_state', encoder_final_state)
+            # print('self.past_state: past_state_infer', past_state_infer)
+            # print('self.past_pred_time: past_pred_time_infer', past_pred_time_infer)
+            # print('self.past_pred_last_time: past_pred_last_time_infer', past_pred_last_time_infer)
+            # print('self.events_in: bptt_event_in', bptt_event_in)
     
             feed_dict = {
                 self.past_state: past_state_infer,
                 self.past_pred_time: past_pred_time_infer,
                 self.past_pred_last_time: past_pred_last_time_infer,
                 self.events_in: bptt_event_in,
-                self.final_state: encoder_final_state,
+                self.events_out: event_out_seq,
+                self.times_in: time_in_seq,
+                self.times_out: time_out_seq,
+                self.final_state: past_state_infer,
                 self.mode: 0.0
             }
 
@@ -1376,8 +1386,6 @@ class RMTPP_DECRNN_PRE:
             all_marker_preds.append(all_event_preds[:,-1,:])
 
             cur_state = all_decoder_states[:,-1,:]
-            print('cur_state_replace', cur_state)
-            print('cur_state_replace with', all_decoder_states[:,-1,:])
 
             if self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_mode', 'rmtpp_decrnn_splusintensity', 'rmtpp_decrnn_latentz', 'rmtpp_decrnn_truemarks']:
                 WT = np.ones((len(event_in_seq), self.DEC_LEN, 1)) * WT
@@ -1436,8 +1444,8 @@ class RMTPP_DECRNN_PRE:
         # all_event_preds = np.transpose(all_event_preds)
             
 
-        print('all_event_preds', np.shape(all_event_preds), all_event_preds)
-        print('all_event_preds_softmax', np.shape(all_event_preds_softmax), all_event_preds_softmax)
+        # print('all_event_preds', np.shape(all_event_preds), all_event_preds)
+        # print('all_event_preds_softmax', np.shape(all_event_preds_softmax), all_event_preds_softmax)
         # print('all_time_preds', np.shape(all_time_preds))
 
 
