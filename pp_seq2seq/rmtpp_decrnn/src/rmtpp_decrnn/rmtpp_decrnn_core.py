@@ -90,6 +90,7 @@ def_opts = Deco.Options(
     bk=lambda hidden_layer_size, num_categories: np.random.normal(size=(1, num_categories)),
     Wem_position=lambda num_categories: np.random.RandomState(42).randn(num_categories, __EMBED_SIZE) * 0.01,
     Wz=lambda num_discrete_states: np.random.normal(size=(num_discrete_states, 1)),
+    wt_z=lambda num_discrete_states: np.ones((num_discrete_states, 1)),
 )
 
 
@@ -129,7 +130,7 @@ class RMTPP_DECRNN:
                  patience, stop_criteria, epsilon, share_dec_params,
                  init_zero_dec_state, concat_final_enc_state, num_extra_dec_layer, concat_before_dec_update,
                  mark_triggers_time, mark_loss,
-                 Wt, Wem, Wh, bh, Ws, bs, wt, Wy, Vy, Vt, Vw, bk, bt, bw, Wz, wt_hparam, Wem_position,
+                 Wt, Wem, Wh, bh, Ws, bs, wt, Wy, Vy, Vt, Vw, bk, bt, bw, Wz, wt_z, wt_hparam, Wem_position,
                  plot_pred_dev, plot_pred_test, enc_cell_type, dec_cell_type, num_discrete_states,
                  position_encode):
 
@@ -330,6 +331,11 @@ class RMTPP_DECRNN:
                                               regularizer=self.RNN_REGULARIZER,
                                               initializer=tf.constant_initializer(Wz(self.NUM_DISCRETE_STATES)),
                                               constraint=lambda x: tf.clip_by_value(x, 0.0, np.inf))
+                    self.wt_z = tf.get_variable(name='wt_z', shape=(self.NUM_DISCRETE_STATES, 1),
+                                                dtype=self.FLOAT_TYPE,
+                                                regularizer=self.RNN_REGULARIZER,
+                                                initializer=tf.constant_initializer(wt_z(self.NUM_DISCRETE_STATES)),
+                                                constraint=lambda x: tf.clip_by_value(x, 0.0, np.inf))
 
                     if self.SHARE_DEC_PARAMS:
                         print('Sharing Decoder Parameters')
@@ -446,7 +452,9 @@ class RMTPP_DECRNN:
                 self.decoder_states = []
                 if self.ALG_NAME in ['rmtpp_decrnn_latentz']:
                     z_current = self.sample_z(s_state)
+                    z_embedded = self.embed_z(z_current)
                     self.z_list = []
+                    self.z_logits_list = []
                 with tf.name_scope('Decoder'):
                     for i in range(self.DEC_LEN):
 
@@ -497,7 +505,7 @@ class RMTPP_DECRNN:
                                 )
                             elif self.DEC_CELL_TYPE == 'lstm':
                                 if self.ALG_NAME in ['rmtpp_decrnn_latentz']:
-                                    inputs = tf.concat([s_state, events_embedded, z_current], axis=-1)
+                                    inputs = tf.concat([s_state, events_embedded, z_embedded], axis=-1)
                                 else:
                                     inputs = tf.concat([s_state, events_embedded], axis=-1)
 
@@ -524,7 +532,9 @@ class RMTPP_DECRNN:
 
                             if self.ALG_NAME in ['rmtpp_decrnn_latentz']:
                                 z_current = self.sample_z(s_state)
-                                self.z_list.append(z_current)
+                                z_embedded = self.embed_z(z_current)
+                                self.z_logits_list.append(z_current)
+                                self.z_list.append(z_embedded)
 
                         if mark_triggers_time:
                             self.decoder_states.append(s_state)
@@ -535,6 +545,7 @@ class RMTPP_DECRNN:
                     self.decoder_states = tf.stack(self.decoder_states, axis=1)
                     if self.ALG_NAME in ['rmtpp_decrnn_latentz']:
                         self.z_list = tf.stack(self.z_list, axis=1)
+                        self.z_logits_list = tf.stack(self.z_logits_list, axis=1)
                     if self.CONCAT_FINAL_ENC_STATE:
                         decoder_states_concat = tf.concat([self.decoder_states,
                                                            tf.tile(tf.expand_dims(self.final_state, axis=1),
@@ -575,7 +586,7 @@ class RMTPP_DECRNN:
                     elif self.ALG_NAME in ['rmtpp_decrnn_whparam', 'rmtpp_decrnn_mode_whparam']:
                         self.WT = self.wt_hparam
                     elif self.ALG_NAME in ['rmtpp_decrnn_latentz']:
-                        self.WT = tf.squeeze(tf.tensordot(self.z_list, self.Wz, axes=[[2], [0]]), axis=-1)
+                        self.WT = self.wt_z
                     #self.WT = tf.Print(self.WT, [tf.shape(self.WT)], message='Printing wt shape')
 
 
@@ -585,6 +596,16 @@ class RMTPP_DECRNN:
                         log_f_star = (log_lambda_
                                       - self.D * gaps
                                       - (self.WT/2.0) * tf.square(gaps))
+                    elif self.ALG_NAME in ['rmtpp_decrnn_latentz']:
+                        wt_expanded = tf.transpose(tf.expand_dims(self.WT, axis=-1), [1, 2, 0])
+                        D_expanded = tf.expand_dims(self.D, axis=-1)
+                        log_lambda_ = D_expanded + tf.expand_dims(gaps, axis=-1) * wt_expanded
+                        lambda_ = tf.exp(tf.minimum(ETH, log_lambda_), name='lambda_')
+                        log_f_star = (log_lambda_
+                                      + (1.0 / wt_expanded) * tf.exp(tf.minimum(ETH, D_expanded))
+                                      - (1.0 / wt_expanded) * lambda_)
+                        log_f_star = tf.reduce_sum(log_f_star * self.z_logits_list, axis=-1)
+
                     else:
                         log_lambda_ = (self.D + gaps * self.WT)
                         lambda_ = tf.exp(tf.minimum(ETH, log_lambda_), name='lambda_')
@@ -716,10 +737,15 @@ class RMTPP_DECRNN:
             z_logits = tf.layers.dense(inputs, self.NUM_DISCRETE_STATES, name='z_layer',
                                        kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed),
                                        activation=tf.nn.softmax)
-            z_logits = tf.cond(tf.equal(self.mode, 1.0),
-                               lambda: z_logits,
-                               lambda: tf.one_hot(tf.argmax(z_logits, axis=-1), self.NUM_DISCRETE_STATES))
             return z_logits
+
+    def embed_z(self, inputs):
+        with tf.variable_scope('latent_discrete_state', reuse=tf.AUTO_REUSE):
+
+            z_embedded = tf.layers.dense(inputs, self.EMBED_SIZE, name='z_embed_layer',
+                                         kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed),
+                                         activation=tf.nn.relu)
+        return z_embedded
 
     def initialize(self, finalize=False):
         """Initialize the global trainable variables."""
@@ -1328,9 +1354,16 @@ class RMTPP_DECRNN:
         )
         if self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_mode', 'rmtpp_decrnn_splusintensity', 'rmtpp_decrnn_truemarks']:
             WT = np.ones((len(event_in_seq), self.DEC_LEN, 1)) * WT
+        elif self.ALG_NAME in ['rmtpp_decrnn_latentz']:
+            wt_z = self.sess.run(self.wt_z)
+            z_logits = self.sess.run(self.z_logits_list, feed_dict=feed_dict)
+            WT = np.ones((len(event_in_seq), self.DEC_LEN, 1)) * np.expand_dims(np.transpose(wt_z), axis=0)
+            wt_z = np.squeeze(wt_z, axis=-1)
         elif self.ALG_NAME in ['rmtpp_decrnn_whparam', 'rmtpp_decrnn_mode_whparam']:
             raise NotImplemented('For whparam methods')
             WT = self.wt_hparam
+        else:
+            z_logits = np.zeros((len(event_in_seq), self.DEC_LEN, self.NUM_DISCRETE_STATES))
 
         all_event_preds_softmax = all_event_preds
         if self.ALG_NAME in ['rmtpp_decrnn_truemarks']:
@@ -1345,17 +1378,23 @@ class RMTPP_DECRNN:
 
         global _quad_worker
         def _quad_worker(params):
-            batch_idx, (D_i, WT_i, decoder_states, time_pred_last) = params
+            batch_idx, (D_i, WT_i, decoder_states, time_pred_last, z_logits_i) = params
             preds_i = []
             #print(np.matmul(decoder_states, Vt) + bt)
-            for pred_idx, (D_j, WT_j, s_i) in enumerate(zip(D_i, WT_i, decoder_states)):
+            for pred_idx, (D_j, WT_j, s_i, z_logits_j) in enumerate(zip(D_i, WT_i, decoder_states, z_logits_i)):
                 t_last = time_pred_last if pred_idx==0 else preds_i[-1]
 
                 c_ = np.exp(np.maximum(D_j, np.ones_like(D_j)*-87.0))
-                if self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_wcmpt', 'rmtpp_decrnn_whparam', 'rmtpp_decrnn_latentz', 'rmtpp_decrnn_truemarks']:
+                if self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_wcmpt', 'rmtpp_decrnn_whparam', 'rmtpp_decrnn_truemarks']:
                     args = (c_, WT_j)
                     val, _err = quad(quad_func, 0, np.inf, args=args)
                     #print(batch_idx, D_j, c_, WT_j, val)
+                elif self.ALG_NAME in ['rmtpp_decrnn_latentz']:
+                    val = 0.0
+                    for k in range(self.NUM_DISCRETE_STATES):
+                        args = (c_, WT_j[k])
+                        val_, _err = quad(quad_func, 0, np.inf, args=args)
+                        val += (val_ * z_logits_j[k])
                 elif self.ALG_NAME in ['rmtpp_decrnn_mode', 'rmtpp_decrnn_mode_wcmpt', 'rmtpp_decrnn_mode_whparam']:
                     val_raw = (np.log(WT_j) - D_j)/WT_j
                     val = np.where(val_raw<0.0, 0.0, val_raw)
@@ -1376,7 +1415,7 @@ class RMTPP_DECRNN:
             all_decoder_states = np.concatenate([all_decoder_states, np.tile(np.expand_dims(cur_state, axis=1), [1, self.DEC_LEN, 1])], axis=-1)
 
         if single_threaded:
-            all_time_preds = [_quad_worker((idx, (D_i, WT_i, state, t_last))) for idx, (D_i, WT_i, state, t_last) in enumerate(zip(D, WT, all_decoder_states, time_pred_last))]
+            all_time_preds = [_quad_worker((idx, (D_i, WT_i, state, t_last, z_logits_i))) for idx, (D_i, WT_i, state, t_last, z_logits_i) in enumerate(zip(D, WT, all_decoder_states, time_pred_last, z_logits))]
         else:
             with MP.Pool() as pool:
                 all_time_preds = pool.map(_quad_worker, enumerate(zip(D, WT, all_decoder_states, time_pred_last)))
