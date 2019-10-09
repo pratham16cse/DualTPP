@@ -89,6 +89,7 @@ def_opts = Deco.Options(
     bw=lambda decoder_length: np.random.normal(size=(decoder_length)), # bw is provided by the base_rate
     bk=lambda hidden_layer_size, num_categories: np.random.normal(size=(1, num_categories)),
     Wem_position=lambda num_categories: np.random.RandomState(42).randn(num_categories, __EMBED_SIZE) * 0.01,
+    Wz=lambda num_discrete_states: np.random.normal(size=(num_discrete_states, 1)),
 )
 
 
@@ -128,7 +129,7 @@ class RMTPP_DECRNN:
                  patience, stop_criteria, epsilon, share_dec_params,
                  init_zero_dec_state, concat_final_enc_state, num_extra_dec_layer, concat_before_dec_update,
                  mark_triggers_time, mark_loss,
-                 Wt, Wem, Wh, bh, Ws, bs, wt, Wy, Vy, Vt, Vw, bk, bt, bw, wt_hparam, Wem_position,
+                 Wt, Wem, Wh, bh, Ws, bs, wt, Wy, Vy, Vt, Vw, bk, bt, bw, Wz, wt_hparam, Wem_position,
                  plot_pred_dev, plot_pred_test, enc_cell_type, dec_cell_type, num_discrete_states,
                  position_encode):
 
@@ -324,6 +325,11 @@ class RMTPP_DECRNN:
                                                dtype=self.FLOAT_TYPE,
                                                regularizer=self.RNN_REGULARIZER,
                                                initializer=tf.constant_initializer(Wem_position(self.DEC_LEN)))
+                    self.Wz = tf.get_variable(name='Wz', shape=(self.NUM_DISCRETE_STATES, 1),
+                                              dtype=self.FLOAT_TYPE,
+                                              regularizer=self.RNN_REGULARIZER,
+                                              initializer=tf.constant_initializer(Wz(self.NUM_DISCRETE_STATES)),
+                                              constraint=lambda x: tf.clip_by_value(x, 0.0, np.inf))
 
                     if self.SHARE_DEC_PARAMS:
                         print('Sharing Decoder Parameters')
@@ -569,10 +575,7 @@ class RMTPP_DECRNN:
                     elif self.ALG_NAME in ['rmtpp_decrnn_whparam', 'rmtpp_decrnn_mode_whparam']:
                         self.WT = self.wt_hparam
                     elif self.ALG_NAME in ['rmtpp_decrnn_latentz']:
-                        self.WT = tf.squeeze(tf.layers.dense(self.z_list, 1, name='z_to_wt_layer',
-                                                             kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed),
-                                                             activation=tf.nn.softplus),
-                                             axis=-1)
+                        self.WT = tf.squeeze(tf.tensordot(self.z_list, self.Wz, axes=[[2], [0]]), axis=-1)
                     #self.WT = tf.Print(self.WT, [tf.shape(self.WT)], message='Printing wt shape')
 
 
@@ -711,10 +714,12 @@ class RMTPP_DECRNN:
         with tf.variable_scope('latent_discrete_state', reuse=tf.AUTO_REUSE):
 
             z_logits = tf.layers.dense(inputs, self.NUM_DISCRETE_STATES, name='z_layer',
-                                       kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed))
-            z_distribution = tf.contrib.distributions.RelaxedOneHotCategorical(self.temperature, logits=z_logits)
-            z_sampled = z_distribution.sample(seed=self.seed)
-            return z_sampled
+                                       kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed),
+                                       activation=tf.nn.softmax)
+            z_logits = tf.cond(tf.equal(self.mode, 1.0),
+                               lambda: z_logits,
+                               lambda: tf.one_hot(tf.argmax(z_logits, axis=-1), self.NUM_DISCRETE_STATES))
+            return z_logits
 
     def initialize(self, finalize=False):
         """Initialize the global trainable variables."""
