@@ -190,6 +190,7 @@ class RMTPP_DECRNN:
         self.PLOT_PRED_DEV = plot_pred_dev
         self.PLOT_PRED_TEST = plot_pred_test
         self.POSITION_ENCODE = position_encode
+        self.NUM_SAMP_INV = 50
 
         if self.CONCAT_FINAL_ENC_STATE:
             self.DEC_STATE_SIZE = 2 * self.HIDDEN_LAYER_SIZE
@@ -1354,9 +1355,13 @@ class RMTPP_DECRNN:
                     val, _err = quad(quad_func_splusintensity, 0, np.inf, args=args)
                     #print(val)
                 elif self.ALG_NAME in ['rmtpp_decrnn_inv']:
-                    u = np.random.random_sample()
-                    val = np.log(c_ - WT_j * np.log(u)) - D_j
-                    val = val / WT_j
+                    f_val = 0.0
+                    for num_samp in range(self.NUM_SAMP_INV):
+                        u = np.random.random_sample()
+                        val = np.log(c_ - WT_j * np.log(u)) - D_j
+                        val = val / WT_j
+                        f_val += val.reshape(-1)[0]
+                    val = f_val/self.NUM_SAMP_INV
 
                 assert np.isfinite(val)
                 preds_i.append(t_last + val)
