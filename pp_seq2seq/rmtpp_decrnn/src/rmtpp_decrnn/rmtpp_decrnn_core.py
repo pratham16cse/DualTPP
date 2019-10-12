@@ -156,6 +156,7 @@ class RMTPP_DECRNN:
 
         self.NUM_CATEGORIES = num_categories
         self.FLOAT_TYPE = float_type
+        self.NUM_SAMP_INV = 1000
 
         self.DEVICE_CPU = device_cpu
         self.DEVICE_GPU = device_gpu
@@ -564,7 +565,7 @@ class RMTPP_DECRNN:
                         # self.WT = tf.squeeze(tf.tensordot(self.decoder_states, self.Vw, axes=[[2],[0]]), axis=-1) + base_intensity_bw
                         self.WT = get_WT_constraint()(self.WT)
                         self.WT = tf.clip_by_value(self.WT, 0.0, 10.0)
-                    elif self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_mode', 'rmtpp_decrnn_splusintensity', 'rmtpp_decrnn_latentz', 'rmtpp_decrnn_truemarks']:
+                    elif self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_inv', 'rmtpp_decrnn_mode', 'rmtpp_decrnn_splusintensity', 'rmtpp_decrnn_latentz', 'rmtpp_decrnn_truemarks']:
                         self.WT = self.wt
                     elif self.ALG_NAME in ['rmtpp_decrnn_whparam', 'rmtpp_decrnn_mode_whparam']:
                         self.WT = self.wt_hparam
@@ -1315,7 +1316,7 @@ class RMTPP_DECRNN:
             [self.hidden_states, self.decoder_states, self.event_preds, self.final_state, self.D, self.WT],
             feed_dict=feed_dict
         )
-        if self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_mode', 'rmtpp_decrnn_splusintensity', 'rmtpp_decrnn_latentz', 'rmtpp_decrnn_truemarks']:
+        if self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_inv', 'rmtpp_decrnn_mode', 'rmtpp_decrnn_splusintensity', 'rmtpp_decrnn_latentz', 'rmtpp_decrnn_truemarks']:
             WT = np.ones((len(event_in_seq), self.DEC_LEN, 1)) * WT
         elif self.ALG_NAME in ['rmtpp_decrnn_whparam', 'rmtpp_decrnn_mode_whparam']:
             raise NotImplemented('For whparam methods')
@@ -1354,6 +1355,15 @@ class RMTPP_DECRNN:
                     args = (D_j, WT_j)
                     val, _err = quad(quad_func_splusintensity, 0, np.inf, args=args)
                     #print(val)
+                elif self.ALG_NAME in ['rmtpp_decrnn_inv']:
+                    f_val = 0.0
+                    for num_samp in range(self.NUM_SAMP_INV):
+                      u = np.random.random_sample()
+                      val = np.log(c_ - WT_j * np.log(u)) - D_j
+                      val = val / WT_j
+                      f_val += val.reshape(-1)[0]
+
+                    val = f_val/self.NUM_SAMP_INV
 
                 assert np.isfinite(val)
                 preds_i.append(t_last + val)
