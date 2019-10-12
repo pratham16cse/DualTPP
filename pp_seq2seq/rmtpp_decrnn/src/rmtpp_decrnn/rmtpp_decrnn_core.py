@@ -446,6 +446,20 @@ class RMTPP_DECRNN:
                 # TODO Does affine transformations (Wy) need to be different? Wt is not \
                   # required in the decoder
 
+                times = tf.concat([self.times_in, self.times_out], axis=1)
+                gaps_ = times[:, 1:]-times[:, :-1]
+                g_max = tf.contrib.distributions.percentile(gaps_, 95.0)
+                powers = tf.cast(tf.pow(2, tf.range(self.NUM_DISCRETE_STATES-1)), tf.float32)
+                first_boundary = tf.cast(tf.pow(2, self.NUM_DISCRETE_STATES-1), tf.float32) * g_max / tf.cumsum(powers)
+                bin_boundaries = first_boundary * tf.cumsum(powers) / powers
+                bin_boundaries = tf.ones((self.inf_batch_size, self.DEC_LEN, 1)) * bin_boundaries
+                gaps_tiled_ = tf.tile(tf.expand_dims(gaps_[:, -self.DEC_LEN:], axis=-1), [1, 1, self.NUM_DISCRETE_STATES-1])
+                gap_bins = tf.where(tf.greater_equal(gaps_tiled_, bin_boundaries),
+                                    tf.ones_like(bin_boundaries, dtype=tf.int32),
+                                    tf.zeros_like(bin_boundaries, dtype=tf.int32))
+                gap_bins = tf.reduce_sum(gap_bins, axis=2)
+
+
                 if not self.INIT_ZERO_DEC_STATE:
                     s_state = self.final_state
                 #s_state = tf.Print(s_state, [self.mode, tf.equal(self.mode, 1.0)], message='mode ')
@@ -649,6 +663,9 @@ class RMTPP_DECRNN:
                         self.loss = self.loss + reg_term
                     if self.EXTLYR_REG_PARAM:
                         self.loss = self.loss + reg_term_dense_layers
+
+                    if self.ALG_NAME in ['rmtpp_decrnn_latentz']:
+                        self.loss = self.loss + tf.losses.sparse_softmax_cross_entropy(gap_bins, self.z_logits_list)
 
                     self.time_loss = (-1) * tf.reduce_sum(
                         tf.where(self.events_out > 0,
