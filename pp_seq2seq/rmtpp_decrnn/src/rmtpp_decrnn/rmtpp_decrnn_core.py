@@ -769,8 +769,8 @@ class RMTPP_DECRNN:
               with_summaries=False, eval_train_data=False, stop_criteria=None, 
               restore_path=None, dec_len_for_eval=0):
 
-        # if dec_len_for_eval==0:
-        #     dec_len_for_eval=training_data['decoder_length']
+        if dec_len_for_eval==0:
+            dec_len_for_eval=training_data['decoder_length']
         if restore_path is None:
             restore_path = self.SAVE_DIR
         """Train the model given the training data.
@@ -897,7 +897,7 @@ class RMTPP_DECRNN:
                     train_time_preds, train_event_preds, train_event_preds_softmax, inference_time \
                             = self.predict(training_data['train_event_in_seq'],
                                            training_data['train_time_in_seq'],
-                                           training_data['decoder_length'],
+                                           dec_len_for_eval,
                                            single_threaded=True,
                                            event_out_seq=training_data['train_event_out_seq'] if self.ALG_NAME=='rmtpp_decrnn_truemarks' else None)
                     train_inference_times.append(inference_time)
@@ -913,7 +913,7 @@ class RMTPP_DECRNN:
                 dev_time_preds, dev_event_preds, dev_event_preds_softmax, inference_time \
                         = self.predict(training_data['dev_event_in_seq'],
                                        training_data['dev_time_in_seq'],
-                                       training_data['decoder_length'],
+                                       dec_len_for_eval,
                                        single_threaded=True,
                                        event_out_seq=training_data['dev_event_out_seq'] if self.ALG_NAME=='rmtpp_decrnn_truemarks' else None)
                 dev_loss, dev_time_loss, dev_mark_loss = self.evaluate_likelihood(training_data['dev_event_in_seq'],
@@ -972,7 +972,7 @@ class RMTPP_DECRNN:
                 test_time_preds, test_event_preds, test_event_preds_softmax, inference_time \
                         = self.predict(training_data['test_event_in_seq'],
                                        training_data['test_time_in_seq'],
-                                       training_data['decoder_length'],
+                                       dec_len_for_eval,
                                        single_threaded=True,
                                        event_out_seq=training_data['test_event_out_seq'] if self.ALG_NAME=='rmtpp_decrnn_truemarks' else None)
                 test_loss, test_time_loss, test_mark_loss = self.evaluate_likelihood(training_data['test_event_in_seq'],
@@ -1100,7 +1100,7 @@ class RMTPP_DECRNN:
             dev_time_preds, dev_event_preds, dev_event_preds_softmax, inference_time \
                     = self.predict(training_data['dev_event_in_seq'],
                                    training_data['dev_time_in_seq'],
-                                   training_data['decoder_length'],
+                                   dec_len_for_eval,
                                    single_threaded=True,
                                    event_out_seq=training_data['dev_event_out_seq'] if self.ALG_NAME=='rmtpp_decrnn_truemarks' else None)
             dev_loss, dev_time_loss, dev_mark_loss = self.evaluate_likelihood(training_data['dev_event_in_seq'],
@@ -1109,9 +1109,9 @@ class RMTPP_DECRNN:
                                                                               training_data['dev_time_out_seq'],
                                                                               dec_len_for_eval)
             dev_inference_times.append(inference_time)
-            train_dec_len_for_eval = dec_len_for_eval if dec_len_for_eval>0 else dev_time_preds.shape[1]
-            dev_time_preds = dev_time_preds[:,:train_dec_len_for_eval]
-            dev_time_out_seq = np.array(training_data['dev_actual_time_out_seq'])[:,:train_dec_len_for_eval]
+            dev_time_preds = dev_time_preds[:,:dec_len_for_eval]
+            dev_time_out_seq = np.array(training_data['dev_actual_time_out_seq'])[:,:dec_len_for_eval]
+            dev_event_out_seq = np.array(training_data['dev_event_out_seq'])[:,:dec_len_for_eval]
             dev_time_in_seq = training_data['dev_time_in_seq']
             gaps = dev_time_preds - np.concatenate([dev_time_in_seq[:, -1:], dev_time_preds[:, :-1]], axis=-1)
             unnorm_gaps = gaps * training_data['devND']
@@ -1119,7 +1119,7 @@ class RMTPP_DECRNN:
             dev_time_preds = unnorm_gaps + training_data['dev_actual_time_in_seq'] - training_data['devIG']
 
             dev_mae, dev_total_valid, dev_acc, dev_gap_mae, dev_mrr = self.eval(dev_time_preds, dev_time_out_seq,
-                                                                                dev_event_preds, training_data['dev_event_out_seq'],
+                                                                                dev_event_preds, dev_event_out_seq,
                                                                                 training_data['dev_actual_time_in_seq'],
                                                                                 dev_event_preds_softmax)
             print('DEV: MAE = {:.5f}; valid = {}, ACC = {:.5f}, MAGE = {:.5f}'.format(
@@ -1128,7 +1128,7 @@ class RMTPP_DECRNN:
             test_time_preds, test_event_preds, test_event_preds_softmax, inference_time \
                     = self.predict(training_data['test_event_in_seq'],
                                    training_data['test_time_in_seq'],
-                                   training_data['decoder_length'],
+                                   dec_len_for_eval,
                                    single_threaded=True,
                                    event_out_seq=training_data['test_event_out_seq'] if self.ALG_NAME=='rmtpp_decrnn_truemarks' else None)
             test_loss, test_time_loss, test_mark_loss = self.evaluate_likelihood(training_data['test_event_in_seq'],
@@ -1137,8 +1137,9 @@ class RMTPP_DECRNN:
                                                                                  training_data['test_time_out_seq'],
                                                                                  dec_len_for_eval)
             test_inference_times.append(inference_time)
-            test_time_preds = test_time_preds[:,:train_dec_len_for_eval]
-            test_time_out_seq = np.array(training_data['test_actual_time_out_seq'])[:,:train_dec_len_for_eval]
+            test_time_preds = test_time_preds[:,:dec_len_for_eval]
+            test_time_out_seq = np.array(training_data['test_actual_time_out_seq'])[:,:dec_len_for_eval]
+            test_event_out_seq = np.array(training_data['test_event_out_seq'])[:,:dec_len_for_eval]
             test_time_in_seq = training_data['test_time_in_seq']
             gaps = test_time_preds - np.concatenate([test_time_in_seq[:, -1:], test_time_preds[:, :-1]], axis=-1)
             unnorm_gaps = gaps * training_data['testND']
@@ -1147,7 +1148,7 @@ class RMTPP_DECRNN:
             test_time_preds = unnorm_gaps + training_data['test_actual_time_in_seq'] - training_data['testIG']
 
             test_mae, test_total_valid, test_acc, test_gap_mae, test_mrr = self.eval(test_time_preds, test_time_out_seq,
-                                                                                     test_event_preds, training_data['test_event_out_seq'],
+                                                                                     test_event_preds, test_event_out_seq,
                                                                                      training_data['test_actual_time_in_seq'],
                                                                                      test_event_preds_softmax)
             print('TEST: MAE = {:.5f}; valid = {}, ACC = {:.5f}, MAGE = {:.5f}'.format(
@@ -1251,7 +1252,7 @@ class RMTPP_DECRNN:
         return float(loss_), float(time_loss_), float(mark_loss_)
 
 
-    def predict(self, event_in_seq, time_in_seq, decoder_length, single_threaded=False, plot_dir=False, event_out_seq=None):
+    def predict(self, event_in_seq, time_in_seq, dec_len_for_eval, single_threaded=False, plot_dir=False, event_out_seq=None):
         """Treats the entire dataset as a single batch and processes it."""
 
         start_time = time.time()
@@ -1375,7 +1376,11 @@ class RMTPP_DECRNN:
         end_time = time.time()
         inference_time = end_time - start_time
 
-        return np.asarray(all_time_preds).T, np.asarray(all_event_preds).swapaxes(0, 1), all_event_preds_softmax, inference_time
+        all_time_preds = np.asarray(all_time_preds).T[:, :dec_len_for_eval]
+        all_event_preds = np.asarray(all_event_preds).swapaxes(0, 1)[:, :dec_len_for_eval]
+        all_event_preds_softmax = all_event_preds_softmax[:, :dec_len_for_eval]
+
+        return all_time_preds, all_event_preds, all_event_preds_softmax, inference_time
 
     def eval(self, time_preds, time_true, event_preds, event_true, time_input_last, event_preds_softmax):
         """Prints evaluation of the model on the given dataset."""

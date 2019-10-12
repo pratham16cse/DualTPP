@@ -187,14 +187,8 @@ def cmd(dataset_name, alg_name, dataset_path,
             num_epochs = -1
             stop_criteria = 'epsilon'
 
-        if os.path.isfile(save_dir+'/result.json'):
-            print('Model already trained, stored, restoring . . .')
-            with open(os.path.join(save_dir)+'/result.json', 'r') as fp:
-                result = json.loads(fp.read())
-            params = (result[param] for param in hparams[alg_name].keys())
-            args = (result['hidden_layer_size'], result['wt_hparam'], True, 0, result['checkpoint_dir'], train_eval)
-            rmtpp_decrnn_mdl = model_creator(args)
-            result = hyperparameter_worker(args, rmtpp_decrnn_mdl, dec_len)
+        if os.path.isfile(save_dir+'/result.json') and dec_len == decoder_length_run[0]:
+            print('Model already trained, stored. Evaluating . . .')
         else:
             # TODO(PD) Run hyperparameter tuning in parallel
             #results  = pp.ProcessPool().map(hyperparameter_worker, hidden_layer_size_list)
