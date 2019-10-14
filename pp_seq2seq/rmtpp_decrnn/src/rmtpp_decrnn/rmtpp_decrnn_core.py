@@ -70,7 +70,7 @@ def_opts = Deco.Options(
     enc_cell_type='manual',
     dec_cell_type='manual',
 
-    num_discrete_states = 10,
+    num_discrete_states = 4,
 
     embed_size=__EMBED_SIZE,
     Wem=lambda num_categories: np.random.RandomState(42).randn(num_categories, __EMBED_SIZE) * 0.01,
@@ -427,6 +427,17 @@ class RMTPP_DECRNN:
                             state = tf.where(self.events_in[:, i] > 0, new_state, state)
                         self.hidden_states.append(state)
                     self.final_state = self.hidden_states[-1]
+                    self.hidden_states = tf.stack(self.hidden_states, axis=1)
+
+                    # Computing z-attention values
+                    if self.ALG_NAME in ['rmtpp_decrnn_latentz_attn']:
+                        self.z = tf.reduce_sum(self.hidden_states * tf.expand_dims(self.final_state, axis=1), axis=2)
+                        #gaps_in_ = tf.concat([tf.zeros((self.inf_batch_size, 1)), self.times_in[:, 1:] - self.times_in[:, :-1]], axis=1)
+                        #self.z = tf.minimum(gaps_in_, gaps_in_[:, -1:]) / tf.maximum(gaps_in_, gaps_in_[:, -1:])
+                        #self.z = -tf.square(gaps_in_ - gaps_in_[:, -1:])
+                        #self.z = tf.Print(self.z, [tf.shape(self.z)], message='Printing self.z shape')
+                        self.z = tf.nn.softmax(self.z)
+                        self.z = tf.stop_gradient(self.z)
                 #----------- Encoder End ----------#
 
 
@@ -527,6 +538,7 @@ class RMTPP_DECRNN:
 
                     # ------ Begin time-prediction ------ #
                     self.decoder_states = tf.stack(self.decoder_states, axis=1)
+
                     if self.ALG_NAME in ['rmtpp_decrnn_latentz']:
                         self.z_list = tf.stack(self.z_list, axis=1)
                     if self.CONCAT_FINAL_ENC_STATE:
@@ -564,7 +576,7 @@ class RMTPP_DECRNN:
                         # self.WT = tf.squeeze(tf.tensordot(self.decoder_states, self.Vw, axes=[[2],[0]]), axis=-1) + base_intensity_bw
                         self.WT = get_WT_constraint()(self.WT)
                         self.WT = tf.clip_by_value(self.WT, 0.0, 10.0)
-                    elif self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_mode', 'rmtpp_decrnn_splusintensity', 'rmtpp_decrnn_latentz', 'rmtpp_decrnn_truemarks']:
+                    elif self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_mode', 'rmtpp_decrnn_splusintensity', 'rmtpp_decrnn_latentz', 'rmtpp_decrnn_latentz_attn', 'rmtpp_decrnn_truemarks']:
                         self.WT = self.wt
                     elif self.ALG_NAME in ['rmtpp_decrnn_whparam', 'rmtpp_decrnn_mode_whparam']:
                         self.WT = self.wt_hparam
@@ -575,6 +587,33 @@ class RMTPP_DECRNN:
                         log_f_star = (log_lambda_
                                       - self.D * gaps
                                       - (self.WT/2.0) * tf.square(gaps))
+                    elif self.ALG_NAME in ['rmtpp_decrnn_latentz_attn']:
+                        z_indices_sorted = tf.argsort(self.z[:, :self.BPTT-self.DEC_LEN], axis=-1, direction='DESCENDING', stable=True, name='argsort_z')
+                        z_indices_topk = z_indices_sorted[:, :self.NUM_DISCRETE_STATES]
+                        #z_indices_topk = tf.Print(z_indices_topk, [tf.shape(self.z), tf.reduce_max(z_indices_topk)], message='Printing z_indices_topk before')
+                        z_indices_topk = tf.expand_dims(z_indices_topk, axis=1) + tf.expand_dims(tf.expand_dims(tf.range(self.DEC_LEN), axis=0), axis=-1)
+                        self.z_topk = tf.tile(tf.gather(self.z, z_indices_topk[:, 0:1], batch_dims=1), [1, self.DEC_LEN, 1])
+                        self.z_topk = tf.nn.softmax(self.z_topk)
+                        gaps_in = tf.concat([tf.zeros((self.inf_batch_size, 1)), self.times_in[:, 1:] - self.times_in[:, :-1]], axis=1)
+                        #z_indices_topk = tf.Print(z_indices_topk, [tf.shape(self.z_topk), tf.reduce_max(z_indices_topk), tf.shape(gaps_in)], message='Printing z_indices_topk')
+                        lookup_gaps = tf.gather(gaps_in, z_indices_topk, batch_dims=1)
+                        lookup_gaps = tf.expand_dims(lookup_gaps, axis=-1)
+                        #lookup_gaps = tf.Print(lookup_gaps, [tf.shape(gaps_in), tf.shape(z_indices_topk)])
+                        self.z_indices_topk = z_indices_topk
+
+                        decoder_states_concat = tf.tile(tf.expand_dims(decoder_states_concat, axis=2), [1, 1, self.NUM_DISCRETE_STATES, 1])
+                        decoder_states_concat = tf.concat([decoder_states_concat, lookup_gaps], axis=-1)
+                        #self.D = tf.reduce_sum(decoder_states_concat * newVt, axis=-1) + base_intensity_bt
+                        self.D = tf.squeeze(tf.layers.dense(decoder_states_concat, 1), axis=-1)
+
+                        log_lambda_ = (self.D + tf.expand_dims(gaps * self.WT, axis=-1))
+                        lambda_ = tf.exp(tf.minimum(ETH, log_lambda_), name='lambda_')
+                        log_f_star = (log_lambda_
+                                      + (1.0 / self.WT) * tf.exp(tf.minimum(ETH, self.D))
+                                      - (1.0 / self.WT) * lambda_)
+
+                        log_f_star = tf.reduce_sum(log_f_star * self.z_topk, axis=-1)
+
                     else:
                         log_lambda_ = (self.D + gaps * self.WT)
                         lambda_ = tf.exp(tf.minimum(ETH, log_lambda_), name='lambda_')
@@ -1315,7 +1354,15 @@ class RMTPP_DECRNN:
             [self.hidden_states, self.decoder_states, self.event_preds, self.final_state, self.D, self.WT],
             feed_dict=feed_dict
         )
-        if self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_mode', 'rmtpp_decrnn_splusintensity', 'rmtpp_decrnn_latentz', 'rmtpp_decrnn_truemarks']:
+
+        if self.ALG_NAME in ['rmtpp_decrnn_latentz_attn']:
+            z_topk = self.sess.run(self.z_topk, feed_dict=feed_dict)
+            z_indices_topk = self.sess.run(self.z_indices_topk, feed_dict=feed_dict)
+            #print(z_indices_topk[:, 0])
+        else:
+            z_topk = np.zeros_like(event_out_seq)
+
+        if self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_mode', 'rmtpp_decrnn_splusintensity', 'rmtpp_decrnn_latentz', 'rmtpp_decrnn_latentz_attn', 'rmtpp_decrnn_truemarks']:
             WT = np.ones((len(event_in_seq), self.DEC_LEN, 1)) * WT
         elif self.ALG_NAME in ['rmtpp_decrnn_whparam', 'rmtpp_decrnn_mode_whparam']:
             raise NotImplemented('For whparam methods')
@@ -1334,10 +1381,10 @@ class RMTPP_DECRNN:
 
         global _quad_worker
         def _quad_worker(params):
-            batch_idx, (D_i, WT_i, decoder_states, time_pred_last) = params
+            batch_idx, (D_i, WT_i, decoder_states, time_pred_last, z_topk_i) = params
             preds_i = []
             #print(np.matmul(decoder_states, Vt) + bt)
-            for pred_idx, (D_j, WT_j, s_i) in enumerate(zip(D_i, WT_i, decoder_states)):
+            for pred_idx, (D_j, WT_j, s_i, z_topk_j) in enumerate(zip(D_i, WT_i, decoder_states, z_topk_i)):
                 t_last = time_pred_last if pred_idx==0 else preds_i[-1]
 
                 c_ = np.exp(np.maximum(D_j, np.ones_like(D_j)*-87.0))
@@ -1345,6 +1392,12 @@ class RMTPP_DECRNN:
                     args = (c_, WT_j)
                     val, _err = quad(quad_func, 0, np.inf, args=args)
                     #print(batch_idx, D_j, c_, WT_j, val)
+                elif self.ALG_NAME in ['rmtpp_decrnn_latentz_attn']:
+                    val = 0.0
+                    for k in range(self.NUM_DISCRETE_STATES):
+                        args = (c_[k], WT_j)
+                        val_, _err = quad(quad_func, 0, np.inf, args=args)
+                        val += (val_ * z_topk_j[k])
                 elif self.ALG_NAME in ['rmtpp_decrnn_mode', 'rmtpp_decrnn_mode_wcmpt', 'rmtpp_decrnn_mode_whparam']:
                     val_raw = (np.log(WT_j) - D_j)/WT_j
                     val = np.where(val_raw<0.0, 0.0, val_raw)
@@ -1365,10 +1418,10 @@ class RMTPP_DECRNN:
             all_decoder_states = np.concatenate([all_decoder_states, np.tile(np.expand_dims(cur_state, axis=1), [1, self.DEC_LEN, 1])], axis=-1)
 
         if single_threaded:
-            all_time_preds = [_quad_worker((idx, (D_i, WT_i, state, t_last))) for idx, (D_i, WT_i, state, t_last) in enumerate(zip(D, WT, all_decoder_states, time_pred_last))]
+            all_time_preds = [_quad_worker((idx, (D_i, WT_i, state, t_last, z_topk_i))) for idx, (D_i, WT_i, state, t_last, z_topk_i) in enumerate(zip(D, WT, all_decoder_states, time_pred_last, z_topk))]
         else:
             with MP.Pool() as pool:
-                all_time_preds = pool.map(_quad_worker, enumerate(zip(D, WT, all_decoder_states, time_pred_last)))
+                all_time_preds = pool.map(_quad_worker, enumerate(zip(D, WT, all_decoder_states, time_pred_last, z_topk)))
 
         all_time_preds = np.asarray(all_time_preds).T
         assert np.isfinite(all_time_preds).sum() == all_time_preds.size
@@ -1379,6 +1432,7 @@ class RMTPP_DECRNN:
         all_time_preds = np.asarray(all_time_preds).T[:, :dec_len_for_eval]
         all_event_preds = np.asarray(all_event_preds).swapaxes(0, 1)[:, :dec_len_for_eval]
         all_event_preds_softmax = all_event_preds_softmax[:, :dec_len_for_eval]
+
 
         return all_time_preds, all_event_preds, all_event_preds_softmax, inference_time
 
