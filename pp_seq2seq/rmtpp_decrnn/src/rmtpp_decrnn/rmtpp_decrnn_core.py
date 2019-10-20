@@ -671,7 +671,6 @@ class RMTPP_DECRNN:
                         elif self.ALG_NAME in ['rmtpp_decrnn_attn']:
                             self.D = tf.expand_dims(self.D, axis=-1) + self.wt_attn * lookup_gaps
 
-
                         if self.ALG_NAME in ['rmtpp_decrnn_attn']:
                             log_lambda_ = (self.D + tf.expand_dims(gaps, axis=-1) * self.WT)
                             lambda_ = tf.exp(tf.minimum(ETH, log_lambda_), name='lambda_')
@@ -1489,7 +1488,7 @@ class RMTPP_DECRNN:
             for pred_idx, (D_j, WT_j, s_i, z_topk_j) in enumerate(zip(D_i, WT_i, decoder_states, z_topk_i)):
                 t_last = time_pred_last if pred_idx==0 else preds_i[-1]
 
-                c_ = np.exp(np.maximum(D_j, np.ones_like(D_j)*-87.0))
+                c_ = np.exp(np.clip(D_j, -87.0, 86.0))
                 if self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_wcmpt', 'rmtpp_decrnn_whparam', 'rmtpp_decrnn_latentz', 'rmtpp_decrnn_truemarks']:
                     args = (c_, WT_j)
                     val, _err = quad(quad_func, 0, np.inf, args=args)
