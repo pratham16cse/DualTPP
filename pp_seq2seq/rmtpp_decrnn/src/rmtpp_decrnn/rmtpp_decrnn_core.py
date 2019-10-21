@@ -463,9 +463,9 @@ class RMTPP_DECRNN:
                                                                         i * tf.ones((self.inf_batch_size), dtype=tf.int32))
                                     inputs_t = tf.concat([delta_t_prev, p_embedded], axis=-1)
                                     #inputs_t = delta_t_prev
-                                    #new_state_t, enc_internal_state_t = self.enc_cell_t(inputs_t,  enc_internal_state_t)
-                                    new_state_t = tf.layers.dense(inputs_t, self.HIDDEN_LAYER_SIZE/2, name='attn_ff_nw_1', activation=tf.nn.relu)
-                                    new_state_t = tf.layers.dense(new_state_t, self.HIDDEN_LAYER_SIZE/2, name='attn_ff_nw_2')
+                                    new_state_t, enc_internal_state_t = self.enc_cell_t(inputs_t,  enc_internal_state_t)
+                                    #new_state_t = tf.layers.dense(inputs_t, self.HIDDEN_LAYER_SIZE/2, name='attn_ff_nw_1', activation=tf.nn.relu)
+                                    #new_state_t = tf.layers.dense(new_state_t, self.HIDDEN_LAYER_SIZE/2, name='attn_ff_nw_2')
 
                             state = tf.where(self.events_in[:, i] > 0, new_state, state)
                             if self.ALG_NAME in ['rmtpp_decrnn_attn', 'rmtpp_decrnn_splusintensity_attn'] \
