@@ -72,7 +72,7 @@ def_opts = Deco.Options(
     enc_cell_type='manual',
     dec_cell_type='manual',
 
-    num_discrete_states = 1,
+    num_discrete_states = 5,
 
     embed_size=__EMBED_SIZE,
     Wem=lambda num_categories: np.random.RandomState(42).randn(num_categories, __EMBED_SIZE) * 0.01,
