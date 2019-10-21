@@ -655,7 +655,7 @@ class RMTPP_DECRNN:
                         self.z_topk = tf.tile(tf.expand_dims(tf.gather(self.z, z_indices_topk, batch_dims=1), axis=1), [1, self.DEC_LEN, 1])
                         self.z_topk = tf.nn.softmax(self.z_topk)
 
-                        gap_append_indices = tf.expand_dims(z_indices_topk, axis=1) + tf.expand_dims(tf.expand_dims(tf.range(1, self.DEC_LEN+1), axis=0), axis=-1)
+                        gap_append_indices = tf.expand_dims(z_indices_topk, axis=1) + tf.expand_dims(tf.expand_dims(tf.range(0, self.DEC_LEN), axis=0), axis=-1)
                         self.gap_append_indices = gap_append_indices
                         gaps_in = tf.concat([tf.zeros((self.inf_batch_size, 1)), self.times_in[:, 1:] - self.times_in[:, :-1]], axis=1)
                         lookup_gaps = tf.gather(gaps_in, gap_append_indices, batch_dims=1)
@@ -718,7 +718,8 @@ class RMTPP_DECRNN:
                     if self.ALG_NAME in ['rmtpp_decrnn_attn', 'rmtpp_decrnn_splusintensity_attn']:
                         attn_loss = 0.0
                         with tf.variable_scope('attn_pred', reuse=tf.AUTO_REUSE):
-                            closest_input_gaps_indices = tf.argmin(tf.abs(gaps_in[:, -1:] - gaps_in[:, :self.BPTT-self.DEC_LEN]), axis=-1)
+                            first_output_gap = self.times_out[:, 0:1] - self.times_in[:, -1:]
+                            closest_input_gaps_indices = tf.argmin(tf.abs(first_output_gap - gaps_in[:, :self.BPTT-self.DEC_LEN]), axis=-1)
                             attn_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=closest_input_gaps_indices, logits=self.z)
                             attn_loss = tf.reduce_sum(attn_loss)
 
