@@ -653,7 +653,7 @@ class RMTPP_DECRNN:
                         z_indices_topk = z_indices_sorted[:, :self.NUM_DISCRETE_STATES]
                         self.z_indices_topk = z_indices_topk
                         self.z_topk = tf.tile(tf.expand_dims(tf.gather(self.z, z_indices_topk, batch_dims=1), axis=1), [1, self.DEC_LEN, 1])
-                        self.z_topk = tf.nn.softmax(self.z_topk)
+                        #self.z_topk = tf.nn.softmax(self.z_topk)
 
                         gap_append_indices = tf.expand_dims(z_indices_topk, axis=1) + tf.expand_dims(tf.expand_dims(tf.range(0, self.DEC_LEN), axis=0), axis=-1)
                         self.gap_append_indices = gap_append_indices
