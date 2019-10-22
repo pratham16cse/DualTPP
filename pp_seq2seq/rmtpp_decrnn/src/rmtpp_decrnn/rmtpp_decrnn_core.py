@@ -486,12 +486,13 @@ class RMTPP_DECRNN:
                     # Computing z-attention values
                     if self.ALG_NAME in ['rmtpp_decrnn_attn', 'rmtpp_decrnn_splusintensity_attn']:
 
-                        if self.ATTN_RNN:
-                            keys = self.hidden_states_t[:, :self.BPTT-self.DEC_LEN]
-                        else:
-                            keys = self.hidden_states[:, :self.BPTT-self.DEC_LEN]
+                        #if self.ATTN_RNN:
+                        #    keys = self.hidden_states_t[:, :self.BPTT-self.DEC_LEN]
+                        #else:
+                        #    keys = self.hidden_states[:, :self.BPTT-self.DEC_LEN]
 
-                        values = self.hidden_states[:, :self.BPTT-self.DEC_LEN]
+                        keys = self.hidden_states[:, :self.BPTT-self.DEC_LEN]
+                        values = self.hidden_states_t[:, :self.BPTT-self.DEC_LEN]
 
                         self.z = tf.reduce_sum(values * tf.expand_dims(keys[:, -1], axis=1), axis=2)
 
