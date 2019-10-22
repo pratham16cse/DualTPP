@@ -384,7 +384,7 @@ class RMTPP_DECRNN:
 
                 if self.ALG_NAME in ['rmtpp_decrnn_attn', 'rmtpp_decrnn_splusintensity_attn'] \
                         and self.ATTN_RNN:
-                    enc_cell_t = tf.contrib.rnn.BasicLSTMCell(self.HIDDEN_LAYER_SIZE/2, forget_bias=1.0, name='time_rnn')
+                    enc_cell_t = tf.contrib.rnn.BasicLSTMCell(self.HIDDEN_LAYER_SIZE, forget_bias=1.0, name='time_rnn')
                     self.enc_cell_t = tf.contrib.rnn.MultiRNNCell([enc_cell_t for _ in range(self.NUM_ENC_LAYERS)],
                                                             state_is_tuple=True)
                     enc_internal_state_t = self.enc_cell_t.zero_state(self.inf_batch_size, dtype = tf.float32)
@@ -402,7 +402,7 @@ class RMTPP_DECRNN:
 
                 if self.ALG_NAME in ['rmtpp_decrnn_attn', 'rmtpp_decrnn_splusintensity_attn'] \
                         and self.ATTN_RNN:
-                    state_t = tf.zeros([self.inf_batch_size, int(self.HIDDEN_LAYER_SIZE/2)],
+                    state_t = tf.zeros([self.inf_batch_size, int(self.HIDDEN_LAYER_SIZE)],
                                        dtype=self.FLOAT_TYPE,
                                        name='initial_state')
                     self.hidden_states_t = []
@@ -464,8 +464,8 @@ class RMTPP_DECRNN:
                                     inputs_t = tf.concat([delta_t_prev, p_embedded], axis=-1)
                                     #inputs_t = delta_t_prev
                                     new_state_t, enc_internal_state_t = self.enc_cell_t(inputs_t,  enc_internal_state_t)
-                                    #new_state_t = tf.layers.dense(inputs_t, self.HIDDEN_LAYER_SIZE/2, name='attn_ff_nw_1', activation=tf.nn.relu)
-                                    #new_state_t = tf.layers.dense(new_state_t, self.HIDDEN_LAYER_SIZE/2, name='attn_ff_nw_2')
+                                    #new_state_t = tf.layers.dense(inputs_t, self.HIDDEN_LAYER_SIZE, name='attn_ff_nw_1', activation=tf.nn.relu)
+                                    #new_state_t = tf.layers.dense(new_state_t, self.HIDDEN_LAYER_SIZE, name='attn_ff_nw_2')
 
                             state = tf.where(self.events_in[:, i] > 0, new_state, state)
                             if self.ALG_NAME in ['rmtpp_decrnn_attn', 'rmtpp_decrnn_splusintensity_attn'] \
@@ -491,7 +491,9 @@ class RMTPP_DECRNN:
                         else:
                             keys = self.hidden_states[:, :self.BPTT-self.DEC_LEN]
 
-                        self.z = tf.reduce_sum(keys * tf.expand_dims(keys[:, -1], axis=1), axis=2)
+                        values = self.hidden_states[:, :self.BPTT-self.DEC_LEN]
+
+                        self.z = tf.reduce_sum(values * tf.expand_dims(keys[:, -1], axis=1), axis=2)
 
                         #gaps_in_ = tf.concat([tf.zeros((self.inf_batch_size, 1)), self.times_in[:, 1:] - self.times_in[:, :-1]], axis=1)
                         #self.z = -tf.abs(gaps_in_ - gaps_in_[:, -1:])[:, :self.BPTT-self.DEC_LEN]
