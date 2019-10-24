@@ -1341,7 +1341,7 @@ class RMTPP_DECRNN:
             for pred_idx, (D_j, WT_j, s_i) in enumerate(zip(D_i, WT_i, decoder_states)):
                 t_last = time_pred_last if pred_idx==0 else preds_i[-1]
 
-                c_ = np.exp(np.maximum(D_j, np.ones_like(D_j)*-87.0))
+                c_ = np.exp(np.clip(D_j, -50.0, 50.0))
                 if self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_wcmpt', 'rmtpp_decrnn_whparam', 'rmtpp_decrnn_latentz', 'rmtpp_decrnn_truemarks']:
                     args = (c_, WT_j)
                     val, _err = quad(quad_func, 0, np.inf, args=args)

@@ -1246,7 +1246,7 @@ class RMTPP:
                 batch_idx, (D_i, WT_i, h_i, t_last) = params
                 preds_i = []
 
-                c_ = np.exp(np.maximum(D_i, np.ones_like(D_i)*-87.0))
+                c_ = np.exp(np.clip(D_i, -50.0, 50.0))
                 if self.ALG_NAME in ['rmtpp', 'rmtpp_wcmpt', 'rmtpp_whparam']:
                     args = (c_, WT_i)
                     val, _err = quad(quad_func, 0, np.inf, args=args)
