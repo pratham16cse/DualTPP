@@ -1233,7 +1233,6 @@ class RMTPP:
                 bptt_event_in = np.concatenate([event_in_seq, np.zeros((event_in_seq.shape[0], self.DEC_LEN-1))], axis=1)
                 bptt_time_in = np.concatenate([time_in_seq, np.zeros((time_in_seq.shape[0], self.DEC_LEN-1))], axis=1)
                 bptt_time_in_feats = np.concatenate([time_in_feats, np.zeros((time_in_feats.shape[0], self.DEC_LEN-1))], axis=1)
-                last_bptt_time_in_feats = time_in_feats[:, -1]
             else:
                 #bptt_event_in = event_in_seq[:, self.BPTT-1+pred_idx]
                 bptt_event_in = np.asarray(all_event_preds[-1])
@@ -1246,8 +1245,7 @@ class RMTPP:
                                                np.zeros((bptt_time_in.shape[0], self.BPTT-1))],
                                                axis=-1)
 
-                bptt_time_in_feats = last_bptt_time_in_feats + np.asarray(all_time_preds[-1]) // 3600 % 24
-                last_bptt_time_in_feats = bptt_time_in_feats
+                bptt_time_in_feats = np.asarray(all_time_preds[-1]) // 3600 % 24
                 bptt_time_in_feats = np.concatenate([np.expand_dims(bptt_time_in_feats, axis=-1),
                                                      np.zeros((bptt_time_in_feats.shape[0], self.BPTT-1))],
                                                      axis=-1)
