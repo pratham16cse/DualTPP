@@ -57,6 +57,8 @@ def_opts = Deco.Options(
     mark_loss=True,
     plot_pred_dev=True,
     plot_pred_test=False,
+    num_feats=1,
+    use_time_features=False,
 
     wt_hparam=1.0,
 
@@ -64,6 +66,7 @@ def_opts = Deco.Options(
 
     embed_size=__EMBED_SIZE,
     Wem=lambda num_categories: np.random.RandomState(42).randn(num_categories, __EMBED_SIZE) * 0.01,
+    Wem_feats=lambda num_categories: np.random.RandomState(42).randn(num_categories, __EMBED_SIZE) * 0.01,
 
     Wt=lambda hidden_layer_size: np.random.normal(size=(1, hidden_layer_size)),
     Wh=lambda hidden_layer_size: np.random.normal(size=(hidden_layer_size)),
@@ -115,8 +118,8 @@ class RMTPP:
                  save_dir, decay_steps, decay_rate,
                  device_gpu, device_cpu, summary_dir, cpu_only, constraints,
                  patience, stop_criteria, epsilon, num_extra_layer, mark_loss,
-                 Wt, Wem, Wh, bh, Ws, bs, wt, Wy, Vy, Vt, Vw, bk, bt, bw, wt_hparam,
-                 plot_pred_dev, plot_pred_test, rnn_cell_type):
+                 Wt, Wem, Wem_feats, Wh, bh, Ws, bs, wt, Wy, Vy, Vt, Vw, bk, bt, bw, wt_hparam,
+                 plot_pred_dev, plot_pred_test, rnn_cell_type, num_feats, use_time_features):
 
         self.seed = seed
         tf.set_random_seed(self.seed)
@@ -165,6 +168,9 @@ class RMTPP:
         self.MARK_LOSS = mark_loss
         self.PLOT_PRED_DEV = plot_pred_dev
         self.PLOT_PRED_TEST = plot_pred_test
+
+        self.NUM_FEATS = num_feats
+        self.USE_TIME_FEATS = use_time_features
 
         if True:
             self.DEC_STATE_SIZE = 2 * self.HIDDEN_LAYER_SIZE
@@ -218,6 +224,9 @@ class RMTPP:
                 self.events_out = tf.placeholder(tf.int32, [None, self.BPTT], name='events_out')
                 self.times_out = tf.placeholder(self.FLOAT_TYPE, [None, self.BPTT], name='times_out')
 
+                #TODO make use of self.NUM_FEATS flag to add multiple features
+                self.times_in_feats = tf.placeholder(tf.int32, [None, self.BPTT], name='times_in_feats')
+
                 self.mode = tf.placeholder(tf.float32, name='mode')
 
                 self.batch_num_events = tf.placeholder(self.FLOAT_TYPE, [], name='bptt_events')
@@ -236,6 +245,10 @@ class RMTPP:
                                                dtype=self.FLOAT_TYPE,
                                                regularizer=self.RNN_REGULARIZER,
                                                initializer=tf.constant_initializer(Wem(self.NUM_CATEGORIES)))
+                    self.Wem_feats = tf.get_variable(name='Wem_feats', shape=(24, self.EMBED_SIZE),
+                                                     dtype=self.FLOAT_TYPE,
+                                                     regularizer=self.RNN_REGULARIZER,
+                                                     initializer=tf.constant_initializer(Wem_feats(24)))
                     self.Wh = tf.get_variable(name='Wh', shape=(self.HIDDEN_LAYER_SIZE, self.HIDDEN_LAYER_SIZE),
                                               dtype=self.FLOAT_TYPE,
                                               regularizer=self.RNN_REGULARIZER,
@@ -301,7 +314,7 @@ class RMTPP:
                         self.Vw = tf.transpose(self.Vw[0:1, :self.HIDDEN_LAYER_SIZE], [1, 0])
                         self.bw = self.bw[:, 0:1]
 
-                self.all_vars = [self.Wt, self.Wem, self.Wh, self.bh, self.Ws, self.bs,
+                self.all_vars = [self.Wt, self.Wem, self.Wem_feats, self.Wh, self.bh, self.Ws, self.bs,
                                  self.wt, self.Wy, self.Vy, self.Vt, self.bt, self.bk, self.Vw, self.bw]
 
                 # Add summaries for all (trainable) variables
@@ -345,6 +358,7 @@ class RMTPP:
                                                                  tf.mod(self.events_in[:, i] - 1, self.NUM_CATEGORIES))
                         time = self.times_in[:, i]
                         time_next = self.times_out[:, i]
+                        time_feat_embd = self.embedFeatures(self.times_in_feats[:, i])
 
                         delta_t_prev = tf.expand_dims(time - last_time, axis=-1)
                         delta_t_next = tf.expand_dims(time_next - time, axis=-1)
@@ -372,6 +386,8 @@ class RMTPP:
                                 )
                             elif self.RNN_CELL_TYPE == 'lstm':
                                 inputs = tf.concat([state, events_embedded, delta_t_prev], axis=-1)
+                                if self.USE_TIME_FEATS:
+                                    inputs = tf.concat([inputs, time_feat_embd], axis=-1)
                                 new_state, internal_state = self.cell(inputs,  internal_state)
 
                             if self.NUM_EXTRA_LAYER:
@@ -562,6 +578,9 @@ class RMTPP:
                 self.tf_init = tf.global_variables_initializer()
                 # self.check_nan = tf.add_check_numerics_ops()
 
+    def embedFeatures(self, inputs):
+        return tf.nn.embedding_lookup(self.Wem_feats, inputs)
+
     def initialize(self, finalize=False):
         """Initialize the global trainable variables."""
         self.sess.run(self.tf_init)
@@ -652,6 +671,7 @@ class RMTPP:
         train_time_in_seq = training_data['train_time_in_seq']
         train_event_out_seq = training_data['train_event_out_seq']
         train_time_out_seq = training_data['train_time_out_seq']
+        train_time_in_feats = training_data['train_time_in_feats']
 
         best_dev_mae, best_test_mae = np.inf, np.inf
         best_dev_gap_mae, best_test_gap_mae = np.inf, np.inf
@@ -686,6 +706,7 @@ class RMTPP:
                 batch_event_train_out = train_event_out_seq[batch_idxes, :self.BPTT]
                 batch_time_train_in = train_time_in_seq[batch_idxes, :self.BPTT]
                 batch_time_train_out = train_time_out_seq[batch_idxes, :self.BPTT]
+                batch_time_train_feats = train_time_in_feats[batch_idxes, :self.BPTT]
 
                 cur_state = np.zeros((self.BATCH_SIZE, self.HIDDEN_LAYER_SIZE))
                 batch_loss, batch_time_loss, batch_mark_loss = 0.0, 0.0, 0.0
@@ -701,6 +722,7 @@ class RMTPP:
                     self.events_out: batch_event_train_out,
                     self.times_in: batch_time_train_in,
                     self.times_out: batch_time_train_out,
+                    self.times_in_feats: batch_time_train_feats,
                     self.batch_num_events: batch_num_events
                 }
 
@@ -764,12 +786,15 @@ class RMTPP:
                 dev_time_preds, dev_event_preds, dev_event_preds_softmax, inference_time \
                         = self.predict(training_data['dev_event_in_seq'],
                                        training_data['dev_time_in_seq'],
+                                       training_data['dev_time_in_feats'],
                                        dec_len_for_eval,
                                        single_threaded=True)
                 dev_loss, dev_time_loss, dev_mark_loss = self.evaluate_likelihood(training_data['dev_event_in_seq'],
                                                                                   training_data['dev_time_in_seq'],
                                                                                   training_data['dev_event_out_seq'],
                                                                                   training_data['dev_time_out_seq'],
+                                                                                  training_data['dev_time_in_feats'],
+                                                                                  training_data['dev_time_out_feats'],
                                                                                   dec_len_for_eval)
                 dev_loss_list.append(dev_loss)
                 dev_time_loss_list.append(dev_time_loss)
@@ -822,12 +847,15 @@ class RMTPP:
                 test_time_preds, test_event_preds, test_event_preds_softmax, inference_time \
                         = self.predict(training_data['test_event_in_seq'],
                                        training_data['test_time_in_seq'],
+                                       training_data['test_time_in_feats'],
                                        dec_len_for_eval,
                                        single_threaded=True)
                 test_loss, test_time_loss, test_mark_loss = self.evaluate_likelihood(training_data['test_event_in_seq'],
                                                                                      training_data['test_time_in_seq'],
                                                                                      training_data['test_event_out_seq'],
                                                                                      training_data['test_time_out_seq'],
+                                                                                     training_data['test_time_in_feats'],
+                                                                                     training_data['test_time_out_feats'],
                                                                                      dec_len_for_eval)
                 test_loss_list.append(test_loss)
                 test_time_loss_list.append(test_time_loss)
@@ -949,12 +977,15 @@ class RMTPP:
             dev_time_preds, dev_event_preds, dev_event_preds_softmax, inference_time \
                     = self.predict(training_data['dev_event_in_seq'],
                                    training_data['dev_time_in_seq'],
+                                   training_data['dev_time_in_feats'],
                                    dec_len_for_eval,
                                    single_threaded=True)
             dev_loss, dev_time_loss, dev_mark_loss = self.evaluate_likelihood(training_data['dev_event_in_seq'],
                                                                               training_data['dev_time_in_seq'],
                                                                               training_data['dev_event_out_seq'],
                                                                               training_data['dev_time_out_seq'],
+                                                                              training_data['dev_time_in_feats'],
+                                                                              training_data['dev_time_out_feats'],
                                                                               dec_len_for_eval)
             dev_inference_times.append(inference_time)
             dev_time_preds = dev_time_preds[:,:dec_len_for_eval]
@@ -976,12 +1007,15 @@ class RMTPP:
             test_time_preds, test_event_preds, test_event_preds_softmax, inference_time \
                     = self.predict(training_data['test_event_in_seq'],
                                    training_data['test_time_in_seq'],
+                                   training_data['test_time_in_feats'],
                                    dec_len_for_eval,
                                    single_threaded=True)
             test_loss, test_time_loss, test_mark_loss = self.evaluate_likelihood(training_data['test_event_in_seq'],
                                                                                  training_data['test_time_in_seq'],
                                                                                  training_data['test_event_out_seq'],
                                                                                  training_data['test_time_out_seq'],
+                                                                                 training_data['test_time_in_feats'],
+                                                                                 training_data['test_time_out_feats'],
                                                                                  dec_len_for_eval)
             test_inference_times.append(inference_time)
             test_time_preds = test_time_preds[:,:dec_len_for_eval]
@@ -1073,7 +1107,7 @@ class RMTPP:
         print('Loading the model from {}'.format(ckpt.model_checkpoint_path))
         saver.restore(self.sess, ckpt.model_checkpoint_path)
 
-    def evaluate_likelihood(self, event_in_seq, time_in_seq, event_out_seq, time_out_seq, decoder_length):
+    def evaluate_likelihood(self, event_in_seq, time_in_seq, event_out_seq, time_out_seq, time_in_feats, time_out_feats, decoder_length):
 
         num_events = np.sum(event_in_seq > 0)
         cur_state = np.zeros((event_in_seq.shape[0], self.HIDDEN_LAYER_SIZE))
@@ -1081,6 +1115,7 @@ class RMTPP:
 
         event_seq = np.concatenate([event_in_seq, event_out_seq], axis=1)
         time_seq = np.concatenate([time_in_seq, time_out_seq], axis=1)
+        time_feats = np.concatenate([time_in_feats, time_out_feats], axis=1)
 
         feed_dict = {
             self.initial_state: cur_state,
@@ -1089,6 +1124,7 @@ class RMTPP:
             self.events_out: event_seq[:, 1:],
             self.times_in: time_seq[:, :-1],
             self.times_out: time_seq[:, 1:],
+            self.times_in_feats: time_feats[:, :-1],
             self.batch_num_events: num_events
         }
 
@@ -1100,7 +1136,7 @@ class RMTPP:
         return float(loss_), float(time_loss_), float(mark_loss_)
 
 
-    def predict(self, event_in_seq, time_in_seq, dec_len_for_eval, single_threaded=False, plot_dir=False):
+    def predict(self, event_in_seq, time_in_seq, time_in_feats, dec_len_for_eval, single_threaded=False, plot_dir=False):
         """Treats the entire dataset as a single batch and processes it."""
 
 
@@ -1196,6 +1232,8 @@ class RMTPP:
                 #bptt_time_in = time_in_seq[:, bptt_range]
                 bptt_event_in = np.concatenate([event_in_seq, np.zeros((event_in_seq.shape[0], self.DEC_LEN-1))], axis=1)
                 bptt_time_in = np.concatenate([time_in_seq, np.zeros((time_in_seq.shape[0], self.DEC_LEN-1))], axis=1)
+                bptt_time_in_feats = np.concatenate([time_in_feats, np.zeros((time_in_feats.shape[0], self.DEC_LEN-1))], axis=1)
+                last_bptt_time_in_feats = time_in_feats[:, -1]
             else:
                 #bptt_event_in = event_in_seq[:, self.BPTT-1+pred_idx]
                 bptt_event_in = np.asarray(all_event_preds[-1])
@@ -1207,6 +1245,12 @@ class RMTPP:
                 bptt_time_in = np.concatenate([np.expand_dims(bptt_time_in, axis=-1),
                                                np.zeros((bptt_time_in.shape[0], self.BPTT-1))],
                                                axis=-1)
+
+                bptt_time_in_feats = last_bptt_time_in_feats + np.asarray(all_time_preds[-1]) // 3600 % 24
+                last_bptt_time_in_feats = bptt_time_in_feats
+                bptt_time_in_feats = np.concatenate([np.expand_dims(bptt_time_in_feats, axis=-1),
+                                                     np.zeros((bptt_time_in_feats.shape[0], self.BPTT-1))],
+                                                     axis=-1)
 
             if pred_idx == 0:
                 initial_time = np.zeros(bptt_time_in.shape[0])
@@ -1220,6 +1264,7 @@ class RMTPP:
                 self.initial_time: initial_time,
                 self.events_in: bptt_event_in,
                 self.times_in: bptt_time_in,
+                self.times_in_feats: bptt_time_in_feats,
             }
 
             bptt_hidden_states, bptt_events_pred, cur_state, D, WT = self.sess.run(

@@ -65,6 +65,9 @@ def_opts = Deco.Options(
     plot_pred_test=False,
     position_encode=False,
 
+    num_feats=1,
+    use_time_features=False,
+
     wt_hparam=1.0,
 
     enc_cell_type='manual',
@@ -74,6 +77,7 @@ def_opts = Deco.Options(
 
     embed_size=__EMBED_SIZE,
     Wem=lambda num_categories: np.random.RandomState(42).randn(num_categories, __EMBED_SIZE) * 0.01,
+    Wem_feats=lambda num_categories: np.random.RandomState(42).randn(num_categories, __EMBED_SIZE) * 0.01,
 
     Wt=lambda hidden_layer_size: np.random.normal(size=(1, hidden_layer_size)),
     Wh=lambda hidden_layer_size: np.random.normal(size=(hidden_layer_size)),
@@ -128,9 +132,9 @@ class RMTPP_DECRNN:
                  patience, stop_criteria, epsilon, share_dec_params,
                  init_zero_dec_state, concat_final_enc_state, num_extra_dec_layer, concat_before_dec_update,
                  mark_triggers_time, mark_loss,
-                 Wt, Wem, Wh, bh, Ws, bs, wt, Wy, Vy, Vt, Vw, bk, bt, bw, wt_hparam, Wem_position,
+                 Wt, Wem, Wem_feats, Wh, bh, Ws, bs, wt, Wy, Vy, Vt, Vw, bk, bt, bw, wt_hparam, Wem_position,
                  plot_pred_dev, plot_pred_test, enc_cell_type, dec_cell_type, num_discrete_states,
-                 position_encode):
+                 position_encode, num_feats, use_time_features):
 
         self.seed = seed
         tf.set_random_seed(self.seed)
@@ -192,6 +196,9 @@ class RMTPP_DECRNN:
         self.PLOT_PRED_TEST = plot_pred_test
         self.POSITION_ENCODE = position_encode
 
+        self.NUM_FEATS = num_feats
+        self.USE_TIME_FEATS = use_time_features
+
         if self.CONCAT_FINAL_ENC_STATE:
             self.DEC_STATE_SIZE = 2 * self.HIDDEN_LAYER_SIZE
         else:
@@ -246,6 +253,9 @@ class RMTPP_DECRNN:
                 self.events_out = tf.placeholder(tf.int32, [None, self.DEC_LEN], name='events_out')
                 self.times_out = tf.placeholder(self.FLOAT_TYPE, [None, self.DEC_LEN], name='times_out')
 
+                #TODO make use of self.NUM_FEATS flag to add multiple features
+                self.times_in_feats = tf.placeholder(tf.int32, [None, self.BPTT], name='times_in_feats')
+
                 self.mode = tf.placeholder(tf.float32, name='mode')
 
                 self.batch_num_events = tf.placeholder(self.FLOAT_TYPE, [], name='bptt_events')
@@ -264,6 +274,10 @@ class RMTPP_DECRNN:
                                                dtype=self.FLOAT_TYPE,
                                                regularizer=self.RNN_REGULARIZER,
                                                initializer=tf.constant_initializer(Wem(self.NUM_CATEGORIES)))
+                    self.Wem_feats = tf.get_variable(name='Wem_feats', shape=(24, self.EMBED_SIZE),
+                                                     dtype=self.FLOAT_TYPE,
+                                                     regularizer=self.RNN_REGULARIZER,
+                                                     initializer=tf.constant_initializer(Wem(24)))
                     self.Wh = tf.get_variable(name='Wh', shape=(self.HIDDEN_LAYER_SIZE, self.HIDDEN_LAYER_SIZE),
                                               dtype=self.FLOAT_TYPE,
                                               regularizer=self.RNN_REGULARIZER,
@@ -335,7 +349,7 @@ class RMTPP_DECRNN:
                     else:
                         print('NOT Sharing Decoder Parameters')
 
-                self.all_vars = [self.Wt, self.Wem, self.Wh, self.bh, self.Ws, self.bs,
+                self.all_vars = [self.Wt, self.Wem, self.Wem_feats, self.Wh, self.bh, self.Ws, self.bs,
                                  self.wt, self.Wy, self.Vy, self.Vt, self.bt, self.bk, self.Vw, self.bw, Wem_position]
 
                 with tf.device(device_cpu):
@@ -400,6 +414,8 @@ class RMTPP_DECRNN:
 
                         delta_t_prev = tf.expand_dims(time - last_time, axis=-1)
 
+                        time_feat_embd = self.embedFeatures(self.times_in_feats[:, i])
+
                         last_time = time
 
                         time_2d = tf.expand_dims(time, axis=-1)
@@ -423,6 +439,8 @@ class RMTPP_DECRNN:
                                 )
                             elif self.ENC_CELL_TYPE == 'lstm':
                                 inputs = tf.concat([state, events_embedded, delta_t_prev], axis=-1)
+                                if self.USE_TIME_FEATS:
+                                    inputs = tf.concat([inputs, time_feat_embd], axis=-1)
                                 new_state, enc_internal_state = self.enc_cell(inputs,  enc_internal_state)
 
                             state = tf.where(self.events_in[:, i] > 0, new_state, state)
@@ -701,6 +719,9 @@ class RMTPP_DECRNN:
                 self.tf_init = tf.global_variables_initializer()
                 # self.check_nan = tf.add_check_numerics_ops()
 
+    def embedFeatures(self, inputs):
+        return tf.nn.embedding_lookup(self.Wem_feats, inputs)
+
     def sample_z(self, inputs):
         with tf.variable_scope('latent_discrete_state', reuse=tf.AUTO_REUSE):
 
@@ -800,6 +821,7 @@ class RMTPP_DECRNN:
         train_time_in_seq = training_data['train_time_in_seq']
         train_event_out_seq = training_data['train_event_out_seq']
         train_time_out_seq = training_data['train_time_out_seq']
+        train_time_in_feats = training_data['train_time_in_feats']
 
         best_dev_mae, best_test_mae = np.inf, np.inf
         best_dev_gap_mae, best_test_gap_mae = np.inf, np.inf
@@ -834,6 +856,7 @@ class RMTPP_DECRNN:
                 batch_event_train_out = train_event_out_seq[batch_idxes, :]
                 batch_time_train_in = train_time_in_seq[batch_idxes, :]
                 batch_time_train_out = train_time_out_seq[batch_idxes, :]
+                batch_time_train_feats = train_time_in_feats[batch_idxes, :]
 
                 cur_state = np.zeros((self.BATCH_SIZE, self.HIDDEN_LAYER_SIZE))
                 batch_loss = 0.0
@@ -849,6 +872,7 @@ class RMTPP_DECRNN:
                     self.events_out: batch_event_train_out,
                     self.times_in: batch_time_train_in,
                     self.times_out: batch_time_train_out,
+                    self.times_in_feats: batch_time_train_feats,
                     self.batch_num_events: batch_num_events,
                     self.mode: 1.0, # Train Mode
                 }
@@ -914,6 +938,7 @@ class RMTPP_DECRNN:
                 dev_time_preds, dev_event_preds, dev_event_preds_softmax, inference_time \
                         = self.predict(training_data['dev_event_in_seq'],
                                        training_data['dev_time_in_seq'],
+                                       training_data['dev_time_in_feats'],
                                        dec_len_for_eval,
                                        single_threaded=True,
                                        event_out_seq=training_data['dev_event_out_seq'] if self.ALG_NAME=='rmtpp_decrnn_truemarks' else None)
@@ -921,6 +946,8 @@ class RMTPP_DECRNN:
                                                                                   training_data['dev_time_in_seq'],
                                                                                   training_data['dev_event_out_seq'],
                                                                                   training_data['dev_time_out_seq'],
+                                                                                  training_data['dev_time_in_feats'],
+                                                                                  training_data['dev_time_out_feats'],
                                                                                   dec_len_for_eval)
                 dev_loss_list.append(dev_loss)
                 dev_time_loss_list.append(dev_time_loss)
@@ -973,6 +1000,7 @@ class RMTPP_DECRNN:
                 test_time_preds, test_event_preds, test_event_preds_softmax, inference_time \
                         = self.predict(training_data['test_event_in_seq'],
                                        training_data['test_time_in_seq'],
+                                       training_data['test_time_in_feats'],
                                        dec_len_for_eval,
                                        single_threaded=True,
                                        event_out_seq=training_data['test_event_out_seq'] if self.ALG_NAME=='rmtpp_decrnn_truemarks' else None)
@@ -980,6 +1008,8 @@ class RMTPP_DECRNN:
                                                                                      training_data['test_time_in_seq'],
                                                                                      training_data['test_event_out_seq'],
                                                                                      training_data['test_time_out_seq'],
+                                                                                     training_data['test_time_in_feats'],
+                                                                                     training_data['test_time_out_feats'],
                                                                                      dec_len_for_eval)
                 test_loss_list.append(test_loss)
                 test_time_loss_list.append(test_time_loss)
@@ -1101,6 +1131,7 @@ class RMTPP_DECRNN:
             dev_time_preds, dev_event_preds, dev_event_preds_softmax, inference_time \
                     = self.predict(training_data['dev_event_in_seq'],
                                    training_data['dev_time_in_seq'],
+                                   training_data['dev_time_in_feats'],
                                    dec_len_for_eval,
                                    single_threaded=True,
                                    event_out_seq=training_data['dev_event_out_seq'] if self.ALG_NAME=='rmtpp_decrnn_truemarks' else None)
@@ -1108,6 +1139,8 @@ class RMTPP_DECRNN:
                                                                               training_data['dev_time_in_seq'],
                                                                               training_data['dev_event_out_seq'],
                                                                               training_data['dev_time_out_seq'],
+                                                                              training_data['dev_time_in_feats'],
+                                                                              training_data['dev_time_out_feats'],
                                                                               dec_len_for_eval)
             dev_inference_times.append(inference_time)
             dev_time_preds = dev_time_preds[:,:dec_len_for_eval]
@@ -1129,6 +1162,7 @@ class RMTPP_DECRNN:
             test_time_preds, test_event_preds, test_event_preds_softmax, inference_time \
                     = self.predict(training_data['test_event_in_seq'],
                                    training_data['test_time_in_seq'],
+                                   training_data['test_time_in_feats'],
                                    dec_len_for_eval,
                                    single_threaded=True,
                                    event_out_seq=training_data['test_event_out_seq'] if self.ALG_NAME=='rmtpp_decrnn_truemarks' else None)
@@ -1136,6 +1170,8 @@ class RMTPP_DECRNN:
                                                                                  training_data['test_time_in_seq'],
                                                                                  training_data['test_event_out_seq'],
                                                                                  training_data['test_time_out_seq'],
+                                                                                 training_data['test_time_in_feats'],
+                                                                                 training_data['test_time_out_feats'],
                                                                                  dec_len_for_eval)
             test_inference_times.append(inference_time)
             test_time_preds = test_time_preds[:,:dec_len_for_eval]
@@ -1227,7 +1263,7 @@ class RMTPP_DECRNN:
         print('Loading the model from {}'.format(ckpt.model_checkpoint_path))
         saver.restore(self.sess, ckpt.model_checkpoint_path)
 
-    def evaluate_likelihood(self, event_in_seq, time_in_seq, event_out_seq, time_out_seq, decoder_length):
+    def evaluate_likelihood(self, event_in_seq, time_in_seq, event_out_seq, time_out_seq, time_in_feats, time_out_feats, decoder_length):
 
         num_events = np.sum(event_in_seq > 0)
         cur_state = np.zeros((event_in_seq.shape[0], self.HIDDEN_LAYER_SIZE))
@@ -1241,6 +1277,7 @@ class RMTPP_DECRNN:
             self.events_out: event_out_seq,
             self.times_in: time_in_seq,
             self.times_out: time_out_seq,
+            self.times_in_feats: time_in_feats,
             self.batch_num_events: num_events,
             self.mode: 1.0,
         }
@@ -1253,7 +1290,7 @@ class RMTPP_DECRNN:
         return float(loss_), float(time_loss_), float(mark_loss_)
 
 
-    def predict(self, event_in_seq, time_in_seq, dec_len_for_eval, single_threaded=False, plot_dir=False, event_out_seq=None):
+    def predict(self, event_in_seq, time_in_seq, time_in_feats, dec_len_for_eval, single_threaded=False, plot_dir=False, event_out_seq=None):
         """Treats the entire dataset as a single batch and processes it."""
 
         start_time = time.time()
@@ -1309,6 +1346,7 @@ class RMTPP_DECRNN:
             self.times_in: time_in_seq,
             self.events_out: event_out_seq,
             self.times_out: time_out_seq,
+            self.times_in_feats: time_in_feats,
             self.mode: mode #Test Mode
         }
 

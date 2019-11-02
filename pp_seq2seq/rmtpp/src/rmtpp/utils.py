@@ -102,6 +102,15 @@ def read_seq2seq_data(event_train_file, event_dev_file, event_test_file,
     with open(time_test_file+'.out', 'r') as in_file:
         timeTestOut = [[float(y) for y in x.strip().split()] for x in in_file]
 
+    # Compute Hour-of-day features from data
+    getHour = lambda t: t // 3600 % 24
+    timeTrainInFeats = [[getHour(s) for s in seq] for seq in timeTrainIn]
+    timeDevInFeats = [[getHour(s) for s in seq] for seq in timeDevIn]
+    timeTestInFeats = [[getHour(s) for s in seq] for seq in timeTestIn]
+    timeTrainOutFeats = [[getHour(s) for s in seq] for seq in timeTrainOut]
+    timeDevOutFeats = [[getHour(s) for s in seq] for seq in timeDevOut]
+    timeTestOutFeats = [[getHour(s) for s in seq] for seq in timeTestOut]
+
     assert len(timeTrainIn) == len(eventTrainIn)
     assert len(timeDevIn) == len(eventDevIn)
     assert len(timeTestIn) == len(eventTestIn)
@@ -125,6 +134,9 @@ def read_seq2seq_data(event_train_file, event_dev_file, event_test_file,
     timeTrain = [in_seq + out_seq for in_seq, out_seq in zip(timeTrainIn, timeTrainOut)]
     timeDev = [in_seq + out_seq for in_seq, out_seq in zip(timeDevIn, timeDevOut)]
     timeTest = [in_seq + out_seq for in_seq, out_seq in zip(timeTestIn, timeTestOut)]
+    timeTrainFeats = [in_seq + out_seq for in_seq, out_seq in zip(timeTrainInFeats, timeTrainOutFeats)]
+    timeDevFeats = [in_seq + out_seq for in_seq, out_seq in zip(timeDevInFeats, timeDevOutFeats)]
+    timeTestFeats = [in_seq + out_seq for in_seq, out_seq in zip(timeTestInFeats, timeTestOutFeats)]
 
     # nb_samples = len(eventTrain)
     # max_seqlen = max(len(x) for x in eventTrain)
@@ -148,43 +160,64 @@ def read_seq2seq_data(event_train_file, event_dev_file, event_test_file,
     timeDevIn, timeDevOut = timeDev[:, :enc_len], timeDev[:, enc_len:]
     timeTestIn, timeTestOut = timeTest[:, :enc_len], timeTest[:, enc_len:]
 
+    timeTrainFeats = np.array(timeTrainFeats)
+    timeDevFeats = np.array(timeDevFeats)
+    timeTestFeats = np.array(timeTestFeats)
+    timeTrainInFeats, timeTrainOutFeats = timeTrainFeats[:, :enc_len], timeTrainFeats[:, enc_len:]
+    timeDevInFeats, timeDevOutFeats = timeDevFeats[:, :enc_len], timeDevFeats[:, enc_len:]
+    timeTestInFeats, timeTestOutFeats = timeTestFeats[:, :enc_len], timeTestFeats[:, enc_len:]
+
     eventTrainIn = [x[:-1] for x in eventTrain]
     eventTrainOut = [x[1:] for x in eventTrain]
     timeTrainIn = [x[:-1] for x in timeTrain]
     timeTrainOut = [x[1:] for x in timeTrain]
+    timeTrainInFeats = [x[:-1] for x in timeTrainFeats]
+    timeTrainOutFeats = [x[1:] for x in timeTrainFeats]
 
     if pad:
         train_event_in_seq = pad_sequences(eventTrainIn, padding='post')
         train_event_out_seq = pad_sequences(eventTrainOut, padding='post')
         train_time_in_seq = pad_sequences(timeTrainIn, dtype=float, padding='post')
         train_time_out_seq = pad_sequences(timeTrainOut, dtype=float, padding='post')
+        train_time_in_feats = pad_sequences(timeTrainInFeats, dtype=float, padding='post')
+        train_time_out_feats = pad_sequences(timeTrainOutFeats, dtype=float, padding='post')
     else:
         train_event_in_seq = eventTrainIn
         train_event_out_seq = eventTrainOut
         train_time_in_seq = timeTrainIn
         train_time_out_seq = timeTrainOut
+        train_time_in_feats = timeTrainInFeats
+        train_time_out_feats = timeTrainOutFeats
 
     if pad:
         dev_event_in_seq = pad_sequences(eventDevIn, padding='post')
         dev_event_out_seq = pad_sequences(eventDevOut, padding='post')
         dev_time_in_seq = pad_sequences(timeDevIn, dtype=float, padding='post')
         dev_time_out_seq = pad_sequences(timeDevOut, dtype=float, padding='post')
+        dev_time_in_feats = pad_sequences(timeDevInFeats, dtype=float, padding='post')
+        dev_time_out_feats = pad_sequences(timeDevOutFeats, dtype=float, padding='post')
     else:
         dev_event_in_seq = eventDevIn
         dev_event_out_seq = eventDevOut
         dev_time_in_seq = timeDevIn
         dev_time_out_seq = timeDevOut
+        dev_time_in_feats = timeDevInFeats
+        dev_time_out_feats = timeDevOutFeats
 
     if pad:
         test_event_in_seq = pad_sequences(eventTestIn, padding='post')
         test_event_out_seq = pad_sequences(eventTestOut, padding='post')
         test_time_in_seq = pad_sequences(timeTestIn, dtype=float, padding='post')
         test_time_out_seq = pad_sequences(timeTestOut, dtype=float, padding='post')
+        test_time_in_feats = pad_sequences(timeTestInFeats, dtype=float, padding='post')
+        test_time_out_feats = pad_sequences(timeTestOutFeats, dtype=float, padding='post')
     else:
         test_event_in_seq = eventTestIn
         test_event_out_seq = eventTestOut
         test_time_in_seq = timeTestIn
         test_time_out_seq = timeTestOut
+        test_time_in_feats = timeTestInFeats
+        test_time_out_feats = timeTestOutFeats
 
     return {
         'train_event_in_seq': train_event_in_seq,
@@ -210,6 +243,13 @@ def read_seq2seq_data(event_train_file, event_dev_file, event_test_file,
 
         'dev_actual_time_in_seq': devActualTimeIn,
         'dev_actual_time_out_seq': devActualTimeOut,
+
+        'train_time_in_feats': train_time_in_feats,
+        'dev_time_in_feats': dev_time_in_feats,
+        'test_time_in_feats': test_time_in_feats,
+        'train_time_out_feats': train_time_out_feats,
+        'dev_time_out_feats': dev_time_out_feats,
+        'test_time_out_feats': test_time_out_feats,
 
         'num_categories': len(unique_samples),
         'encoder_length': len(eventTestIn[0]),

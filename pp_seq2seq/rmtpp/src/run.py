@@ -52,11 +52,13 @@ def_opts = rmtpp.rmtpp_core.def_opts
 @click.option('--rnn-cell-type', 'rnn_cell_type', help='Type of RNN cell: manual, lstm', default=def_opts.rnn_cell_type)
 @click.option('--parallel-hparam/--no-parallel-hparam', 'parallel_hparam', help='If true, hparam will run in parallel', default=True)
 @click.option('--seed', 'seed', help='Parameter Initialization Seed', default=def_opts.seed)
+@click.option('--num-feats', 'num_feats', help='Number of time-features to be added', default=def_opts.num_feats)
+@click.option('--use-time-features/--no-use-time-features', 'use_time_features', help='Flag for using time-features in the model', default=def_opts.use_time_features)
 def cmd(dataset_name, alg_name, dataset_path,
         event_train_file, time_train_file, event_dev_file, time_dev_file, event_test_file, time_test_file,
         save_dir, summary_dir, num_epochs, restart, train_eval, test_eval, scale,
         batch_size, bptt, decoder_length, learning_rate, cpu_only, normalization, constraints,
-        patience, stop_criteria, epsilon, num_extra_layer, mark_loss, rnn_cell_type, parallel_hparam, seed):
+        patience, stop_criteria, epsilon, num_extra_layer, mark_loss, rnn_cell_type, parallel_hparam, seed, num_feats, use_time_features):
     """Read data from EVENT_TRAIN_FILE, TIME_TRAIN_FILE and try to predict the values in EVENT_TEST_FILE, TIME_TEST_FILE."""
 
     clear_clutter = True
@@ -137,6 +139,8 @@ def cmd(dataset_name, alg_name, dataset_path,
             mark_loss=mark_loss,
             rnn_cell_type=rnn_cell_type,
             seed=seed,
+            num_feats=num_feats,
+            use_time_features=use_time_features,
             _opts=def_opts_local
         )
 
