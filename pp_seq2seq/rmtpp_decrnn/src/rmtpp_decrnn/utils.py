@@ -6,6 +6,7 @@ import tensorflow as tf
 import numpy as np
 import pandas as pd
 from itertools import chain
+from dtw import dtw
 
 
 pad_sequences = preprocessing.sequence.pad_sequences
@@ -438,6 +439,21 @@ def MAE(time_preds, time_true, events_out):
     #print(time_preds.shape, clipped_time_true.shape, is_finite.shape)
 
     return np.mean(np.abs(time_preds - clipped_time_true)[is_finite]), np.sum(is_finite)
+
+def DTW(time_preds, time_true, events_out):
+
+    seq_limit = time_preds.shape[1]
+    clipped_time_true = time_true[:, :seq_limit]
+    clipped_events_out = events_out[:, :seq_limit]
+
+    euclidean_norm = lambda x, y: np.abs(x - y)
+    distance = 0
+    for time_preds_, clipped_time_true_ in zip(time_preds, clipped_time_true):
+        d, cost_matrix, acc_cost_matrix, path = dtw(time_preds_, clipped_time_true_, dist=euclidean_norm)
+        distance += d
+    distance = distance / clipped_time_true.shape[0]
+
+    return distance
 
 def RMSE(time_preds, time_true, events_out):
     """Calculates the RMSE between the provided and the given time, ignoring the inf
