@@ -1064,7 +1064,7 @@ class RMTPP_DECRNN:
                     plt.savefig(name_plot)
                     plt.close()
 
-                if dev_gap_mae < best_dev_gap_mae:
+                if dev_gap_dtw < best_dev_gap_dtw:
                     best_epoch = epoch
                     best_train_mae, best_dev_mae, best_test_mae, best_dev_gap_mae, best_test_gap_mae = train_mae, dev_mae, test_mae, dev_gap_mae, test_gap_mae
                     best_dev_gap_dtw, best_test_gap_dtw = dev_gap_dtw, test_gap_dtw
@@ -1193,7 +1193,7 @@ class RMTPP_DECRNN:
             print('TEST: MAE = {:.5f}; valid = {}, ACC = {:.5f}, MAGE = {:.5f}, DTW = {:.5f}'.format(
                 test_mae, test_total_valid, test_acc, test_gap_mae, test_gap_dtw))
 
-            if dev_gap_mae < best_dev_gap_mae:
+            if dev_gap_dtw < best_dev_gap_dtw:
                 best_epoch = num_epochs
                 best_train_mae, best_dev_mae, best_test_mae, best_dev_gap_mae, best_test_gap_mae = train_mae, dev_mae, test_mae, dev_gap_mae, test_gap_mae
                 best_dev_gap_dtw, best_test_gap_dtw = dev_gap_dtw, test_gap_dtw
