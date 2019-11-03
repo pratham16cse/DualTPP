@@ -1,5 +1,6 @@
 import sys, os
 sys.path.append('../../tf_rmtpp/src/tf_rmtpp/')
+import argparse
 import pickle
 from itertools import chain
 import numpy as np
@@ -161,7 +162,7 @@ def preprocess(raw_dataset_name,
                event_test, time_test,
                encoder_length, decoder_length,
                train_step_length=None, dev_step_length=None, test_step_length=None,
-               keep_classes=0):
+               keep_classes=0, num_coarse_seq=0):
 
     sequence_length = encoder_length + decoder_length
 
@@ -261,6 +262,7 @@ def preprocess(raw_dataset_name,
             f.write('\n')
 
     dataset_name = dataset_name if dataset_name[-1]!='/' else dataset_name[:-1]
+    dataset_name = dataset_name + '_chop' if num_coarse_seq>0 else dataset_name
     dataset_name = dataset_name + '_' + str(encoder_length) + '_' + str(decoder_length) \
                    + '_' + str(train_step_length) + '_' + str(dev_step_length) + '_' + str(test_step_length) \
 
@@ -407,14 +409,29 @@ def preprocess(raw_dataset_name,
     #----------- Gap Statistics End-------------#
 
 def main():
-    dataset = sys.argv[1]
-    dataset_path = sys.argv[2]
-    encoder_length = int(sys.argv[3])
-    decoder_length = int(sys.argv[4])
-    train_step_length = int(sys.argv[5])
-    dev_step_length = int(sys.argv[6])
-    test_step_length = int(sys.argv[7])
-    keep_classes = int(sys.argv[8])
+    parser = argparse.ArgumentParser()
+    parser.add_argument("dataset", type=str, help="Dataset Name")
+    parser.add_argument("dataset_path", type=str, help="Path of raw dataset file")
+    parser.add_argument("encoder_length", type=int, help="Encoder Length")
+    parser.add_argument("decoder_length", type=int, help="Decoder Length")
+    parser.add_argument("train_step_length", type=int, help="Step length for train-sequence window")
+    parser.add_argument("dev_step_length", type=int, help="Step length for dev-sequence window")
+    parser.add_argument("test_step_length", type=int, help="Step length for test-sequence window")
+    parser.add_argument("--keep_classes", type=int, default=0, help="Number of top-K classes to retain \
+                                                                     from the data, retains all classes when set to zero")
+    parser.add_argument("--num_coarse_seq", type=int, default=0, help="Chop a single-large-seqeunce data into C sequences \
+                                                                       of approx equal size, no chopping when set to zero")
+    args = parser.parse_args()
+
+    dataset = args.dataset
+    dataset_path = args.dataset_path
+    encoder_length = args.encoder_length
+    decoder_length = args.decoder_length
+    train_step_length = args.train_step_length
+    dev_step_length = args.dev_step_length
+    test_step_length = args.test_step_length
+    keep_classes = args.keep_classes
+    num_coarse_seq = args.num_coarse_seq
     sequence_length = encoder_length + decoder_length
     output_path = 'NewDataParsed'
     
@@ -454,31 +471,54 @@ def main():
     de_per = 0.1
     te_per = 0.2
 
-    time_train = []
-    time_dev = []
-    time_test = []
-    event_train = []
-    event_dev = []
-    event_test = []
+    if num_coarse_seq == 0:
+        time_train = []
+        time_dev = []
+        time_test = []
+        event_train = []
+        event_dev = []
+        event_test = []
 
-    for x in range(0,int(tr_per*total)):
-        time_train.append(arr[x])
-        event_train.append(arr_eve[x])
+        for x in range(0,int(tr_per*total)):
+            time_train.append(arr[x])
+            event_train.append(arr_eve[x])
 
-    for x in range(int(tr_per*total),int((tr_per+de_per)*total)):
-        time_dev.append(arr[x])
-        event_dev.append(arr_eve[x])
+        for x in range(int(tr_per*total),int((tr_per+de_per)*total)):
+            time_dev.append(arr[x])
+            event_dev.append(arr_eve[x])
 
-    for x in range(int((tr_per+de_per)*total), total):
-        time_test.append(arr[x])
-        event_test.append(arr_eve[x])
+        for x in range(int((tr_per+de_per)*total), total):
+            time_test.append(arr[x])
+            event_test.append(arr_eve[x])
 
-    time_train = [time_train]
-    event_train = [event_train]
-    time_dev = [time_dev]
-    event_dev = [event_dev]
-    time_test = [time_test]
-    event_test = [event_test]
+        time_train = [time_train]
+        event_train = [event_train]
+        time_dev = [time_dev]
+        event_dev = [event_dev]
+        time_test = [time_test]
+        event_test = [event_test]
+    else:
+        print('num_coarse_seq:', num_coarse_seq)
+        arr_chopped = np.array_split(arr, num_coarse_seq)
+        arr_eve_chopped = np.array_split(arr_eve, num_coarse_seq)
+
+        time_train = []
+        time_dev = []
+        time_test = []
+        event_train = []
+        event_dev = []
+        event_test = []
+
+        for arr_, arr_eve_ in zip(arr_chopped, arr_eve_chopped):
+            total_ = len(arr_)
+            time_train.append(arr_[:int(tr_per*total_)])
+            event_train.append(arr_eve_[:int(tr_per*total_)])
+
+            time_dev.append(arr_[int(tr_per*total_):int((tr_per+de_per)*total_)])
+            event_dev.append(arr_eve_[int(tr_per*total_):int((tr_per+de_per)*total_)])
+
+            time_test.append(arr_[int((tr_per+de_per)*total_):])
+            event_test.append(arr_eve_[int((tr_per+de_per)*total_):])
 
     # seq_len = 25
 
@@ -521,7 +561,7 @@ def main():
                event_test, time_test,
                encoder_length, decoder_length,
                train_step_length, dev_step_length, test_step_length,
-               keep_classes)
+               keep_classes, num_coarse_seq)
 
 if __name__ == '__main__':
     main()
