@@ -519,6 +519,19 @@ class RMTPP:
 
                 self.final_state = self.hidden_states[-1]
 
+                # ----- Prediction using Inverse Transform Sampling ----- #
+                u = tf.random.uniform((self.inf_batch_size, 5000), minval=0.0, maxval=0.1, seed=self.seed)
+                c = -tf.exp(tf.clip_by_value(self.D, -50.0, 50.0))
+                self.val = (1.0/self.WT) * tf.log((self.WT/c) * tf.log(1.0 - u) + 1)
+                #self.val = tf.Print(self.val, [tf.reduce_sum(tf.cast(tf.is_finite(tf.log((self.WT/c) * tf.log(1.0 - u) + 1)), tf.int32)), 1.0/self.WT], message='Printing log and 1/w')
+                #self.val = tf.Print(self.val, [tf.reduce_sum(tf.cast(tf.is_finite(((self.WT/c) * tf.log(1.0 - u))), tf.int32)), 1.0/self.WT], message='Printing log and 1/w')
+                #self.val = tf.Print(self.val, [tf.reduce_sum(tf.cast(tf.is_finite((self.WT/c)), tf.int32)), 1.0/self.WT], message='Printing log and 1/w')
+                #self.val = tf.Print(self.val, [tf.reduce_sum(tf.cast(tf.is_finite(c), tf.int32)), 1.0/self.WT], message='Printing c')
+                #self.val = tf.Print(self.val, [tf.reduce_sum(tf.cast(tf.is_finite(1.0/c), tf.int32)), 1.0/self.WT], message='Printing 1/c')
+                #self.val = tf.Print(self.val, [tf.reduce_sum(tf.cast(tf.is_finite(tf.log(1.0 - u)), tf.int32)), 1.0/self.WT], message='Printing log and 1/w')
+                self.val = tf.reduce_mean(self.val, axis=1)
+                #self.val = tf.Print(self.val, [self.val], message='Printing val')
+
                 with tf.device(device_cpu):
                     # Global step needs to be on the CPU (Why?)
                     self.global_step = tf.Variable(0, name='global_step', trainable=False)
@@ -1289,37 +1302,42 @@ class RMTPP:
             # happens during the inference step.
             [Vt, Vw, bt, bw, wt]  = self.sess.run([self.Vt, self.Vw, self.bt, self.bw, self.wt])
     
-            global _quad_worker
-            def _quad_worker(params):
-                batch_idx, (D_i, WT_i, h_i, t_last) = params
-                preds_i = []
+            #global _quad_worker
+            #def _quad_worker(params):
+            #    batch_idx, (D_i, WT_i, h_i, t_last) = params
+            #    preds_i = []
 
-                c_ = np.exp(np.clip(D_i, -50.0, 50.0))
-                if self.ALG_NAME in ['rmtpp', 'rmtpp_wcmpt', 'rmtpp_whparam']:
-                    args = (c_, WT_i)
-                    val, _err = quad(quad_func, 0, np.inf, args=args)
-                    #print(batch_idx, D_i, c_, WT_i, val)
-                elif self.ALG_NAME in ['rmtpp_mode', 'rmtpp_mode_wcmpt', 'rmtpp_mode_whparam']:
-                    val_raw = (np.log(WT_i) - D_i)/WT_i
-                    val = np.where(val_raw<0.0, 0.0, val_raw)
-                    val = val.reshape(-1)[0]
-                    #print(batch_idx, D_i, c_, WT_i, val, val_raw)
-                elif self.ALG_NAME in ['rmtpp_splusintensity']:
-                    args = (D_i, WT_i)
-                    val, _err = quad(quad_func_splusintensity, 0, np.inf, args=args)
-                    #print(val)
+            #    c_ = np.exp(np.clip(D_i, -50.0, 50.0))
+            #    if self.ALG_NAME in ['rmtpp', 'rmtpp_wcmpt', 'rmtpp_whparam']:
+            #        args = (c_, WT_i)
+            #        val, _err = quad(quad_func, 0, np.inf, args=args)
+            #        #print(batch_idx, D_i, c_, WT_i, val)
+            #    elif self.ALG_NAME in ['rmtpp_mode', 'rmtpp_mode_wcmpt', 'rmtpp_mode_whparam']:
+            #        val_raw = (np.log(WT_i) - D_i)/WT_i
+            #        val = np.where(val_raw<0.0, 0.0, val_raw)
+            #        val = val.reshape(-1)[0]
+            #        #print(batch_idx, D_i, c_, WT_i, val, val_raw)
+            #    elif self.ALG_NAME in ['rmtpp_splusintensity']:
+            #        args = (D_i, WT_i)
+            #        val, _err = quad(quad_func_splusintensity, 0, np.inf, args=args)
+            #        #print(val)
 
-                assert np.isfinite(val)
-                preds_i = (t_last + val)
+            #    assert np.isfinite(val)
+            #    preds_i = (t_last + val)
 
-                return preds_i
+            #    return preds_i
     
+            #time_pred_last = time_in_seq[:, -1] if pred_idx==0 else all_time_preds[-1]
+            #if single_threaded:
+            #    step_time_preds = [_quad_worker((idx, (D_i, WT_i, state, t_last))) for idx, (D_i, WT_i, state, t_last) in enumerate(zip(D, WT, cur_state, time_pred_last))]
+            #else:
+            #    with MP.Pool() as pool:
+            #        step_time_preds = pool.map(_quad_worker, enumerate(zip(D, WT, cur_state, time_pred_last)))
+
             time_pred_last = time_in_seq[:, -1] if pred_idx==0 else all_time_preds[-1]
-            if single_threaded:
-                step_time_preds = [_quad_worker((idx, (D_i, WT_i, state, t_last))) for idx, (D_i, WT_i, state, t_last) in enumerate(zip(D, WT, cur_state, time_pred_last))]
-            else:
-                with MP.Pool() as pool:
-                    step_time_preds = pool.map(_quad_worker, enumerate(zip(D, WT, cur_state, time_pred_last)))
+            val = self.sess.run(self.val, feed_dict=feed_dict)
+            #print(val.shape[0], np.sum(np.isfinite(val)), val)
+            step_time_preds = time_pred_last + val
 
             all_time_preds.append(step_time_preds)
 
