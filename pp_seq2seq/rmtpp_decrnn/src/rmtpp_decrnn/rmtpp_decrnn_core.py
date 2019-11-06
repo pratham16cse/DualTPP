@@ -659,6 +659,20 @@ class RMTPP_DECRNN:
 
                 self.log_lambdas = log_lambda_
 
+                # ----- Prediction using Inverse Transform Sampling ----- #
+                u = tf.random.uniform((self.inf_batch_size, self.DEC_LEN, 5000), minval=0.0, maxval=0.1, seed=self.seed)
+                c = -tf.exp(tf.clip_by_value(self.D, -50.0, 50.0))
+                c = tf.expand_dims(c, axis=-1)
+                self.val = (1.0/self.WT) * tf.log((self.WT/c) * tf.log(1.0 - u) + 1)
+                #self.val = tf.Print(self.val, [tf.reduce_sum(tf.cast(tf.is_finite(tf.log((self.WT/c) * tf.log(1.0 - u) + 1)), tf.int32)), 1.0/self.WT], message='Printing log and 1/w')
+                #self.val = tf.Print(self.val, [tf.reduce_sum(tf.cast(tf.is_finite(((self.WT/c) * tf.log(1.0 - u))), tf.int32)), 1.0/self.WT], message='Printing log and 1/w')
+                #self.val = tf.Print(self.val, [tf.reduce_sum(tf.cast(tf.is_finite((self.WT/c)), tf.int32)), 1.0/self.WT], message='Printing log and 1/w')
+                #self.val = tf.Print(self.val, [tf.reduce_sum(tf.cast(tf.is_finite(c), tf.int32)), 1.0/self.WT], message='Printing c')
+                #self.val = tf.Print(self.val, [tf.reduce_sum(tf.cast(tf.is_finite(1.0/c), tf.int32)), 1.0/self.WT], message='Printing 1/c')
+                #self.val = tf.Print(self.val, [tf.reduce_sum(tf.cast(tf.is_finite(tf.log(1.0 - u)), tf.int32)), 1.0/self.WT], message='Printing log and 1/w')
+                self.val = tf.reduce_mean(self.val, axis=-1)
+                #self.val = tf.Print(self.val, [self.val], message='Printing val')
+
                 # self.delta_ts.append(tf.clip_by_value(delta_t, 0.0, np.inf))
                 self.times = self.times_in
 
@@ -1376,52 +1390,56 @@ class RMTPP_DECRNN:
         # happens during the inference step.
         [Vt, Vw, bt, bw, wt]  = self.sess.run([self.Vt, self.Vw, self.bt, self.bw, self.wt])
 
-        global _quad_worker
-        def _quad_worker(params):
-            batch_idx, (D_i, WT_i, decoder_states, time_pred_last) = params
-            preds_i = []
-            #print(np.matmul(decoder_states, Vt) + bt)
-            for pred_idx, (D_j, WT_j, s_i) in enumerate(zip(D_i, WT_i, decoder_states)):
-                t_last = time_pred_last if pred_idx==0 else preds_i[-1]
+        #global _quad_worker
+        #def _quad_worker(params):
+        #    batch_idx, (D_i, WT_i, decoder_states, time_pred_last) = params
+        #    preds_i = []
+        #    #print(np.matmul(decoder_states, Vt) + bt)
+        #    for pred_idx, (D_j, WT_j, s_i) in enumerate(zip(D_i, WT_i, decoder_states)):
+        #        t_last = time_pred_last if pred_idx==0 else preds_i[-1]
 
-                c_ = np.exp(np.clip(D_j, -50.0, 50.0))
-                if self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_wcmpt', 'rmtpp_decrnn_whparam', 'rmtpp_decrnn_latentz', 'rmtpp_decrnn_truemarks']:
-                    args = (c_, WT_j)
-                    val, _err = quad(quad_func, 0, np.inf, args=args)
-                    #print(batch_idx, D_j, c_, WT_j, val)
-                elif self.ALG_NAME in ['rmtpp_decrnn_mode', 'rmtpp_decrnn_mode_wcmpt', 'rmtpp_decrnn_mode_whparam']:
-                    val_raw = (np.log(WT_j) - D_j)/WT_j
-                    val = np.where(val_raw<0.0, 0.0, val_raw)
-                    val = val.reshape(-1)[0]
-                    #print(batch_idx, D_j, c_, WT_j, val, val_raw)
-                elif self.ALG_NAME in ['rmtpp_decrnn_splusintensity']:
-                    args = (D_j, WT_j)
-                    val, _err = quad(quad_func_splusintensity, 0, np.inf, args=args)
-                    #print(val)
-                elif self.ALG_NAME in ['rmtpp_decrnn_inv']:
-                    f_val = 0.0
-                    for num_samp in range(self.NUM_SAMP_INV):
-                      u = np.random.random_sample()
-                      val = np.log(c_ - WT_j * np.log(u)) - D_j
-                      val = val / WT_j
-                      f_val += val.reshape(-1)[0]
+        #        c_ = np.exp(np.clip(D_j, -50.0, 50.0))
+        #        if self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_wcmpt', 'rmtpp_decrnn_whparam', 'rmtpp_decrnn_latentz', 'rmtpp_decrnn_truemarks']:
+        #            args = (c_, WT_j)
+        #            val, _err = quad(quad_func, 0, np.inf, args=args)
+        #            #print(batch_idx, D_j, c_, WT_j, val)
+        #        elif self.ALG_NAME in ['rmtpp_decrnn_mode', 'rmtpp_decrnn_mode_wcmpt', 'rmtpp_decrnn_mode_whparam']:
+        #            val_raw = (np.log(WT_j) - D_j)/WT_j
+        #            val = np.where(val_raw<0.0, 0.0, val_raw)
+        #            val = val.reshape(-1)[0]
+        #            #print(batch_idx, D_j, c_, WT_j, val, val_raw)
+        #        elif self.ALG_NAME in ['rmtpp_decrnn_splusintensity']:
+        #            args = (D_j, WT_j)
+        #            val, _err = quad(quad_func_splusintensity, 0, np.inf, args=args)
+        #            #print(val)
+        #        elif self.ALG_NAME in ['rmtpp_decrnn_inv']:
+        #            f_val = 0.0
+        #            for num_samp in range(self.NUM_SAMP_INV):
+        #              u = np.random.random_sample()
+        #              val = np.log(c_ - WT_j * np.log(u)) - D_j
+        #              val = val / WT_j
+        #              f_val += val.reshape(-1)[0]
 
-                    val = f_val/self.NUM_SAMP_INV
+        #            val = f_val/self.NUM_SAMP_INV
 
-                assert np.isfinite(val)
-                preds_i.append(t_last + val)
+        #        assert np.isfinite(val)
+        #        preds_i.append(t_last + val)
 
-            return preds_i
+        #    return preds_i
 
-        time_pred_last = time_in_seq[:, -1]
-        if self.CONCAT_FINAL_ENC_STATE:
-            all_decoder_states = np.concatenate([all_decoder_states, np.tile(np.expand_dims(cur_state, axis=1), [1, self.DEC_LEN, 1])], axis=-1)
+        #time_pred_last = time_in_seq[:, -1]
+        #if self.CONCAT_FINAL_ENC_STATE:
+        #    all_decoder_states = np.concatenate([all_decoder_states, np.tile(np.expand_dims(cur_state, axis=1), [1, self.DEC_LEN, 1])], axis=-1)
 
-        if single_threaded:
-            all_time_preds = [_quad_worker((idx, (D_i, WT_i, state, t_last))) for idx, (D_i, WT_i, state, t_last) in enumerate(zip(D, WT, all_decoder_states, time_pred_last))]
-        else:
-            with MP.Pool() as pool:
-                all_time_preds = pool.map(_quad_worker, enumerate(zip(D, WT, all_decoder_states, time_pred_last)))
+        #if single_threaded:
+        #    all_time_preds = [_quad_worker((idx, (D_i, WT_i, state, t_last))) for idx, (D_i, WT_i, state, t_last) in enumerate(zip(D, WT, all_decoder_states, time_pred_last))]
+        #else:
+        #    with MP.Pool() as pool:
+        #        all_time_preds = pool.map(_quad_worker, enumerate(zip(D, WT, all_decoder_states, time_pred_last)))
+
+        time_pred_last = time_in_seq[:, -1:]
+        val = self.sess.run(self.val, feed_dict=feed_dict)
+        all_time_preds = np.cumsum(val, axis=1) + time_pred_last
 
         all_time_preds = np.asarray(all_time_preds).T
         assert np.isfinite(all_time_preds).sum() == all_time_preds.size
