@@ -520,7 +520,8 @@ class RMTPP:
                 self.final_state = self.hidden_states[-1]
 
                 # ----- Prediction using Inverse Transform Sampling ----- #
-                u = tf.random.uniform((self.inf_batch_size, 5000), minval=0.0, maxval=0.1, seed=self.seed)
+                #u = tf.random.uniform((self.inf_batch_size, 5000), minval=0.0, maxval=0.1, seed=self.seed)
+                u = tf.ones((self.inf_batch_size, 1)) * tf.range(0.0, 1.0, 1.0/5000)
                 c = -tf.exp(tf.clip_by_value(self.D, -50.0, 50.0))
                 self.val = (1.0/self.WT) * tf.log((self.WT/c) * tf.log(1.0 - u) + 1)
                 #self.val = tf.Print(self.val, [tf.reduce_sum(tf.cast(tf.is_finite(tf.log((self.WT/c) * tf.log(1.0 - u) + 1)), tf.int32)), 1.0/self.WT], message='Printing log and 1/w')

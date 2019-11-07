@@ -660,7 +660,8 @@ class RMTPP_DECRNN:
                 self.log_lambdas = log_lambda_
 
                 # ----- Prediction using Inverse Transform Sampling ----- #
-                u = tf.random.uniform((self.inf_batch_size, self.DEC_LEN, 5000), minval=0.0, maxval=0.1, seed=self.seed)
+                #u = tf.random.uniform((self.inf_batch_size, self.DEC_LEN, 5000), minval=0.0, maxval=0.1, seed=self.seed)
+                u = tf.ones((self.inf_batch_size, self.DEC_LEN, 1)) * tf.range(0.0, 1.0, 1.0/5000)
                 c = -tf.exp(tf.clip_by_value(self.D, -50.0, 50.0))
                 c = tf.expand_dims(c, axis=-1)
                 self.val = (1.0/self.WT) * tf.log((self.WT/c) * tf.log(1.0 - u) + 1)
