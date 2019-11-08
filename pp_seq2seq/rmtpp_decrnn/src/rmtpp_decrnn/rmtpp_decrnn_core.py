@@ -673,7 +673,8 @@ class RMTPP_DECRNN:
                     #self.val = tf.Print(self.val, [tf.reduce_sum(tf.cast(tf.is_finite(1.0/c), tf.int32)), 1.0/self.WT], message='Printing 1/c')
                     #self.val = tf.Print(self.val, [tf.reduce_sum(tf.cast(tf.is_finite(tf.log(1.0 - u)), tf.int32)), 1.0/self.WT], message='Printing log and 1/w')
                 elif self.ALG_NAME in ['rmtpp_decrnn_splusintensity']:
-                    self.val = (1.0/self.WT) * (-self.D + tf.sqrt(tf.square(self.D) - 2*self.WT*tf.log(1.0-u)))
+                    D = tf.expand_dims(self.D, axis=-1)
+                    self.val = (1.0/self.WT) * (-D + tf.sqrt(tf.square(D) - 2*self.WT*tf.log(1.0-u)))
 
                 self.val = tf.reduce_mean(self.val, axis=-1)
                 #self.val = tf.Print(self.val, [self.val], message='Printing val')
