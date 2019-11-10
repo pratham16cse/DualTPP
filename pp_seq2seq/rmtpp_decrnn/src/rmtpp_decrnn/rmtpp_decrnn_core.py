@@ -809,14 +809,20 @@ class RMTPP_DECRNN:
                     D = tf.expand_dims(self.D, axis=-1)
                     self.val = (1.0/self.WT) * (-D + tf.sqrt(tf.square(D) - 2*self.WT*tf.log(1.0-u)))
                 elif self.ALG_NAME in ['rmtpp_decrnn_attn']:
-                    u = tf.ones((self.inf_batch_size, self.DEC_LEN, self.NUM_DISCRETE_STATES, 1)) * tf.range(0.0, 1.0, 1.0/5000)
-                    c = -tf.exp(tf.clip_by_value(self.D, -50.0, 50.0))
-                    c = tf.expand_dims(c, axis=-1)
-                    self.val = (1.0/self.WT) * tf.log((self.WT/c) * tf.log(1.0 - u) + 1)
+                    if self.USE_INTENSITY:
+                        u = tf.ones((self.inf_batch_size, self.DEC_LEN, self.NUM_DISCRETE_STATES, 1)) * tf.range(0.0, 1.0, 1.0/5000)
+                        c = -tf.exp(tf.clip_by_value(self.D, -50.0, 50.0))
+                        c = tf.expand_dims(c, axis=-1)
+                        self.val = (1.0/self.WT) * tf.log((self.WT/c) * tf.log(1.0 - u) + 1)
+                    else:
+                        self.val = tf.expand_dims(self.D, axis=-1)
                 elif self.ALG_NAME in ['rmtpp_decrnn_splusintensity_attn']:
-                    u = tf.ones((self.inf_batch_size, self.DEC_LEN, self.NUM_DISCRETE_STATES, 1)) * tf.range(0.0, 1.0, 1.0/5000)
-                    D = tf.expand_dims(self.D, axis=-1)
-                    self.val = (1.0/self.WT) * (-D + tf.sqrt(tf.square(D) - 2*self.WT*tf.log(1.0-u)))
+                    if self.USE_INTENSITY:
+                        u = tf.ones((self.inf_batch_size, self.DEC_LEN, self.NUM_DISCRETE_STATES, 1)) * tf.range(0.0, 1.0, 1.0/5000)
+                        D = tf.expand_dims(self.D, axis=-1)
+                        self.val = (1.0/self.WT) * (-D + tf.sqrt(tf.square(D) - 2*self.WT*tf.log(1.0-u)))
+                    else:
+                        self.val = tf.expand_dims(self.D, axis=-1)
 
                 self.val = tf.reduce_mean(self.val, axis=-1)
                 #self.val = tf.Print(self.val, [self.val], message='Printing val')
