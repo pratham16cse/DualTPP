@@ -480,7 +480,8 @@ class RMTPP_DECRNN:
                                         and self.ATTN_RNN:
                                     p_embedded = tf.nn.embedding_lookup(self.enc_Wem_position,
                                                                         i * tf.ones((self.inf_batch_size), dtype=tf.int32))
-                                    inputs_t = tf.concat([delta_t_prev, p_embedded], axis=-1)
+                                    #inputs_t = tf.concat([delta_t_prev, p_embedded], axis=-1)
+                                    inputs_t = tf.concat([delta_t_prev, time_feat_embd], axis=-1)
                                     #inputs_t = delta_t_prev
                                     new_state_t, enc_internal_state_t = self.enc_cell_t(inputs_t,  enc_internal_state_t)
                                     #new_state_t = tf.layers.dense(inputs_t, self.HIDDEN_LAYER_SIZE, name='attn_ff_nw_1', activation=tf.nn.relu)
