@@ -69,6 +69,7 @@ def_opts = Deco.Options(
 
     num_feats=1,
     use_time_features=False,
+    use_avg_gaps=False,
 
     wt_hparam=1.0,
 
@@ -138,7 +139,7 @@ class RMTPP_DECRNN:
                  mark_triggers_time, mark_loss,
                  Wt, Wem, Wh, bh, Ws, bs, wt, wt_attn, Wy, Vy, Vt, Vw, bk, bt, bw, wt_hparam, Wem_position, enc_Wem_position,
                  plot_pred_dev, plot_pred_test, enc_cell_type, dec_cell_type, num_discrete_states,
-                 position_encode, attn_rnn, use_intensity, num_feats, use_time_features):
+                 position_encode, attn_rnn, use_intensity, num_feats, use_time_features, use_avg_gaps):
 
         self.seed = seed
         tf.set_random_seed(self.seed)
@@ -205,6 +206,7 @@ class RMTPP_DECRNN:
 
         self.NUM_FEATS = num_feats
         self.USE_TIME_FEATS = use_time_features
+        self.USE_AVG_GAPS = use_avg_gaps
 
         if self.CONCAT_FINAL_ENC_STATE:
             self.DEC_STATE_SIZE = 2 * self.HIDDEN_LAYER_SIZE
@@ -531,6 +533,7 @@ class RMTPP_DECRNN:
                 if not self.INIT_ZERO_DEC_STATE:
                     s_state = self.final_state
                 #s_state = tf.Print(s_state, [self.mode, tf.equal(self.mode, 1.0)], message='mode ')
+                average_gaps = tf.reduce_mean(self.times_in - tf.concat([tf.zeros_like(self.times_in[:, 0:1]), self.times_in[:, :-1]], axis=1), axis=1, keep_dims=True)
                 self.decoder_states = []
                 if self.ALG_NAME in ['rmtpp_decrnn_latentz']:
                     z_current = self.sample_z(s_state)
@@ -593,6 +596,10 @@ class RMTPP_DECRNN:
                                     p_embedded = tf.nn.embedding_lookup(self.Wem_position,
                                                                         i * tf.ones((self.inf_batch_size), dtype=tf.int32))
                                     inputs = tf.concat([inputs, p_embedded], axis=-1)
+
+                                if self.USE_AVG_GAPS:
+                                    inputs = tf.concat([inputs, average_gaps], axis=1)
+
                                 new_state, dec_internal_state = self.dec_cell(inputs,  dec_internal_state)
 
                             if self.CONCAT_BEFORE_DEC_UPDATE:
