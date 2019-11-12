@@ -533,7 +533,6 @@ class RMTPP_DECRNN:
                 if not self.INIT_ZERO_DEC_STATE:
                     s_state = self.final_state
                 #s_state = tf.Print(s_state, [self.mode, tf.equal(self.mode, 1.0)], message='mode ')
-                average_gaps = tf.reduce_mean(self.times_in - tf.concat([tf.zeros_like(self.times_in[:, 0:1]), self.times_in[:, :-1]], axis=1), axis=1, keep_dims=True)
                 self.decoder_states = []
                 if self.ALG_NAME in ['rmtpp_decrnn_latentz']:
                     z_current = self.sample_z(s_state)
@@ -597,9 +596,6 @@ class RMTPP_DECRNN:
                                                                         i * tf.ones((self.inf_batch_size), dtype=tf.int32))
                                     inputs = tf.concat([inputs, p_embedded], axis=-1)
 
-                                if self.USE_AVG_GAPS:
-                                    inputs = tf.concat([inputs, average_gaps], axis=1)
-
                                 new_state, dec_internal_state = self.dec_cell(inputs,  dec_internal_state)
 
                             if self.CONCAT_BEFORE_DEC_UPDATE:
@@ -638,6 +634,12 @@ class RMTPP_DECRNN:
                                                            axis=-1)
                     else:
                         decoder_states_concat = self.decoder_states
+
+                    average_gaps = tf.reduce_mean(self.times_in - tf.concat([tf.zeros_like(self.times_in[:, 0:1]), self.times_in[:, :-1]], axis=1), axis=1, keep_dims=True)
+                    if self.USE_AVG_GAPS:
+                        average_gaps_tiled = tf.tile(tf.expand_dims(average_gaps, axis=-1), [1, self.DEC_LEN, 1])
+                        decoder_states_concat = tf.concat([decoder_states_concat, average_gaps_tiled], axis=-1)
+
                     times_out_prev = tf.concat([self.times_in[:, -1:], self.times_out[:, :-1]], axis=1)
 
                     gaps = self.times_out-times_out_prev
@@ -650,7 +652,13 @@ class RMTPP_DECRNN:
                     newVt = tf.tile(tf.expand_dims(self.Vt, axis=0), [tf.shape(self.decoder_states)[0], 1, 1]) 
                     newVw = tf.tile(tf.expand_dims(self.Vw, axis=0), [tf.shape(self.decoder_states)[0], 1, 1]) 
 
-                    self.D = tf.reduce_sum(decoder_states_concat * newVt, axis=2) + base_intensity_bt
+                    #self.D = tf.reduce_sum(decoder_states_concat * newVt, axis=2) + base_intensity_bt
+                    self.D = tf.layers.dense(decoder_states_concat, 1, name='D_layer',
+                                             kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed),
+                                             kernel_regularizer=self.EXTLYR_REGULARIZER,
+                                             bias_regularizer=self.EXTLYR_REGULARIZER)
+                    self.D = tf.squeeze(self.D, axis=-1)
+
                     if self.ALG_NAME in ['rmtpp_decrnn_latentz']:
                         self.D += tf.squeeze(tf.layers.dense(self.z_list, 1, name='z_to_lambda_layer',
                                                              kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed)),
