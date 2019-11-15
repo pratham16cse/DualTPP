@@ -10,6 +10,7 @@ from dtw import dtw
 
 
 pad_sequences = preprocessing.sequence.pad_sequences
+DELTA = 3600.0
 
 
 def create_dir(dirname):
@@ -67,41 +68,45 @@ def generate_norm_seq(timeTrain, timeDev, timeTest, enc_len, normalization, chec
             timeDev, devND, devNA, devIG, \
             timeTest, testND, testNA, testIG
 
-def read_seq2seq_data(event_train_file, event_dev_file, event_test_file,
-                      time_train_file, time_dev_file, time_test_file,
-                      normalization=None,
-                      pad=True, dataset_path=None):
+def read_seq2seq_data(dataset_path, normalization=None, pad=True):
     """Read data from given files and return it as a dictionary."""
 
-    with open(event_train_file+'.in', 'r') as in_file:
+    with open(dataset_path+'train.event.in', 'r') as in_file:
         eventTrainIn = [[int(y) for y in x.strip().split()] for x in in_file]
-    with open(event_train_file+'.out', 'r') as in_file:
+    with open(dataset_path+'train.event.out', 'r') as in_file:
         eventTrainOut = [[int(y) for y in x.strip().split()] for x in in_file]
 
-    with open(event_dev_file+'.in', 'r') as in_file:
+    with open(dataset_path+'dev.event.in', 'r') as in_file:
         eventDevIn = [[int(y) for y in x.strip().split()] for x in in_file]
-    with open(event_dev_file+'.out', 'r') as in_file:
+    with open(dataset_path+'dev.event.out', 'r') as in_file:
         eventDevOut = [[int(y) for y in x.strip().split()] for x in in_file]
 
-    with open(event_test_file+'.in', 'r') as in_file:
+    with open(dataset_path+'test.event.in', 'r') as in_file:
         eventTestIn = [[int(y) for y in x.strip().split()] for x in in_file]
-    with open(event_test_file+'.out', 'r') as in_file:
+    with open(dataset_path+'test.event.out', 'r') as in_file:
         eventTestOut = [[int(y) for y in x.strip().split()] for x in in_file]
 
-    with open(time_train_file+'.in', 'r') as in_file:
+    with open(dataset_path+'train.time.in', 'r') as in_file:
         timeTrainIn = [[float(y) for y in x.strip().split()] for x in in_file]
-    with open(time_train_file+'.out', 'r') as in_file:
+    with open(dataset_path+'train.time.out', 'r') as in_file:
         timeTrainOut = [[float(y) for y in x.strip().split()] for x in in_file]
 
-    with open(time_dev_file+'.in', 'r') as in_file:
+    with open(dataset_path+'dev.time.in', 'r') as in_file:
         timeDevIn = [[float(y) for y in x.strip().split()] for x in in_file]
-    with open(time_dev_file+'.out', 'r') as in_file:
+    with open(dataset_path+'dev.time.out', 'r') as in_file:
         timeDevOut = [[float(y) for y in x.strip().split()] for x in in_file]
 
-    with open(time_test_file+'.in', 'r') as in_file:
+    with open(dataset_path+'test.time.in', 'r') as in_file:
         timeTestIn = [[float(y) for y in x.strip().split()] for x in in_file]
-    with open(time_test_file+'.out', 'r') as in_file:
+    with open(dataset_path+'test.time.out', 'r') as in_file:
         timeTestOut = [[float(y) for y in x.strip().split()] for x in in_file]
+
+    with open(dataset_path+'attn.train.time.in', 'r') as in_file:
+        attn_timeTrainIn = [[float(y) for y in x.strip().split()] for x in in_file]
+    with open(dataset_path+'attn.dev.time.in', 'r') as in_file:
+        attn_timeDevIn = [[float(y) for y in x.strip().split()] for x in in_file]
+    with open(dataset_path+'attn.test.time.in', 'r') as in_file:
+        attn_timeTestIn = [[float(y) for y in x.strip().split()] for x in in_file]
 
     # Compute Hour-of-day features from data
     getHour = lambda t: t // 3600 % 24
