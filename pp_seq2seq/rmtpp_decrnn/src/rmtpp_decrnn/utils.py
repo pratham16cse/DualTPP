@@ -1,5 +1,5 @@
 from tensorflow.contrib.keras import preprocessing
-from collections import defaultdict
+from collections import defaultdict, Counter
 import itertools
 import os
 import tensorflow as tf
@@ -10,6 +10,7 @@ from dtw import dtw
 
 
 pad_sequences = preprocessing.sequence.pad_sequences
+DELTA = 3600.0
 
 
 def create_dir(dirname):
@@ -67,41 +68,45 @@ def generate_norm_seq(timeTrain, timeDev, timeTest, enc_len, normalization, chec
             timeDev, devND, devNA, devIG, \
             timeTest, testND, testNA, testIG
 
-def read_seq2seq_data(event_train_file, event_dev_file, event_test_file,
-                      time_train_file, time_dev_file, time_test_file,
-                      normalization=None,
-                      pad=True, dataset_path=None):
+def read_seq2seq_data(dataset_path, normalization=None, pad=True):
     """Read data from given files and return it as a dictionary."""
 
-    with open(event_train_file+'.in', 'r') as in_file:
+    with open(dataset_path+'train.event.in', 'r') as in_file:
         eventTrainIn = [[int(y) for y in x.strip().split()] for x in in_file]
-    with open(event_train_file+'.out', 'r') as in_file:
+    with open(dataset_path+'train.event.out', 'r') as in_file:
         eventTrainOut = [[int(y) for y in x.strip().split()] for x in in_file]
 
-    with open(event_dev_file+'.in', 'r') as in_file:
+    with open(dataset_path+'dev.event.in', 'r') as in_file:
         eventDevIn = [[int(y) for y in x.strip().split()] for x in in_file]
-    with open(event_dev_file+'.out', 'r') as in_file:
+    with open(dataset_path+'dev.event.out', 'r') as in_file:
         eventDevOut = [[int(y) for y in x.strip().split()] for x in in_file]
 
-    with open(event_test_file+'.in', 'r') as in_file:
+    with open(dataset_path+'test.event.in', 'r') as in_file:
         eventTestIn = [[int(y) for y in x.strip().split()] for x in in_file]
-    with open(event_test_file+'.out', 'r') as in_file:
+    with open(dataset_path+'test.event.out', 'r') as in_file:
         eventTestOut = [[int(y) for y in x.strip().split()] for x in in_file]
 
-    with open(time_train_file+'.in', 'r') as in_file:
+    with open(dataset_path+'train.time.in', 'r') as in_file:
         timeTrainIn = [[float(y) for y in x.strip().split()] for x in in_file]
-    with open(time_train_file+'.out', 'r') as in_file:
+    with open(dataset_path+'train.time.out', 'r') as in_file:
         timeTrainOut = [[float(y) for y in x.strip().split()] for x in in_file]
 
-    with open(time_dev_file+'.in', 'r') as in_file:
+    with open(dataset_path+'dev.time.in', 'r') as in_file:
         timeDevIn = [[float(y) for y in x.strip().split()] for x in in_file]
-    with open(time_dev_file+'.out', 'r') as in_file:
+    with open(dataset_path+'dev.time.out', 'r') as in_file:
         timeDevOut = [[float(y) for y in x.strip().split()] for x in in_file]
 
-    with open(time_test_file+'.in', 'r') as in_file:
+    with open(dataset_path+'test.time.in', 'r') as in_file:
         timeTestIn = [[float(y) for y in x.strip().split()] for x in in_file]
-    with open(time_test_file+'.out', 'r') as in_file:
+    with open(dataset_path+'test.time.out', 'r') as in_file:
         timeTestOut = [[float(y) for y in x.strip().split()] for x in in_file]
+
+    with open(dataset_path+'attn.train.time.in', 'r') as in_file:
+        attn_timeTrainIn = [[float(y) for y in x.strip().split()] for x in in_file]
+    with open(dataset_path+'attn.dev.time.in', 'r') as in_file:
+        attn_timeDevIn = [[float(y) for y in x.strip().split()] for x in in_file]
+    with open(dataset_path+'attn.test.time.in', 'r') as in_file:
+        attn_timeTestIn = [[float(y) for y in x.strip().split()] for x in in_file]
 
     # Compute Hour-of-day features from data
     getHour = lambda t: t // 3600 % 24
@@ -222,6 +227,88 @@ def read_seq2seq_data(event_train_file, event_dev_file, event_test_file,
         test_time_in_feats = timeTestInFeats
         test_time_out_feats = timeTestOutFeats
 
+    # ----- Start: Create coarse sequence by grouping nearby events  ----- #
+
+    def create_coarse_seq(attn_time_seq):
+        coarse_gaps_in_seq = list()
+        coarse_time_in_feats = list()
+        attn_gaps_idxes = list()
+        attn_gaps = list()
+        for sequence in attn_time_seq:
+            gaps = list()
+            coarse_seq = list()
+            begin_idxes = list()
+            coarse_feats = list()
+            cnt, total_gap = 0, 0.0
+            begin_ts = sequence[0]
+            begin_idxes.append(0)
+            hod = list()
+            for i, ts in enumerate(sequence[:-enc_len]):
+                gaps.append((sequence[i] - sequence[i-1]) if i>0 else 0.0)
+                #if ts > begin_ts + DELTA or i==len(sequence)-1:
+                if ts > begin_ts + DELTA or i==len(sequence)-1-enc_len:
+                    #print(ts > begin_ts + DELTA, i==len(sequence)-1)
+                    #print(begin_ts, ts, cnt, total_gap, hod)
+                    if total_gap > 0.0:
+                        begin_ts = ts
+                        coarse_feats.append(max(hod))
+                        avg_gap = total_gap * 1.0/cnt
+                        #coarse_seq.append([cnt, avg_gap])
+                        coarse_seq.append(avg_gap)
+                        cnt, total_gap = 1, 0.0
+                        hod = list()
+                        #if i<len(sequence)-1-enc_len:
+                        begin_idxes.append(i)
+                    elif total_gap == 0.0:
+                        if i<len(sequence)-1-enc_len:
+                            begin_idxes[-1] = i
+                            begin_ts = ts
+                            hod = list()
+                            cnt, total_gap = 1, 0.0
+                        #else:
+                        #    del begin_idxes[-1]
+
+                else:
+                    cnt +=1
+                    total_gap += ((ts - sequence[i-1]) if i>0 else 0.0)
+                    hod.append(getHour(ts))
+
+            for i, ts in enumerate(sequence[-enc_len:], start=len(sequence)-enc_len):
+                gaps.append((sequence[i] - sequence[i-1]) if i>0 else 0.0)
+                coarse_seq.append((sequence[i] - sequence[i-1]) if i>0 else 0.0)
+                coarse_feats.append(getHour(ts))
+                if i<len(sequence)-1:
+                    begin_idxes.append(i)
+
+
+            #print(len(begin_idxes), len(coarse_seq))
+            #print(begin_idxes[-enc_len], len(gaps), begin_idxes[-enc_len] + 5 < len(gaps))
+            assert len(begin_idxes) == len(coarse_seq)
+            attn_gaps.append(gaps)
+            attn_gaps_idxes.append(begin_idxes)
+            coarse_gaps_in_seq.append(coarse_seq)
+            coarse_time_in_feats.append(coarse_feats)
+
+
+        #lens = [len(sequence) for sequence in coarse_gaps_in_seq]
+        #print('---------------------------------')
+        #lens_counts = Counter(lens)
+        #for k in sorted(lens_counts.keys()):
+        #    print(k, lens_counts[k]
+        return attn_gaps, attn_gaps_idxes, coarse_gaps_in_seq, coarse_time_in_feats
+
+    attn_train_gaps, attn_train_gaps_idxes, coarse_train_gaps_in_seq, coarse_train_time_in_feats = create_coarse_seq(attn_timeTrainIn)
+    attn_dev_gaps, attn_dev_gaps_idxes, coarse_dev_gaps_in_seq, coarse_dev_time_in_feats = create_coarse_seq(attn_timeDevIn)
+    attn_test_gaps, attn_test_gaps_idxes, coarse_test_gaps_in_seq, coarse_test_time_in_feats = create_coarse_seq(attn_timeTestIn)
+
+    #for sequence in coarse_train_gaps_in_seq[:20]:
+    #    for s in sequence:
+    #        print(s, end=' ')
+    #    print('\n', end='')
+
+    # ----- End: Create coarse sequence by grouping nearby events  ----- #
+
+
     return {
         'train_event_in_seq': train_event_in_seq,
         'train_event_out_seq': train_event_out_seq,
@@ -253,6 +340,20 @@ def read_seq2seq_data(event_train_file, event_dev_file, event_test_file,
         'train_time_out_feats': train_time_out_feats,
         'dev_time_out_feats': dev_time_out_feats,
         'test_time_out_feats': test_time_out_feats,
+
+        'attn_train_gaps': attn_train_gaps,
+        'attn_train_gaps_idxes': attn_train_gaps_idxes,
+        'coarse_train_gaps_in_seq': coarse_train_gaps_in_seq,
+        'coarse_train_time_in_feats': coarse_train_time_in_feats,
+        'attn_dev_gaps': attn_dev_gaps,
+        'attn_dev_gaps_idxes': attn_dev_gaps_idxes,
+        'coarse_dev_gaps_in_seq': coarse_dev_gaps_in_seq,
+        'coarse_dev_time_in_feats': coarse_dev_time_in_feats,
+        'attn_test_gaps': attn_test_gaps,
+        'attn_test_gaps_idxes': attn_test_gaps_idxes,
+        'coarse_test_gaps_in_seq': coarse_test_gaps_in_seq,
+        'coarse_test_time_in_feats': coarse_test_time_in_feats,
+
 
         'num_categories': len(unique_samples),
         'encoder_length': len(eventTrainIn[0]),

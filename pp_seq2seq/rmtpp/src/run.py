@@ -23,13 +23,7 @@ def_opts = rmtpp.rmtpp_core.def_opts
 @click.command()
 @click.argument('dataset_name')
 @click.argument('alg_name')
-@click.argument('event_train_file')
-@click.argument('time_train_file')
-@click.argument('event_dev_file')
-@click.argument('time_dev_file')
-@click.argument('event_test_file')
-@click.argument('time_test_file')
-@click.option('--dataset_path', 'dataset_path', help='Dataset path.', default=None)
+@click.argument('dataset_path')
 @click.option('--summary', 'summary_dir', help='Which folder to save summaries to.', default=None)
 @click.option('--save', 'save_dir', help='Which folder to save checkpoints to.', default=None)
 @click.option('--epochs', 'num_epochs', help='How many epochs to train for.', default=1)
@@ -54,8 +48,7 @@ def_opts = rmtpp.rmtpp_core.def_opts
 @click.option('--seed', 'seed', help='Parameter Initialization Seed', default=def_opts.seed)
 @click.option('--num-feats', 'num_feats', help='Number of time-features to be added', default=def_opts.num_feats)
 @click.option('--use-time-features/--no-use-time-features', 'use_time_features', help='Flag for using time-features in the model', default=def_opts.use_time_features)
-def cmd(dataset_name, alg_name, dataset_path,
-        event_train_file, time_train_file, event_dev_file, time_dev_file, event_test_file, time_test_file,
+def cmd(dataset_name, alg_name, dataset_path, 
         save_dir, summary_dir, num_epochs, restart, train_eval, test_eval, scale,
         batch_size, bptt, decoder_length, learning_rate, cpu_only, normalization, constraints,
         patience, stop_criteria, epsilon, num_extra_layer, mark_loss, rnn_cell_type, parallel_hparam, seed, num_feats, use_time_features):
@@ -64,14 +57,8 @@ def cmd(dataset_name, alg_name, dataset_path,
     clear_clutter = True
 
     data = rmtpp.utils.read_seq2seq_data(
-        event_train_file=event_train_file,
-        event_dev_file=event_dev_file,
-        event_test_file=event_test_file,
-        time_train_file=time_train_file,
-        time_dev_file=time_dev_file,
-        time_test_file=time_test_file,
+        dataset_path=dataset_path,
         normalization=normalization,
-        dataset_path=dataset_path
     )
 
     data['train_time_out_seq'] /= scale

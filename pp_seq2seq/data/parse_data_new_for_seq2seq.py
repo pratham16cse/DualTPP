@@ -14,6 +14,8 @@ from operator import itemgetter
 import pandas as pd
 #from preprocess_rmtpp_data import preprocess
 
+DELTA = 3600.0 * 24
+
 def print_dataset_stats(dataset_name, train_data, dev_data, test_data):
     print('\n#----- Dataset_name:{} -----#'.format(dataset_name))
 
@@ -205,6 +207,8 @@ def preprocess(raw_dataset_name,
     dev_actual_time_in, test_actual_time_in = list(), list()
     dev_actual_time_out, test_actual_time_out = list(), list()
 
+    train_tsIndices, dev_tsIndices, test_tsIndices = list(), list(), list()
+
     print('Creating training data . . .')
     currItr = train_time_itr.iterFinished
     ctr = 0
@@ -212,7 +216,7 @@ def preprocess(raw_dataset_name,
         ctr += 1
         #print(ctr)
         train_event_batch, _, _, _, _ = train_event_itr.nextBatch(batchSize=batch_size, stepLen=train_step_length)
-        train_time_batch, _, _, _, _ = train_time_itr.nextBatch(batchSize=batch_size, stepLen=train_step_length)
+        train_time_batch, tsIndices, _, _, _ = train_time_itr.nextBatch(batchSize=batch_size, stepLen=train_step_length)
 
         #if ctr == 1: print(train_event_batch.shape)
 
@@ -221,6 +225,10 @@ def preprocess(raw_dataset_name,
         pp_train_event_out_seq.extend(train_event_batch[:, encoder_length:].tolist())
         pp_train_time_out_seq.extend(train_time_batch[:, encoder_length:].tolist())
 
+        train_tsIndices += tsIndices
+
+    assert len(train_tsIndices) == len(pp_train_time_in_seq)
+
     print('Creating dev data . . .')
     currItr = dev_time_itr.iterFinished
     ctr = 0
@@ -228,7 +236,7 @@ def preprocess(raw_dataset_name,
         ctr += 1
         #print(ctr)
         dev_event_batch, _, _, _, _ = dev_event_itr.nextBatch(batchSize=batch_size, stepLen=dev_step_length)
-        dev_time_batch, _, _, _, _ = dev_time_itr.nextBatch(batchSize=batch_size, stepLen=dev_step_length)
+        dev_time_batch, tsIndices, _, _, _ = dev_time_itr.nextBatch(batchSize=batch_size, stepLen=dev_step_length)
 
         #if ctr == 1: print(dev_event_batch.shape)
 
@@ -236,6 +244,10 @@ def preprocess(raw_dataset_name,
         pp_dev_time_in_seq.extend(dev_time_batch[:, :encoder_length].tolist())
         pp_dev_event_out_seq.extend(dev_event_batch[:, encoder_length:].tolist())
         pp_dev_time_out_seq.extend(dev_time_batch[:, encoder_length:].tolist())
+
+        dev_tsIndices += tsIndices
+
+    assert len(dev_tsIndices) == len(pp_dev_time_in_seq)
 
     print('Creating test data . . .')
     currItr = test_time_itr.iterFinished
@@ -245,7 +257,7 @@ def preprocess(raw_dataset_name,
         #print(ctr)
 
         test_event_batch, _, _, _, _ = test_event_itr.nextBatch(batchSize=batch_size, stepLen=test_step_length)
-        test_time_batch, _, _, _, _ = test_time_itr.nextBatch(batchSize=batch_size, stepLen=test_step_length)
+        test_time_batch, tsIndices, _, _, _ = test_time_itr.nextBatch(batchSize=batch_size, stepLen=test_step_length)
 
         #if ctr == 1: print(test_event_batch.shape)
 
@@ -253,6 +265,10 @@ def preprocess(raw_dataset_name,
         pp_test_time_in_seq.extend(test_time_batch[:, :encoder_length].tolist())
         pp_test_event_out_seq.extend(test_event_batch[:, encoder_length:].tolist())
         pp_test_time_out_seq.extend(test_time_batch[:, encoder_length:].tolist())
+
+        test_tsIndices += tsIndices
+
+    assert len(test_tsIndices) == len(pp_test_time_in_seq)
 
 
     def write_to_file(fptr, sequences):
@@ -299,6 +315,66 @@ def preprocess(raw_dataset_name,
     with open(os.path.join(dataset_name, 'labels.in'), 'w') as f:
         for lbl in unique_labels:
             f.write(str(lbl) + '\n')
+
+    # ----- Start: Create coarse sequence of timestamps for attention ----- #
+
+    attn_train_time_in_seq = [[] for _ in pp_train_time_in_seq]
+    last_input_ts_list = [seq[-1] for seq in pp_train_time_in_seq]
+    for i, sequence in enumerate(train_time_seq):
+        for ts in sequence:
+            for j, (k, l_ts) in zip(train_tsIndices, enumerate(last_input_ts_list)):
+                if i==j:
+                    #print(i, j, ts, l_ts, ts <= l_ts and ts + DELTA > l_ts)
+                    if ts <= l_ts and ts + DELTA > l_ts:
+                        attn_train_time_in_seq[k].append(ts)
+                    #elif ts > l_ts:
+                    #    break
+        #print('-----------------------------------')
+    #print(last_input_ts_list)
+    #for a,b in [(len(i), len(j)) for i,j in zip(attn_train_time_in_seq, pp_train_time_in_seq)]:
+    #    print(a, b)
+    #print((np.array(last_input_ts_list)[1:] - np.array(last_input_ts_list)[:-1]).tolist())
+    #print(train_tsIndices)
+    print(attn_train_time_in_seq[44])
+    print(last_input_ts_list[44])
+    #print(len(attn_train_time_in_seq))
+
+    attn_dev_time_in_seq = [[] for _ in pp_dev_time_in_seq]
+    last_input_ts_list = [seq[-1] for seq in pp_dev_time_in_seq]
+    for i, sequence in enumerate(dev_time_seq):
+        for ts in sequence:
+            for j, (k, l_ts) in zip(dev_tsIndices, enumerate(last_input_ts_list)):
+                if i==j:
+                    #print(i, j, ts, l_ts, ts <= l_ts and ts + DELTA > l_ts)
+                    if ts <= l_ts and ts + DELTA > l_ts:
+                        attn_dev_time_in_seq[k].append(ts)
+    #for a,b in [(len(i), len(j)) for i,j in zip(attn_dev_time_in_seq, pp_dev_time_in_seq)]:
+    #    print(a, b)
+
+    attn_test_time_in_seq = [[] for _ in pp_test_time_in_seq]
+    last_input_ts_list = [seq[-1] for seq in pp_test_time_in_seq]
+    for i, sequence in enumerate(test_time_seq):
+        for ts in sequence:
+            for j, (k, l_ts) in zip(test_tsIndices, enumerate(last_input_ts_list)):
+                if i==j:
+                    #print(i, j, ts, l_ts, ts <= l_ts and ts + DELTA > l_ts)
+                    if ts <= l_ts and ts + DELTA > l_ts:
+                        attn_test_time_in_seq[k].append(ts)
+    for a,b in [(len(i), len(j)) for i,j in zip(attn_test_time_in_seq, pp_test_time_in_seq)]:
+        print(a, b)
+
+    assert len(attn_train_time_in_seq) == len(pp_train_time_in_seq)
+    assert len(attn_dev_time_in_seq) == len(pp_dev_time_in_seq)
+    assert len(attn_test_time_in_seq) == len(pp_test_time_in_seq)
+
+    with open(os.path.join(dataset_name, 'attn.train.time.in'), 'w') as f:
+        write_to_file(f, attn_train_time_in_seq)
+    with open(os.path.join(dataset_name, 'attn.dev.time.in'), 'w') as f:
+        write_to_file(f, attn_dev_time_in_seq)
+    with open(os.path.join(dataset_name, 'attn.test.time.in'), 'w') as f:
+        write_to_file(f, attn_test_time_in_seq)
+
+    # ----- End: Create coarse sequence of timestamps for attention ----- #
 
     #----------- Gap Statistics Start-------------#
     train_gap_seq, dev_gap_seq, test_gap_seq = list(), list(), list()
