@@ -1,5 +1,5 @@
 from tensorflow.contrib.keras import preprocessing
-from collections import defaultdict
+from collections import defaultdict, Counter
 import itertools
 import os
 import tensorflow as tf
@@ -227,6 +227,88 @@ def read_seq2seq_data(dataset_path, normalization=None, pad=True):
         test_time_in_feats = timeTestInFeats
         test_time_out_feats = timeTestOutFeats
 
+    # ----- Start: Create coarse sequence by grouping nearby events  ----- #
+
+    def create_coarse_seq(attn_time_seq):
+        coarse_gaps_in_seq = list()
+        coarse_time_in_feats = list()
+        attn_gaps_idxes = list()
+        attn_gaps = list()
+        for sequence in attn_time_seq:
+            gaps = list()
+            coarse_seq = list()
+            begin_idxes = list()
+            coarse_feats = list()
+            cnt, total_gap = 0, 0.0
+            begin_ts = sequence[0]
+            begin_idxes.append(0)
+            hod = list()
+            for i, ts in enumerate(sequence[:-enc_len]):
+                gaps.append((sequence[i] - sequence[i-1]) if i>0 else 0.0)
+                #if ts > begin_ts + DELTA or i==len(sequence)-1:
+                if ts > begin_ts + DELTA or i==len(sequence)-1-enc_len:
+                    #print(ts > begin_ts + DELTA, i==len(sequence)-1)
+                    #print(begin_ts, ts, cnt, total_gap, hod)
+                    if total_gap > 0.0:
+                        begin_ts = ts
+                        coarse_feats.append(max(hod))
+                        avg_gap = total_gap * 1.0/cnt
+                        #coarse_seq.append([cnt, avg_gap])
+                        coarse_seq.append(avg_gap)
+                        cnt, total_gap = 1, 0.0
+                        hod = list()
+                        #if i<len(sequence)-1-enc_len:
+                        begin_idxes.append(i)
+                    elif total_gap == 0.0:
+                        if i<len(sequence)-1-enc_len:
+                            begin_idxes[-1] = i
+                            begin_ts = ts
+                            hod = list()
+                            cnt, total_gap = 1, 0.0
+                        #else:
+                        #    del begin_idxes[-1]
+
+                else:
+                    cnt +=1
+                    total_gap += ((ts - sequence[i-1]) if i>0 else 0.0)
+                    hod.append(getHour(ts))
+
+            for i, ts in enumerate(sequence[-enc_len:], start=len(sequence)-enc_len):
+                gaps.append((sequence[i] - sequence[i-1]) if i>0 else 0.0)
+                coarse_seq.append((sequence[i] - sequence[i-1]) if i>0 else 0.0)
+                coarse_feats.append(getHour(ts))
+                if i<len(sequence)-1:
+                    begin_idxes.append(i)
+
+
+            #print(len(begin_idxes), len(coarse_seq))
+            #print(begin_idxes[-enc_len], len(gaps), begin_idxes[-enc_len] + 5 < len(gaps))
+            assert len(begin_idxes) == len(coarse_seq)
+            attn_gaps.append(gaps)
+            attn_gaps_idxes.append(begin_idxes)
+            coarse_gaps_in_seq.append(coarse_seq)
+            coarse_time_in_feats.append(coarse_feats)
+
+
+        #lens = [len(sequence) for sequence in coarse_gaps_in_seq]
+        #print('---------------------------------')
+        #lens_counts = Counter(lens)
+        #for k in sorted(lens_counts.keys()):
+        #    print(k, lens_counts[k]
+        return attn_gaps, attn_gaps_idxes, coarse_gaps_in_seq, coarse_time_in_feats
+
+    attn_train_gaps, attn_train_gaps_idxes, coarse_train_gaps_in_seq, coarse_train_time_in_feats = create_coarse_seq(attn_timeTrainIn)
+    attn_dev_gaps, attn_dev_gaps_idxes, coarse_dev_gaps_in_seq, coarse_dev_time_in_feats = create_coarse_seq(attn_timeDevIn)
+    attn_test_gaps, attn_test_gaps_idxes, coarse_test_gaps_in_seq, coarse_test_time_in_feats = create_coarse_seq(attn_timeTestIn)
+
+    #for sequence in coarse_train_gaps_in_seq[:20]:
+    #    for s in sequence:
+    #        print(s, end=' ')
+    #    print('\n', end='')
+
+    # ----- End: Create coarse sequence by grouping nearby events  ----- #
+
+
     return {
         'train_event_in_seq': train_event_in_seq,
         'train_event_out_seq': train_event_out_seq,
@@ -258,6 +340,20 @@ def read_seq2seq_data(dataset_path, normalization=None, pad=True):
         'train_time_out_feats': train_time_out_feats,
         'dev_time_out_feats': dev_time_out_feats,
         'test_time_out_feats': test_time_out_feats,
+
+        'attn_train_gaps': attn_train_gaps,
+        'attn_train_gaps_idxes': attn_train_gaps_idxes,
+        'coarse_train_gaps_in_seq': coarse_train_gaps_in_seq,
+        'coarse_train_time_in_feats': coarse_train_time_in_feats,
+        'attn_dev_gaps': attn_dev_gaps,
+        'attn_dev_gaps_idxes': attn_dev_gaps_idxes,
+        'coarse_dev_gaps_in_seq': coarse_dev_gaps_in_seq,
+        'coarse_dev_time_in_feats': coarse_dev_time_in_feats,
+        'attn_test_gaps': attn_test_gaps,
+        'attn_test_gaps_idxes': attn_test_gaps_idxes,
+        'coarse_test_gaps_in_seq': coarse_test_gaps_in_seq,
+        'coarse_test_time_in_feats': coarse_test_time_in_feats,
+
 
         'num_categories': len(unique_samples),
         'encoder_length': len(eventTrainIn[0]),
