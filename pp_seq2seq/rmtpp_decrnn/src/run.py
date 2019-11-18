@@ -56,14 +56,13 @@ def_opts = rmtpp_decrnn.rmtpp_decrnn_core.def_opts
 @click.option('--num-feats', 'num_feats', help='Number of time-features to be added', default=def_opts.num_feats)
 @click.option('--use-time-features/--no-use-time-features', 'use_time_features', help='Flag for using time-features in the model', default=def_opts.use_time_features)
 @click.option('--attn-rnn/--no-attn-rnn', 'attn_rnn', help='If true, use extra rnn for attention in decrnn_attn models', default=def_opts.attn_rnn)
-@click.option('--coarse-attn-rnn/--no-coarse-attn-rnn', 'coarse_attn_rnn', help='If true, use extra rnn on coarsed seqence for attention in decrnn_attn models', default=def_opts.coarse_attn_rnn)
 @click.option('--use-intensity/--no-use-intensity', 'use_intensity', help='If true, use intensity formulation, otherwise use network to predict gaps', default=def_opts.use_intensity)
 @click.option('--use-avg-gaps/--no-use-avg-gaps', 'use_avg_gaps', help='Use Average Encoder gaps as input in the decoder', default=def_opts.use_avg_gaps)
 def cmd(dataset_name, alg_name, dataset_path,
         save_dir, summary_dir, num_epochs, restart, train_eval, test_eval, scale,
         batch_size, bptt, decoder_length, learning_rate, cpu_only, normalization, constraints,
         patience, stop_criteria, epsilon, share_dec_params, init_zero_dec_state, concat_final_enc_state, num_extra_dec_layer, concat_before_dec_update,
-        mark_triggers_time, mark_loss, enc_cell_type, dec_cell_type, parallel_hparam, seed, position_encode, num_feats, use_time_features, attn_rnn, coarse_attn_rnn, use_intensity, use_avg_gaps):
+        mark_triggers_time, mark_loss, enc_cell_type, dec_cell_type, parallel_hparam, seed, position_encode, num_feats, use_time_features, attn_rnn, use_intensity, use_avg_gaps):
     """Read data from EVENT_TRAIN_FILE, TIME_TRAIN_FILE and try to predict the values in EVENT_TEST_FILE, TIME_TEST_FILE."""
 
     clear_clutter = True
@@ -148,7 +147,6 @@ def cmd(dataset_name, alg_name, dataset_path,
             num_feats=num_feats,
             use_time_features=use_time_features,
             attn_rnn=attn_rnn,
-            coarse_attn_rnn=coarse_attn_rnn,
             use_intensity=use_intensity,
             use_avg_gaps=use_avg_gaps,
             _opts=def_opts_local
