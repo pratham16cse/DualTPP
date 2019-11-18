@@ -414,7 +414,8 @@ class RMTPP_DECRNN:
                                                             state_is_tuple=True)
                     enc_internal_state_t = self.enc_cell_t.zero_state(self.inf_batch_size, dtype = tf.float32)
 
-                if self.ALG_NAME in ['rmtpp_decrnn_coarseattn', 'rmtpp_decrnn_splusintensity_coarseattn']:
+                if self.ALG_NAME in ['rmtpp_decrnn_coarseattn', 'rmtpp_decrnn_splusintensity_coarseattn',
+                                     'rmtpp_decrnn_coarseattn_r', 'rmtpp_decrnn_splusintensity_coarseattn_r']:
                     enc_cell_c = tf.contrib.rnn.BasicLSTMCell(self.HIDDEN_LAYER_SIZE, forget_bias=1.0, name='coarse_attn_rnn')
                     self.enc_cell_c = tf.contrib.rnn.MultiRNNCell([enc_cell_c for _ in range(self.NUM_ENC_LAYERS)],
                                                                   state_is_tuple=True)
@@ -439,7 +440,8 @@ class RMTPP_DECRNN:
                                        name='attn_rnn_init_state')
                     self.hidden_states_t = []
 
-                if self.ALG_NAME in ['rmtpp_decrnn_coarseattn', 'rmtpp_decrnn_splusintensity_coarseattn']:
+                if self.ALG_NAME in ['rmtpp_decrnn_coarseattn', 'rmtpp_decrnn_splusintensity_coarseattn',
+                                     'rmtpp_decrnn_coarseattn_r', 'rmtpp_decrnn_splusintensity_coarseattn_r']:
                     #state_c = tf.zeros([self.inf_batch_size, int(self.HIDDEN_LAYER_SIZE)],
                     #                   dtype=self.FLOAT_TYPE,
                     #                   name='coarse_attn_rnn_init_state')
@@ -521,7 +523,8 @@ class RMTPP_DECRNN:
                                 and self.ATTN_RNN:
                             self.hidden_states_t.append(state_t)
 
-                    if self.ALG_NAME in ['rmtpp_decrnn_coarseattn', 'rmtpp_decrnn_splusintensity_coarseattn']:
+                    if self.ALG_NAME in ['rmtpp_decrnn_coarseattn', 'rmtpp_decrnn_splusintensity_coarseattn',
+                                         'rmtpp_decrnn_coarseattn_r', 'rmtpp_decrnn_splusintensity_coarseattn_r']:
                             coarse_times_in_feats_embd = self.embedFeatures(self.coarse_times_in_feats)
                             inputs = tf.concat([coarse_times_in_feats_embd, tf.expand_dims(self.coarse_gaps_in, axis=-1)], axis=-1)
                             self.hidden_states_c, _ = tf.nn.dynamic_rnn(cell=self.enc_cell_c, inputs=inputs, initial_state=state_c)
@@ -703,7 +706,8 @@ class RMTPP_DECRNN:
                     elif self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_inv', 'rmtpp_decrnn_mode', 'rmtpp_decrnn_splusintensity',
                                            'rmtpp_decrnn_latentz',
                                            'rmtpp_decrnn_attn', 'rmtpp_decrnn_splusintensity_attn', 'rmtpp_decrnn_truemarks',
-                                           'rmtpp_decrnn_coarseattn', 'rmtpp_decrnn_splusintensity_coarseattn']:
+                                           'rmtpp_decrnn_coarseattn', 'rmtpp_decrnn_splusintensity_coarseattn',
+                                           'rmtpp_decrnn_coarseattn_r', 'rmtpp_decrnn_splusintensity_coarseattn_r']:
                         self.WT = self.wt
                     elif self.ALG_NAME in ['rmtpp_decrnn_whparam', 'rmtpp_decrnn_mode_whparam']:
                         self.WT = self.wt_hparam
@@ -737,19 +741,30 @@ class RMTPP_DECRNN:
                         lookup_gaps_indices = lookup_gaps_indices + tf.expand_dims(tf.expand_dims(tf.range(0, self.DEC_LEN), axis=0), axis=-1)
                         lookup_gaps_indices = tf.minimum(lookup_gaps_indices, self.BPTT-1)
                         lookup_gaps = tf.gather(self.attn_gaps, lookup_gaps_indices, batch_dims=1)
+                    elif self.ALG_NAME in ['rmtpp_decrnn_coarseattn_r', 'rmtpp_decrnn_splusintensity_coarseattn_r']:
+                        #TODO Test this operation
+                        self.z = tf.reduce_sum(tf.expand_dims(decoder_states_concat, axis=2) * tf.expand_dims(self.hidden_states_c, axis=1), axis=-1)
+                        z_indices_sorted = tf.argsort(self.z, axis=-1, direction='DESCENDING', stable=True, name='argsort_z') 
+                        z_indices_topk = z_indices_sorted[:, :, 0:1]
+                        self.z_topk = tf.gather(self.z, z_indices_topk, batch_dims=2)
+                        attn_gaps_idxes_indices = z_indices_topk
+                        self.attn_gaps_idxes_indices = attn_gaps_idxes_indices
+                        lookup_gaps_indices = tf.gather(self.attn_gaps_idxes, attn_gaps_idxes_indices, batch_dims=1)
+                        lookup_gaps = tf.gather(self.attn_gaps, lookup_gaps_indices, batch_dims=1)
+
 
                         #self.D = tf.reduce_sum(decoder_states_concat * newVt, axis=-1) + base_intensity_bt
                         self.D = tf.squeeze(tf.layers.dense(decoder_states_concat, 1, name='attn_D_layer',
                                                             kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed),
                                                             kernel_regularizer=self.EXTLYR_REGULARIZER,
                                                             bias_regularizer=self.EXTLYR_REGULARIZER), axis=-1)
-                        if self.ALG_NAME in ['rmtpp_decrnn_splusintensity_attn', 'rmtpp_decrnn_splusintensity_coarseattn']:
+                        if self.ALG_NAME in ['rmtpp_decrnn_splusintensity_attn', 'rmtpp_decrnn_splusintensity_coarseattn', 'rmtpp_decrnn_splusintensity_coarseattn_r']:
                             self.D = tf.nn.softplus(self.D)
                             self.D = tf.expand_dims(self.D, axis=-1) + self.wt_attn * lookup_gaps
-                        elif self.ALG_NAME in ['rmtpp_decrnn_attn', 'rmtpp_decrnn_coarseattn']:
+                        elif self.ALG_NAME in ['rmtpp_decrnn_attn', 'rmtpp_decrnn_coarseattn','rmtpp_decrnn_coarseattn_r']:
                             self.D = tf.expand_dims(self.D, axis=-1) + self.wt_attn * lookup_gaps
 
-                        if self.ALG_NAME in ['rmtpp_decrnn_attn', 'rmtpp_decrnn_coarseattn']:
+                        if self.ALG_NAME in ['rmtpp_decrnn_attn', 'rmtpp_decrnn_coarseattn', 'rmtpp_decrnn_coarseattn_r']:
                             log_lambda_ = (self.D + tf.expand_dims(gaps, axis=-1) * self.WT)
                             lambda_ = tf.exp(tf.minimum(ETH, log_lambda_), name='lambda_')
                             if self.USE_INTENSITY:
@@ -759,7 +774,7 @@ class RMTPP_DECRNN:
                                 log_f_star = tf.reduce_sum(log_f_star * self.z_topk, axis=-1)
                             else:
                                 log_f_star = -tf.reduce_sum(tf.square(self.D - tf.expand_dims(gaps, axis=-1)) * self.z_topk, axis=-1)
-                        elif self.ALG_NAME in ['rmtpp_decrnn_splusintensity_attn', 'rmtpp_decrnn_splusintensity_coarseattn']:
+                        elif self.ALG_NAME in ['rmtpp_decrnn_splusintensity_attn', 'rmtpp_decrnn_splusintensity_coarseattn', 'rmtpp_decrnn_splusintensity_coarseattn_r']:
                             lambda_ = (self.D + tf.expand_dims(gaps, axis=-1) * self.WT)
                             log_lambda_ = tf.log(lambda_)
                             if self.USE_INTENSITY:
@@ -801,6 +816,10 @@ class RMTPP_DECRNN:
                                 closest_input_gaps_indices = tf.argmin(tf.abs(first_output_gap - gaps_in[:, :self.BPTT-self.DEC_LEN]), axis=-1)
                             elif self.ALG_NAME in ['rmtpp_decrnn_coarseattn', 'rmtpp_decrnn_splusintensity_coarseattn']:
                                 closest_input_gaps_indices = tf.argmin(tf.abs(first_output_gap - self.coarse_gaps_in), axis=-1)
+                            elif self.ALG_NAME in ['rmtpp_decrnn_coarseattn_r', 'rmtpp_decrnn_splusintensity_coarseattn_r']:
+                                #TODO Add attn_loss for recomputed attention model
+                                output_gaps = tf.concat([first_output_gap, self.times_out[:, 1:]-self.times_out[:, :-1]], axis=-1)
+                                closest_input_gaps_indices = tf.argmin(tf.abs(tf.expand_dims(output_gaps, axis=2)-tf.expand_dims(self.coarse_gaps_in, axis=1)), axis=-1)
                             attn_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=closest_input_gaps_indices, logits=self.z)
                             attn_loss = tf.reduce_sum(attn_loss)
                             #attn_loss = tf.Print(attn_loss, [attn_loss], message='attn_loss')
@@ -829,7 +848,8 @@ class RMTPP_DECRNN:
                         self.loss = self.loss + reg_term_dense_layers
 
                     if self.ALG_NAME in ['rmtpp_decrnn_attn', 'rmtpp_decrnn_splusintensity_attn',
-                                         'rmtpp_decrnn_coarseattn', 'rmtpp_decrnn_splusintensity_coarseattn']:
+                                         'rmtpp_decrnn_coarseattn', 'rmtpp_decrnn_splusintensity_coarseattn',
+                                         'rmtpp_decrnn_coarseattn_r', 'rmtpp_decrnn_splusintensity_coarseattn_r']:
                         self.loss += attn_loss
 
                     self.time_loss = (-1) * tf.reduce_sum(
@@ -869,7 +889,7 @@ class RMTPP_DECRNN:
                 elif self.ALG_NAME in ['rmtpp_decrnn_splusintensity']:
                     D = tf.expand_dims(self.D, axis=-1)
                     self.val = (1.0/self.WT) * (-D + tf.sqrt(tf.square(D) - 2*self.WT*tf.log(1.0-u)))
-                elif self.ALG_NAME in ['rmtpp_decrnn_attn', 'rmtpp_decrnn_coarseattn']:
+                elif self.ALG_NAME in ['rmtpp_decrnn_attn', 'rmtpp_decrnn_coarseattn', 'rmtpp_decrnn_coarseattn_r']:
                     if self.USE_INTENSITY:
                         u = tf.ones((self.inf_batch_size, self.DEC_LEN, self.NUM_DISCRETE_STATES, 1)) * tf.range(0.0, 1.0, 1.0/5000)
                         c = -tf.exp(tf.clip_by_value(self.D, -50.0, 50.0))
@@ -877,7 +897,7 @@ class RMTPP_DECRNN:
                         self.val = (1.0/self.WT) * tf.log((self.WT/c) * tf.log(1.0 - u) + 1)
                     else:
                         self.val = tf.expand_dims(self.D, axis=-1)
-                elif self.ALG_NAME in ['rmtpp_decrnn_splusintensity_attn', 'rmtpp_decrnn_splusintensity_coarseattn']:
+                elif self.ALG_NAME in ['rmtpp_decrnn_splusintensity_attn', 'rmtpp_decrnn_splusintensity_coarseattn', 'rmtpp_decrnn_splusintensity_coarseattn_r']:
                     if self.USE_INTENSITY:
                         u = tf.ones((self.inf_batch_size, self.DEC_LEN, self.NUM_DISCRETE_STATES, 1)) * tf.range(0.0, 1.0, 1.0/5000)
                         D = tf.expand_dims(self.D, axis=-1)
@@ -888,7 +908,9 @@ class RMTPP_DECRNN:
                 self.val = tf.reduce_mean(self.val, axis=-1)
                 #self.val = tf.Print(self.val, [self.val], message='Printing val')
 
-                if self.ALG_NAME in ['rmtpp_decrnn_attn', 'rmtpp_decrnn_splusintensity_attn', 'rmtpp_decrnn_coarseattn', 'rmtpp_decrnn_splusintensity_coarseattn']:
+                if self.ALG_NAME in ['rmtpp_decrnn_attn', 'rmtpp_decrnn_splusintensity_attn',
+                                     'rmtpp_decrnn_coarseattn', 'rmtpp_decrnn_splusintensity_coarseattn',
+                                     'rmtpp_decrnn_coarseattn_r', 'rmtpp_decrnn_splusintensity_coarseattn_r']:
                     self.val = tf.reduce_sum(self.val * self.z_topk, axis=-1)
 
                 # self.delta_ts.append(tf.clip_by_value(delta_t, 0.0, np.inf))
@@ -1652,7 +1674,8 @@ class RMTPP_DECRNN:
         )
 
         if self.ALG_NAME in ['rmtpp_decrnn_attn', 'rmtpp_decrnn_splusintensity_attn',
-                             'rmtpp_decrnn_coarseattn', 'rmtpp_decrnn_splusintensity_coarseattn']:
+                             'rmtpp_decrnn_coarseattn', 'rmtpp_decrnn_splusintensity_coarseattn',
+                             'rmtpp_decrnn_coarseattn_r', 'rmtpp_decrnn_splusintensity_coarseattn_r']:
             z_topk = self.sess.run(self.z_topk, feed_dict=feed_dict)
             #z = self.sess.run(self.z, feed_dict=feed_dict)
             #z_indices_topk = self.sess.run(self.z_indices_topk, feed_dict=feed_dict)
@@ -1671,7 +1694,8 @@ class RMTPP_DECRNN:
 
         if self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_inv', 'rmtpp_decrnn_mode', 'rmtpp_decrnn_splusintensity', 'rmtpp_decrnn_latentz',
                              'rmtpp_decrnn_attn', 'rmtpp_decrnn_splusintensity_attn', 'rmtpp_decrnn_truemarks',
-                             'rmtpp_decrnn_coarseattn', 'rmtpp_decrnn_splusintensity_coarseattn']:
+                             'rmtpp_decrnn_coarseattn', 'rmtpp_decrnn_splusintensity_coarseattn',
+                             'rmtpp_decrnn_coarseattn_r', 'rmtpp_decrnn_splusintensity_coarseattn_r']:
             WT = np.ones((len(event_in_seq), self.DEC_LEN, 1)) * WT
         elif self.ALG_NAME in ['rmtpp_decrnn_whparam', 'rmtpp_decrnn_mode_whparam']:
             raise NotImplemented('For whparam methods')
