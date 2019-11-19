@@ -713,7 +713,7 @@ class RMTPP_DECRNN:
                     elif self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_inv', 'rmtpp_decrnn_mode', 'rmtpp_decrnn_splusintensity',
                                            'rmtpp_decrnn_latentz',
                                            'rmtpp_decrnn_attn', 'rmtpp_decrnn_splusintensity_attn', 'rmtpp_decrnn_truemarks',
-                                           'rmtpp_decrnn_attn_r', 'rmtpp_decrnn_splusintensity_attn_r'
+                                           'rmtpp_decrnn_attn_r', 'rmtpp_decrnn_splusintensity_attn_r',
                                            'rmtpp_decrnn_coarseattn', 'rmtpp_decrnn_splusintensity_coarseattn',
                                            'rmtpp_decrnn_coarseattn_r', 'rmtpp_decrnn_splusintensity_coarseattn_r']:
                         self.WT = self.wt
@@ -871,7 +871,7 @@ class RMTPP_DECRNN:
                         self.loss = self.loss + reg_term_dense_layers
 
                     if self.ALG_NAME in ['rmtpp_decrnn_attn', 'rmtpp_decrnn_splusintensity_attn',
-                                         'rmtpp_decrnn_attn_r', 'rmtpp_decrnn_splusintensity_attn_r'
+                                         'rmtpp_decrnn_attn_r', 'rmtpp_decrnn_splusintensity_attn_r',
                                          'rmtpp_decrnn_coarseattn', 'rmtpp_decrnn_splusintensity_coarseattn',
                                          'rmtpp_decrnn_coarseattn_r', 'rmtpp_decrnn_splusintensity_coarseattn_r']:
                         self.loss += attn_loss
@@ -934,7 +934,7 @@ class RMTPP_DECRNN:
                 #self.val = tf.Print(self.val, [self.val], message='Printing val')
 
                 if self.ALG_NAME in ['rmtpp_decrnn_attn', 'rmtpp_decrnn_splusintensity_attn',
-                                     'rmtpp_decrnn_attn_r', 'rmtpp_decrnn_splusintensity_attn_r'
+                                     'rmtpp_decrnn_attn_r', 'rmtpp_decrnn_splusintensity_attn_r',
                                      'rmtpp_decrnn_coarseattn', 'rmtpp_decrnn_splusintensity_coarseattn',
                                      'rmtpp_decrnn_coarseattn_r', 'rmtpp_decrnn_splusintensity_coarseattn_r']:
                     self.val = tf.reduce_sum(self.val * self.z_topk, axis=-1)
@@ -1700,7 +1700,7 @@ class RMTPP_DECRNN:
         )
 
         if self.ALG_NAME in ['rmtpp_decrnn_attn', 'rmtpp_decrnn_splusintensity_attn',
-                             'rmtpp_decrnn_attn_r', 'rmtpp_decrnn_splusintensity_attn_r'
+                             'rmtpp_decrnn_attn_r', 'rmtpp_decrnn_splusintensity_attn_r',
                              'rmtpp_decrnn_coarseattn', 'rmtpp_decrnn_splusintensity_coarseattn',
                              'rmtpp_decrnn_coarseattn_r', 'rmtpp_decrnn_splusintensity_coarseattn_r']:
             z_topk = self.sess.run(self.z_topk, feed_dict=feed_dict)
@@ -1721,7 +1721,7 @@ class RMTPP_DECRNN:
 
         if self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_inv', 'rmtpp_decrnn_mode', 'rmtpp_decrnn_splusintensity', 'rmtpp_decrnn_latentz',
                              'rmtpp_decrnn_attn', 'rmtpp_decrnn_splusintensity_attn', 'rmtpp_decrnn_truemarks',
-                             'rmtpp_decrnn_attn_r', 'rmtpp_decrnn_splusintensity_attn_r'
+                             'rmtpp_decrnn_attn_r', 'rmtpp_decrnn_splusintensity_attn_r',
                              'rmtpp_decrnn_coarseattn', 'rmtpp_decrnn_splusintensity_coarseattn',
                              'rmtpp_decrnn_coarseattn_r', 'rmtpp_decrnn_splusintensity_coarseattn_r']:
             WT = np.ones((len(event_in_seq), self.DEC_LEN, 1)) * WT
