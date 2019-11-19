@@ -713,7 +713,7 @@ class RMTPP_DECRNN:
                     elif self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_inv', 'rmtpp_decrnn_mode', 'rmtpp_decrnn_splusintensity',
                                            'rmtpp_decrnn_latentz',
                                            'rmtpp_decrnn_attn', 'rmtpp_decrnn_splusintensity_attn', 'rmtpp_decrnn_truemarks',
-                                           'rmtpp_decrnn_attn_r', 'rmtpp_decrnn_splusintensity_attn_r'
+                                           'rmtpp_decrnn_attn_r', 'rmtpp_decrnn_splusintensity_attn_r',
                                            'rmtpp_decrnn_coarseattn', 'rmtpp_decrnn_splusintensity_coarseattn',
                                            'rmtpp_decrnn_coarseattn_r', 'rmtpp_decrnn_splusintensity_coarseattn_r']:
                         self.WT = self.wt
