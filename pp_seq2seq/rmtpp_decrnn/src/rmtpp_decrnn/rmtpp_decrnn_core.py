@@ -267,11 +267,13 @@ class RMTPP_DECRNN:
 
                 #TODO make use of self.NUM_FEATS flag to add multiple features
                 self.times_in_feats = tf.placeholder(tf.int32, [None, self.BPTT], name='times_in_feats')
+                self.times_out_feats = tf.placeholder(tf.int32, [None, self.DEC_LEN], name='times_out_feats')
 
                 self.coarse_gaps_in = tf.placeholder(self.FLOAT_TYPE, [None, None], name='coarse_gaps_in')
                 self.coarse_times_in_feats = tf.placeholder(tf.int32, [None, None], name='coarse_times_in_feats')
                 self.attn_gaps = tf.placeholder(self.FLOAT_TYPE, [None, None], name='attn_gaps')
                 self.attn_gaps_idxes = tf.placeholder(tf.int32, [None, None], name='attn_gaps_idxes')
+                self.attn_times_in_feats = tf.placeholder(tf.int32, [None, None], name='attn_times_in_feats')
 
                 self.mode = tf.placeholder(tf.float32, name='mode')
 
@@ -416,7 +418,8 @@ class RMTPP_DECRNN:
                     enc_internal_state_t = self.enc_cell_t.zero_state(self.inf_batch_size, dtype = tf.float32)
 
                 if self.ALG_NAME in ['rmtpp_decrnn_coarseattn', 'rmtpp_decrnn_splusintensity_coarseattn',
-                                     'rmtpp_decrnn_coarseattn_r', 'rmtpp_decrnn_splusintensity_coarseattn_r']:
+                                     'rmtpp_decrnn_coarseattn_r', 'rmtpp_decrnn_splusintensity_coarseattn_r',
+                                     'rmtpp_decrnn_pastattn_r', 'rmtpp_decrnn_splusintensity_pastattn_r']:
                     enc_cell_c = tf.contrib.rnn.BasicLSTMCell(self.HIDDEN_LAYER_SIZE, forget_bias=1.0, name='coarse_attn_rnn')
                     self.enc_cell_c = tf.contrib.rnn.MultiRNNCell([enc_cell_c for _ in range(self.NUM_ENC_LAYERS)],
                                                                   state_is_tuple=True)
@@ -443,7 +446,8 @@ class RMTPP_DECRNN:
                     self.hidden_states_t = []
 
                 if self.ALG_NAME in ['rmtpp_decrnn_coarseattn', 'rmtpp_decrnn_splusintensity_coarseattn',
-                                     'rmtpp_decrnn_coarseattn_r', 'rmtpp_decrnn_splusintensity_coarseattn_r']:
+                                     'rmtpp_decrnn_coarseattn_r', 'rmtpp_decrnn_splusintensity_coarseattn_r',
+                                     'rmtpp_decrnn_pastattn_r', 'rmtpp_decrnn_splusintensity_pastattn_r']:
                     #state_c = tf.zeros([self.inf_batch_size, int(self.HIDDEN_LAYER_SIZE)],
                     #                   dtype=self.FLOAT_TYPE,
                     #                   name='coarse_attn_rnn_init_state')
@@ -533,6 +537,24 @@ class RMTPP_DECRNN:
                             coarse_times_in_feats_embd = self.embedFeatures(self.coarse_times_in_feats)
                             inputs = tf.concat([coarse_times_in_feats_embd, tf.expand_dims(self.coarse_gaps_in, axis=-1)], axis=-1)
                             self.hidden_states_c, _ = tf.nn.dynamic_rnn(cell=self.enc_cell_c, inputs=inputs, initial_state=state_c)
+                    elif self.ALG_NAME in ['rmtpp_decrnn_pastattn_r', 'rmtpp_decrnn_splusintensity_pastattn_r']:
+                        attn_times_in_feats_embd = self.embedFeatures(self.attn_times_in_feats)
+                        #TODO adjust sequence length
+                        indices = tf.zeros_like(self.attn_times_in_feats, dtype=tf.float32)
+                        for idx in range(self.DEC_LEN):
+                            indices += tf.cast(tf.equal(self.attn_times_in_feats, self.times_out_feats[:, idx:idx+1]), tf.float32)
+                        indices = (indices>0)
+                        indices_test = tf.equal(self.attn_times_in_feats, self.times_in_feats[:, -1:])
+
+                        attn_gaps_in = tf.cond(tf.equal(self.mode, 1.0),
+                                               lambda: tf.where(indices, self.attn_gaps, tf.zeros_like(self.attn_gaps)),
+                                               lambda: tf.where(indices_test, self.attn_gaps, tf.zeros_like(self.attn_gaps)))
+
+                        attn_times_in_feats_embd = tf.where(tf.tile(tf.expand_dims(indices, axis=-1), [1, 1, self.EMBED_SIZE]),
+                                                            attn_times_in_feats_embd,
+                                                            tf.zeros_like(attn_times_in_feats_embd))
+                        inputs = tf.concat([attn_times_in_feats_embd, tf.expand_dims(attn_gaps_in, axis=-1)], axis=-1)
+                        self.hidden_states_c, _ = tf.nn.dynamic_rnn(cell=self.enc_cell_c, inputs=inputs, initial_state=state_c)
 
 
                     self.final_state = self.hidden_states[-1]
@@ -715,7 +737,8 @@ class RMTPP_DECRNN:
                                            'rmtpp_decrnn_attn', 'rmtpp_decrnn_splusintensity_attn', 'rmtpp_decrnn_truemarks',
                                            'rmtpp_decrnn_attn_r', 'rmtpp_decrnn_splusintensity_attn_r',
                                            'rmtpp_decrnn_coarseattn', 'rmtpp_decrnn_splusintensity_coarseattn',
-                                           'rmtpp_decrnn_coarseattn_r', 'rmtpp_decrnn_splusintensity_coarseattn_r']:
+                                           'rmtpp_decrnn_coarseattn_r', 'rmtpp_decrnn_splusintensity_coarseattn_r',
+                                           'rmtpp_decrnn_pastattn_r', 'rmtpp_decrnn_splusintensity_pastattn_r']:
                         self.WT = self.wt
                     elif self.ALG_NAME in ['rmtpp_decrnn_whparam', 'rmtpp_decrnn_mode_whparam']:
                         self.WT = self.wt_hparam
@@ -767,6 +790,13 @@ class RMTPP_DECRNN:
                             self.attn_gaps_idxes_indices = attn_gaps_idxes_indices
                             lookup_gaps_indices = tf.gather(self.attn_gaps_idxes, attn_gaps_idxes_indices, batch_dims=1)
                             lookup_gaps = tf.gather(self.attn_gaps, lookup_gaps_indices, batch_dims=1)
+                        elif self.ALG_NAME in ['rmtpp_decrnn_pastattn_r', 'rmtpp_decrnn_splusintensity_pastattn_r']:
+                            self.z = tf.reduce_sum(tf.expand_dims(decoder_states_concat, axis=2) * tf.expand_dims(self.hidden_states_c, axis=1), axis=-1)
+                            z_indices_sorted = tf.argsort(self.z, axis=-1, direction='DESCENDING', stable=True, name='argsort_z') 
+                            z_indices_topk = z_indices_sorted[:, :, 0:1]
+                            self.z_topk = tf.gather(self.z, z_indices_topk, batch_dims=2)
+                            gap_append_indices = z_indices_topk
+                            lookup_gaps = tf.gather(attn_gaps_in, gap_append_indices, batch_dims=1)
 
 
                         #self.D = tf.reduce_sum(decoder_states_concat * newVt, axis=-1) + base_intensity_bt
@@ -775,15 +805,18 @@ class RMTPP_DECRNN:
                                                             kernel_regularizer=self.EXTLYR_REGULARIZER,
                                                             bias_regularizer=self.EXTLYR_REGULARIZER), axis=-1)
                         if self.ALG_NAME in ['rmtpp_decrnn_splusintensity_attn', 'rmtpp_decrnn_splusintensity_attn_r',
-                                             'rmtpp_decrnn_splusintensity_coarseattn', 'rmtpp_decrnn_splusintensity_coarseattn_r']:
+                                             'rmtpp_decrnn_splusintensity_coarseattn', 'rmtpp_decrnn_splusintensity_coarseattn_r',
+                                             'rmtpp_decrnn_splusintensity_pastattn_r']:
                             self.D = tf.nn.softplus(self.D)
                             self.D = tf.expand_dims(self.D, axis=-1) + self.wt_attn * lookup_gaps
                         elif self.ALG_NAME in ['rmtpp_decrnn_attn', 'rmtpp_decrnn_attn_r',
-                                               'rmtpp_decrnn_coarseattn','rmtpp_decrnn_coarseattn_r']:
+                                               'rmtpp_decrnn_coarseattn','rmtpp_decrnn_coarseattn_r',
+                                               'rmtpp_decrnn_pastattn_r']:
                             self.D = tf.expand_dims(self.D, axis=-1) + self.wt_attn * lookup_gaps
 
                         if self.ALG_NAME in ['rmtpp_decrnn_attn', 'rmtpp_decrnn_attn_r',
-                                             'rmtpp_decrnn_coarseattn', 'rmtpp_decrnn_coarseattn_r']:
+                                             'rmtpp_decrnn_coarseattn', 'rmtpp_decrnn_coarseattn_r',
+                                             'rmtpp_decrnn_pastattn_r']:
                             log_lambda_ = (self.D + tf.expand_dims(gaps, axis=-1) * self.WT)
                             lambda_ = tf.exp(tf.minimum(ETH, log_lambda_), name='lambda_')
                             if self.USE_INTENSITY:
@@ -794,7 +827,8 @@ class RMTPP_DECRNN:
                             else:
                                 log_f_star = -tf.reduce_sum(tf.square(self.D - tf.expand_dims(gaps, axis=-1)) * self.z_topk, axis=-1)
                         elif self.ALG_NAME in ['rmtpp_decrnn_splusintensity_attn', 'rmtpp_decrnn_splusintensity_attn_r',
-                                               'rmtpp_decrnn_splusintensity_coarseattn', 'rmtpp_decrnn_splusintensity_coarseattn_r']:
+                                               'rmtpp_decrnn_splusintensity_coarseattn', 'rmtpp_decrnn_splusintensity_coarseattn_r',
+                                               'rmtpp_decrnn_splusintensity_pastattn_r']:
                             lambda_ = (self.D + tf.expand_dims(gaps, axis=-1) * self.WT)
                             log_lambda_ = tf.log(lambda_)
                             if self.USE_INTENSITY:
@@ -840,9 +874,12 @@ class RMTPP_DECRNN:
                             elif self.ALG_NAME in ['rmtpp_decrnn_coarseattn', 'rmtpp_decrnn_splusintensity_coarseattn']:
                                 closest_input_gaps_indices = tf.argmin(tf.abs(first_output_gap - self.coarse_gaps_in), axis=-1)
                             elif self.ALG_NAME in ['rmtpp_decrnn_coarseattn_r', 'rmtpp_decrnn_splusintensity_coarseattn_r']:
-                                #TODO Add attn_loss for recomputed attention model
                                 output_gaps = tf.concat([first_output_gap, self.times_out[:, 1:]-self.times_out[:, :-1]], axis=-1)
                                 closest_input_gaps_indices = tf.argmin(tf.abs(tf.expand_dims(output_gaps, axis=2)-tf.expand_dims(self.coarse_gaps_in, axis=1)), axis=-1)
+                            elif self.ALG_NAME in ['rmtpp_decrnn_pastattn_r', 'rmtpp_decrnn_splusintensity_pastattn_r']:
+                                output_gaps = tf.concat([first_output_gap, self.times_out[:, 1:]-self.times_out[:, :-1]], axis=-1)
+                                closest_input_gaps_indices = tf.argmin(tf.abs(tf.expand_dims(output_gaps, axis=2)-tf.expand_dims(attn_gaps_in, axis=1)), axis=-1)
+
                             attn_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=closest_input_gaps_indices, logits=self.z)
                             attn_loss = tf.reduce_sum(attn_loss)
                             #attn_loss = tf.Print(attn_loss, [attn_loss], message='attn_loss')
@@ -873,7 +910,8 @@ class RMTPP_DECRNN:
                     if self.ALG_NAME in ['rmtpp_decrnn_attn', 'rmtpp_decrnn_splusintensity_attn',
                                          'rmtpp_decrnn_attn_r', 'rmtpp_decrnn_splusintensity_attn_r',
                                          'rmtpp_decrnn_coarseattn', 'rmtpp_decrnn_splusintensity_coarseattn',
-                                         'rmtpp_decrnn_coarseattn_r', 'rmtpp_decrnn_splusintensity_coarseattn_r']:
+                                         'rmtpp_decrnn_coarseattn_r', 'rmtpp_decrnn_splusintensity_coarseattn_r',
+                                         'rmtpp_decrnn_pastattn_r', 'rmtpp_decrnn_splusintensity_pastattn_r']:
                         self.loss += attn_loss
 
                     self.time_loss = (-1) * tf.reduce_sum(
@@ -913,7 +951,7 @@ class RMTPP_DECRNN:
                 elif self.ALG_NAME in ['rmtpp_decrnn_splusintensity']:
                     D = tf.expand_dims(self.D, axis=-1)
                     self.val = (1.0/self.WT) * (-D + tf.sqrt(tf.square(D) - 2*self.WT*tf.log(1.0-u)))
-                elif self.ALG_NAME in ['rmtpp_decrnn_attn', 'rmtpp_decrnn_attn_r', 'rmtpp_decrnn_coarseattn', 'rmtpp_decrnn_coarseattn_r']:
+                elif self.ALG_NAME in ['rmtpp_decrnn_attn', 'rmtpp_decrnn_attn_r', 'rmtpp_decrnn_coarseattn', 'rmtpp_decrnn_coarseattn_r', 'rmtpp_decrnn_pastattn_r']:
                     if self.USE_INTENSITY:
                         u = tf.ones((self.inf_batch_size, self.DEC_LEN, self.NUM_DISCRETE_STATES, 1)) * tf.range(0.0, 1.0, 1.0/5000)
                         c = -tf.exp(tf.clip_by_value(self.D, -50.0, 50.0))
@@ -922,7 +960,7 @@ class RMTPP_DECRNN:
                     else:
                         self.val = tf.expand_dims(self.D, axis=-1)
                 elif self.ALG_NAME in ['rmtpp_decrnn_splusintensity_attn', 'rmtpp_decrnn_splusintensity_attn_r',
-                                       'rmtpp_decrnn_splusintensity_coarseattn', 'rmtpp_decrnn_splusintensity_coarseattn_r']:
+                                       'rmtpp_decrnn_splusintensity_coarseattn', 'rmtpp_decrnn_splusintensity_coarseattn_r', 'rmtpp_decrnn_splusintensity_pastattn_r']:
                     if self.USE_INTENSITY:
                         u = tf.ones((self.inf_batch_size, self.DEC_LEN, self.NUM_DISCRETE_STATES, 1)) * tf.range(0.0, 1.0, 1.0/5000)
                         D = tf.expand_dims(self.D, axis=-1)
@@ -936,7 +974,8 @@ class RMTPP_DECRNN:
                 if self.ALG_NAME in ['rmtpp_decrnn_attn', 'rmtpp_decrnn_splusintensity_attn',
                                      'rmtpp_decrnn_attn_r', 'rmtpp_decrnn_splusintensity_attn_r',
                                      'rmtpp_decrnn_coarseattn', 'rmtpp_decrnn_splusintensity_coarseattn',
-                                     'rmtpp_decrnn_coarseattn_r', 'rmtpp_decrnn_splusintensity_coarseattn_r']:
+                                     'rmtpp_decrnn_coarseattn_r', 'rmtpp_decrnn_splusintensity_coarseattn_r',
+                                     'rmtpp_decrnn_pastattn_r', 'rmtpp_decrnn_splusintensity_pastattn_r']:
                     self.val = tf.reduce_sum(self.val * self.z_topk, axis=-1)
 
                 # self.delta_ts.append(tf.clip_by_value(delta_t, 0.0, np.inf))
@@ -1102,8 +1141,10 @@ class RMTPP_DECRNN:
         train_event_out_seq = training_data['train_event_out_seq']
         train_time_out_seq = training_data['train_time_out_seq']
         train_time_in_feats = training_data['train_time_in_feats']
+        train_time_out_feats = training_data['train_time_out_feats']
         coarse_train_gaps_in_seq = training_data['coarse_train_gaps_in_seq']
         coarse_train_time_in_feats = training_data['coarse_train_time_in_feats']
+        attn_train_time_in_feats = training_data['attn_train_time_in_feats']
         attn_train_gaps = training_data['attn_train_gaps']
         attn_train_gaps_idxes = training_data['attn_train_gaps_idxes']
 
@@ -1142,10 +1183,12 @@ class RMTPP_DECRNN:
                 batch_time_train_in = train_time_in_seq[batch_idxes, :]
                 batch_time_train_out = train_time_out_seq[batch_idxes, :]
                 batch_time_train_feats = train_time_in_feats[batch_idxes, :]
+                batch_time_train_out_feats = train_time_out_feats[batch_idxes, :]
                 batch_coarse_train_gaps_in_seq = pad_sequences(np.array(coarse_train_gaps_in_seq)[batch_idxes], dtype=float, padding='post')
                 batch_coarse_train_time_in_feats = pad_sequences(np.array(coarse_train_time_in_feats)[batch_idxes], dtype=float, padding='post')
                 batch_attn_train_gaps = pad_sequences(np.array(attn_train_gaps)[batch_idxes], dtype=float, padding='post')
                 batch_attn_train_gaps_idxes = pad_sequences(np.array(attn_train_gaps_idxes)[batch_idxes], dtype=float, padding='post')
+                batch_attn_train_time_in_feats = pad_sequences(np.array(attn_train_time_in_feats)[batch_idxes], dtype=float, padding='post')
 
                 cur_state = np.zeros((self.BATCH_SIZE, self.HIDDEN_LAYER_SIZE))
                 batch_loss = 0.0
@@ -1162,8 +1205,10 @@ class RMTPP_DECRNN:
                     self.times_in: batch_time_train_in,
                     self.times_out: batch_time_train_out,
                     self.times_in_feats: batch_time_train_feats,
+                    self.times_out_feats: batch_time_train_out_feats,
                     self.batch_num_events: batch_num_events,
                     self.coarse_times_in_feats: batch_coarse_train_time_in_feats,
+                    self.attn_times_in_feats: batch_attn_train_time_in_feats,
                     self.coarse_gaps_in: batch_coarse_train_gaps_in_seq,
                     self.attn_gaps: batch_attn_train_gaps,
                     self.attn_gaps_idxes: batch_attn_train_gaps_idxes,
@@ -1238,6 +1283,8 @@ class RMTPP_DECRNN:
                                        pad_sequences(training_data['attn_dev_gaps_idxes'], dtype=float, padding='post'),
                                        pad_sequences(training_data['coarse_dev_gaps_in_seq'], dtype=float, padding='post'),
                                        pad_sequences(training_data['coarse_dev_time_in_feats'], dtype=float, padding='post'),
+                                       training_data['dev_time_out_feats'],
+                                       pad_sequences(training_data['attn_dev_time_in_feats'], dtype=float, padding='post'),
                                        single_threaded=True,
                                        event_out_seq=training_data['dev_event_out_seq'] if self.ALG_NAME=='rmtpp_decrnn_truemarks' else None)
                 dev_loss, dev_time_loss, dev_mark_loss = self.evaluate_likelihood(training_data['dev_event_in_seq'],
@@ -1250,7 +1297,9 @@ class RMTPP_DECRNN:
                                                                                   pad_sequences(training_data['attn_dev_gaps'], dtype=float, padding='post'),
                                                                                   pad_sequences(training_data['attn_dev_gaps_idxes'], dtype=float, padding='post'),
                                                                                   pad_sequences(training_data['coarse_dev_gaps_in_seq'], dtype=float, padding='post'),
-                                                                                  pad_sequences(training_data['coarse_dev_time_in_feats'], dtype=float, padding='post'))
+                                                                                  pad_sequences(training_data['coarse_dev_time_in_feats'], dtype=float, padding='post'),
+                                                                                  training_data['dev_time_out_feats'],
+                                                                                  pad_sequences(training_data['attn_dev_time_in_feats'], dtype=float, padding='post'))
 
                 dev_loss_list.append(dev_loss)
                 dev_time_loss_list.append(dev_time_loss)
@@ -1310,6 +1359,8 @@ class RMTPP_DECRNN:
                                        pad_sequences(training_data['attn_test_gaps_idxes'], dtype=float, padding='post'),
                                        pad_sequences(training_data['coarse_test_gaps_in_seq'], dtype=float, padding='post'),
                                        pad_sequences(training_data['coarse_test_time_in_feats'], dtype=float, padding='post'),
+                                       training_data['test_time_out_feats'],
+                                       pad_sequences(training_data['attn_test_time_in_feats'], dtype=float, padding='post'),
                                        single_threaded=True,
                                        event_out_seq=training_data['test_event_out_seq'] if self.ALG_NAME=='rmtpp_decrnn_truemarks' else None)
                 test_loss, test_time_loss, test_mark_loss = self.evaluate_likelihood(training_data['test_event_in_seq'],
@@ -1322,7 +1373,9 @@ class RMTPP_DECRNN:
                                                                                      pad_sequences(training_data['attn_test_gaps'], dtype=float, padding='post'),
                                                                                      pad_sequences(training_data['attn_test_gaps_idxes'], dtype=float, padding='post'),
                                                                                      pad_sequences(training_data['coarse_test_gaps_in_seq'], dtype=float, padding='post'),
-                                                                                     pad_sequences(training_data['coarse_test_time_in_feats'], dtype=float, padding='post'))
+                                                                                     pad_sequences(training_data['coarse_test_time_in_feats'], dtype=float, padding='post'),
+                                                                                     training_data['test_time_out_feats'],
+                                                                                     pad_sequences(training_data['attn_test_time_in_feats'], dtype=float, padding='post'))
                 test_loss_list.append(test_loss)
                 test_time_loss_list.append(test_time_loss)
                 test_mark_loss_list.append(test_mark_loss)
@@ -1450,6 +1503,8 @@ class RMTPP_DECRNN:
                                    pad_sequences(training_data['attn_dev_gaps_idxes'], dtype=float, padding='post'),
                                    pad_sequences(training_data['coarse_dev_gaps_in_seq'], dtype=float, padding='post'),
                                    pad_sequences(training_data['coarse_dev_time_in_feats'], dtype=float, padding='post'),
+                                   training_data['dev_time_out_feats'],
+                                   pad_sequences(training_data['attn_dev_time_in_feats'], dtype=float, padding='post'),
                                    single_threaded=True,
                                    event_out_seq=training_data['dev_event_out_seq'] if self.ALG_NAME=='rmtpp_decrnn_truemarks' else None)
             dev_loss, dev_time_loss, dev_mark_loss = self.evaluate_likelihood(training_data['dev_event_in_seq'],
@@ -1462,7 +1517,9 @@ class RMTPP_DECRNN:
                                                                               pad_sequences(training_data['attn_dev_gaps'], dtype=float, padding='post'),
                                                                               pad_sequences(training_data['attn_dev_gaps_idxes'], dtype=float, padding='post'),
                                                                               pad_sequences(training_data['coarse_dev_gaps_in_seq'], dtype=float, padding='post'),
-                                                                              pad_sequences(training_data['coarse_dev_time_in_feats'], dtype=float, padding='post'))
+                                                                              pad_sequences(training_data['coarse_dev_time_in_feats'], dtype=float, padding='post'),
+                                                                              training_data['dev_time_out_feats'],
+                                                                              pad_sequences(training_data['attn_dev_time_in_feats'], dtype=float, padding='post'))
             dev_inference_times.append(inference_time)
             dev_time_preds = dev_time_preds[:,:dec_len_for_eval]
             dev_time_out_seq = np.array(training_data['dev_actual_time_out_seq'])[:,:dec_len_for_eval]
@@ -1489,6 +1546,8 @@ class RMTPP_DECRNN:
                                    pad_sequences(training_data['attn_test_gaps_idxes'], dtype=float, padding='post'),
                                    pad_sequences(training_data['coarse_test_gaps_in_seq'], dtype=float, padding='post'),
                                    pad_sequences(training_data['coarse_test_time_in_feats'], dtype=float, padding='post'),
+                                   training_data['test_time_out_feats'],
+                                   pad_sequences(training_data['attn_test_time_in_feats'], dtype=float, padding='post'),
                                    single_threaded=True,
                                    event_out_seq=training_data['test_event_out_seq'] if self.ALG_NAME=='rmtpp_decrnn_truemarks' else None)
             test_loss, test_time_loss, test_mark_loss = self.evaluate_likelihood(training_data['test_event_in_seq'],
@@ -1501,7 +1560,10 @@ class RMTPP_DECRNN:
                                                                                  pad_sequences(training_data['attn_test_gaps'], dtype=float, padding='post'),
                                                                                  pad_sequences(training_data['attn_test_gaps_idxes'], dtype=float, padding='post'),
                                                                                  pad_sequences(training_data['coarse_test_gaps_in_seq'], dtype=float, padding='post'),
-                                                                                 pad_sequences(training_data['coarse_test_time_in_feats'], dtype=float, padding='post'))
+                                                                                 pad_sequences(training_data['coarse_test_time_in_feats'], dtype=float, padding='post'),
+                                                                                 training_data['test_time_out_feats'],
+                                                                                 pad_sequences(training_data['attn_test_time_in_feats'], dtype=float, padding='post'))
+
             test_inference_times.append(inference_time)
             test_time_preds = test_time_preds[:,:dec_len_for_eval]
             test_time_out_seq = np.array(training_data['test_actual_time_out_seq'])[:,:dec_len_for_eval]
@@ -1597,7 +1659,8 @@ class RMTPP_DECRNN:
 
     def evaluate_likelihood(self, event_in_seq, time_in_seq, event_out_seq, time_out_seq,
                             time_in_feats, time_out_feats, decoder_length,
-                            attn_gaps, attn_gaps_idxes, coarse_gaps_in_seq, coarse_times_in_feats):
+                            attn_gaps, attn_gaps_idxes, coarse_gaps_in_seq, coarse_times_in_feats,
+                            times_out_feats, attn_times_in_feats):
 
         num_events = np.sum(event_in_seq > 0)
         cur_state = np.zeros((event_in_seq.shape[0], self.HIDDEN_LAYER_SIZE))
@@ -1612,11 +1675,13 @@ class RMTPP_DECRNN:
             self.times_in: time_in_seq,
             self.times_out: time_out_seq,
             self.times_in_feats: time_in_feats,
+            self.times_out_feats: time_out_feats,
             self.batch_num_events: num_events,
             self.coarse_times_in_feats: coarse_times_in_feats,
             self.coarse_gaps_in: coarse_gaps_in_seq,
             self.attn_gaps: attn_gaps,
             self.attn_gaps_idxes: attn_gaps_idxes,
+            self.attn_times_in_feats: attn_times_in_feats,
             self.mode: 1.0,
         }
 
@@ -1630,6 +1695,7 @@ class RMTPP_DECRNN:
 
     def predict(self, event_in_seq, time_in_seq, time_in_feats, dec_len_for_eval,
                 attn_gaps, attn_gaps_idxes, coarse_gaps_in_seq, coarse_times_in_feats,
+                times_out_feats, attn_times_in_feats,
                 single_threaded=False, plot_dir=False, event_out_seq=None):
         """Treats the entire dataset as a single batch and processes it."""
 
@@ -1687,10 +1753,12 @@ class RMTPP_DECRNN:
             self.events_out: event_out_seq,
             self.times_out: time_out_seq,
             self.times_in_feats: time_in_feats,
+            self.times_out_feats: times_out_feats,
             self.coarse_times_in_feats: coarse_times_in_feats,
             self.coarse_gaps_in: coarse_gaps_in_seq,
             self.attn_gaps: attn_gaps,
             self.attn_gaps_idxes: attn_gaps_idxes,
+            self.attn_times_in_feats: attn_times_in_feats,
             self.mode: mode #Test Mode
         }
 
@@ -1702,7 +1770,8 @@ class RMTPP_DECRNN:
         if self.ALG_NAME in ['rmtpp_decrnn_attn', 'rmtpp_decrnn_splusintensity_attn',
                              'rmtpp_decrnn_attn_r', 'rmtpp_decrnn_splusintensity_attn_r',
                              'rmtpp_decrnn_coarseattn', 'rmtpp_decrnn_splusintensity_coarseattn',
-                             'rmtpp_decrnn_coarseattn_r', 'rmtpp_decrnn_splusintensity_coarseattn_r']:
+                             'rmtpp_decrnn_coarseattn_r', 'rmtpp_decrnn_splusintensity_coarseattn_r',
+                             'rmtpp_decrnn_pastattn_r', 'rmtpp_decrnn_splusintensity_pastattn_r']:
             z_topk = self.sess.run(self.z_topk, feed_dict=feed_dict)
             #z = self.sess.run(self.z, feed_dict=feed_dict)
             #z_indices_topk = self.sess.run(self.z_indices_topk, feed_dict=feed_dict)
@@ -1723,7 +1792,8 @@ class RMTPP_DECRNN:
                              'rmtpp_decrnn_attn', 'rmtpp_decrnn_splusintensity_attn', 'rmtpp_decrnn_truemarks',
                              'rmtpp_decrnn_attn_r', 'rmtpp_decrnn_splusintensity_attn_r',
                              'rmtpp_decrnn_coarseattn', 'rmtpp_decrnn_splusintensity_coarseattn',
-                             'rmtpp_decrnn_coarseattn_r', 'rmtpp_decrnn_splusintensity_coarseattn_r']:
+                             'rmtpp_decrnn_coarseattn_r', 'rmtpp_decrnn_splusintensity_coarseattn_r',
+                             'rmtpp_decrnn_pastattn_r', 'rmtpp_decrnn_splusintensity_pastattn_r']:
             WT = np.ones((len(event_in_seq), self.DEC_LEN, 1)) * WT
         elif self.ALG_NAME in ['rmtpp_decrnn_whparam', 'rmtpp_decrnn_mode_whparam']:
             raise NotImplemented('For whparam methods')

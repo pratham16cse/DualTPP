@@ -234,17 +234,20 @@ def read_seq2seq_data(dataset_path, normalization=None, pad=True):
         coarse_time_in_feats = list()
         attn_gaps_idxes = list()
         attn_gaps = list()
+        attn_time_in_feats = list()
         for sequence in attn_time_seq:
             gaps = list()
             coarse_seq = list()
             begin_idxes = list()
             coarse_feats = list()
+            attn_feats = list()
             cnt, total_gap = 0, 0.0
             begin_ts = sequence[0]
             begin_idxes.append(0)
             hod = list()
             for i, ts in enumerate(sequence[:-enc_len]):
                 gaps.append((sequence[i] - sequence[i-1]) if i>0 else 0.0)
+                attn_feats.append(getHour(ts))
                 #if ts > begin_ts + DELTA or i==len(sequence)-1:
                 if ts > begin_ts + DELTA or i==len(sequence)-1-enc_len:
                     #print(ts > begin_ts + DELTA, i==len(sequence)-1)
@@ -275,6 +278,7 @@ def read_seq2seq_data(dataset_path, normalization=None, pad=True):
 
             for i, ts in enumerate(sequence[-enc_len:], start=len(sequence)-enc_len):
                 gaps.append((sequence[i] - sequence[i-1]) if i>0 else 0.0)
+                attn_feats.append(getHour(ts))
                 coarse_seq.append((sequence[i] - sequence[i-1]) if i>0 else 0.0)
                 coarse_feats.append(getHour(ts))
                 if i<len(sequence)-1:
@@ -288,6 +292,7 @@ def read_seq2seq_data(dataset_path, normalization=None, pad=True):
             attn_gaps_idxes.append(begin_idxes)
             coarse_gaps_in_seq.append(coarse_seq)
             coarse_time_in_feats.append(coarse_feats)
+            attn_time_in_feats.append(attn_feats)
 
 
         #lens = [len(sequence) for sequence in coarse_gaps_in_seq]
@@ -295,11 +300,11 @@ def read_seq2seq_data(dataset_path, normalization=None, pad=True):
         #lens_counts = Counter(lens)
         #for k in sorted(lens_counts.keys()):
         #    print(k, lens_counts[k]
-        return attn_gaps, attn_gaps_idxes, coarse_gaps_in_seq, coarse_time_in_feats
+        return attn_gaps, attn_gaps_idxes, coarse_gaps_in_seq, coarse_time_in_feats, attn_time_in_feats
 
-    attn_train_gaps, attn_train_gaps_idxes, coarse_train_gaps_in_seq, coarse_train_time_in_feats = create_coarse_seq(attn_timeTrainIn)
-    attn_dev_gaps, attn_dev_gaps_idxes, coarse_dev_gaps_in_seq, coarse_dev_time_in_feats = create_coarse_seq(attn_timeDevIn)
-    attn_test_gaps, attn_test_gaps_idxes, coarse_test_gaps_in_seq, coarse_test_time_in_feats = create_coarse_seq(attn_timeTestIn)
+    attn_train_gaps, attn_train_gaps_idxes, coarse_train_gaps_in_seq, coarse_train_time_in_feats, attn_train_time_in_feats = create_coarse_seq(attn_timeTrainIn)
+    attn_dev_gaps, attn_dev_gaps_idxes, coarse_dev_gaps_in_seq, coarse_dev_time_in_feats, attn_dev_time_in_feats = create_coarse_seq(attn_timeDevIn)
+    attn_test_gaps, attn_test_gaps_idxes, coarse_test_gaps_in_seq, coarse_test_time_in_feats, attn_test_time_in_feats = create_coarse_seq(attn_timeTestIn)
 
     #for sequence in coarse_train_gaps_in_seq[:20]:
     #    for s in sequence:
@@ -345,14 +350,17 @@ def read_seq2seq_data(dataset_path, normalization=None, pad=True):
         'attn_train_gaps_idxes': attn_train_gaps_idxes,
         'coarse_train_gaps_in_seq': coarse_train_gaps_in_seq,
         'coarse_train_time_in_feats': coarse_train_time_in_feats,
+        'attn_train_time_in_feats': attn_train_time_in_feats,
         'attn_dev_gaps': attn_dev_gaps,
         'attn_dev_gaps_idxes': attn_dev_gaps_idxes,
         'coarse_dev_gaps_in_seq': coarse_dev_gaps_in_seq,
         'coarse_dev_time_in_feats': coarse_dev_time_in_feats,
+        'attn_dev_time_in_feats': attn_dev_time_in_feats,
         'attn_test_gaps': attn_test_gaps,
         'attn_test_gaps_idxes': attn_test_gaps_idxes,
         'coarse_test_gaps_in_seq': coarse_test_gaps_in_seq,
         'coarse_test_time_in_feats': coarse_test_time_in_feats,
+        'attn_test_time_in_feats': attn_test_time_in_feats,
 
 
         'num_categories': len(unique_samples),
