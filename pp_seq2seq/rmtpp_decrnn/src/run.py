@@ -69,6 +69,7 @@ def cmd(dataset_name, alg_name, dataset_path,
 
     data = rmtpp_decrnn.utils.read_seq2seq_data(
         dataset_path=dataset_path,
+        alg_name=alg_name,
         normalization=normalization,
     )
 
