@@ -15,6 +15,9 @@ def getDatetime(epoch):
     date= datetime.strptime(date_string, "%d-%m-%Y %H:%M:%S")
     return date
 
+#def getHour(epoch):
+#    return getDatetime(epoch).hour
+
 pad_sequences = preprocessing.sequence.pad_sequences
 DELTA = 3600.0
 
@@ -323,7 +326,8 @@ def read_seq2seq_data(dataset_path, alg_name, normalization=None, pad=True):
 
 
     if alg_name in ['rmtpp_decrnn_pastattn_r', 'rmtpp_decrnn_splusintensity_pastattn_r',
-                    'rmtpp_decrnn_pastattn', 'rmtpp_decrnn_splusintensity_pastattn',]:
+                    'rmtpp_decrnn_pastattn', 'rmtpp_decrnn_splusintensity_pastattn',
+                    'rmtpp_decrnn_pastattnstate', 'rmtpp_decrnn_splusintensity_pastattnstate',]:
         def get_past_attn_feats(attn_time_seq, attn_time_in_feats, attn_gaps):
             attn_feats_past_day = list()
             attn_gaps_past_day = list()
