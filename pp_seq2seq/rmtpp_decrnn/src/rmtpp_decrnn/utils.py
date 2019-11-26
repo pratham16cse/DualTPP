@@ -359,8 +359,20 @@ def read_seq2seq_data(dataset_path, alg_name, normalization=None, pad=True):
                     print('NOT FOUND')
                     attn_idx = len(sequence) - 11
 
-                attn_feats_past_day.append(attn_feats[attn_idx-10:attn_idx+10])
-                attn_gaps_past_day.append(gaps[attn_idx-10:attn_idx+10])
+                if attn_idx-10<0:
+                    begin_idx = 0
+                    end_idx = 20
+                elif attn_idx+10>=len(attn_feats):
+                    begin_idx = len(attn_feats)-1-20
+                    end_idx = len(attn_feats)-1
+                else:
+                    begin_idx = attn_idx-10
+                    end_idx = attn_idx+10
+
+                assert begin_idx>=0 and end_idx>=0
+
+                attn_feats_past_day.append(attn_feats[begin_idx:end_idx])
+                attn_gaps_past_day.append(gaps[begin_idx:end_idx])
 
             print('Fraction of Indices Found:', found_cnt *1.0/len(attn_time_seq))
 
