@@ -15,8 +15,14 @@ def getDatetime(epoch):
     date= datetime.strptime(date_string, "%d-%m-%Y %H:%M:%S")
     return date
 
-#def getHour(epoch):
-#    return getDatetime(epoch).hour
+def timestampTotime(ts):
+    #t = time.strftime("%Y %m %d %H %M %S", time.localtime(ts)).split(' ')
+    t = time.strftime("%m %d %H %M %S", time.gmtime(ts)).split(' ')
+    t = [int(i) for i in t]
+    return t
+
+def getHour(epoch):
+    return timestampTotime(epoch)[2]
 
 pad_sequences = preprocessing.sequence.pad_sequences
 DELTA = 3600.0
@@ -333,37 +339,48 @@ def read_seq2seq_data(dataset_path, alg_name, normalization=None, pad=True):
             attn_gaps_past_day = list()
             found_cnt = 0
             for sequence, attn_feats, gaps in zip(attn_time_seq, attn_time_in_feats, attn_gaps):
-                last_dt = getDatetime(sequence[-1])
+                last_dt = timestampTotime(sequence[-1])
                 last_hour = attn_feats[-1]
-                assert last_dt.hour == last_hour
-                last_day = last_dt.day
+                assert last_dt[2] == last_hour
+                last_day = last_dt[1]
+                last_hour = last_dt[2] + last_dt[3]*1.0/60 + last_dt[4]*1.0/3600
                 # Get index of nearest hour in the day before dt.date
                 ind_found = False
-                for ind, ts in zip(range(len(sequence)-1, -1, -1), reversed(sequence)):
-                    dt = getDatetime(ts)
-                    if dt.day!= last_dt.day and dt.hour == last_dt.hour:
-                        print(ind, 'ind found')
-                        attn_idx = ind
-                        ind_found = True
-                        found_cnt += 1
-                        break
-                if not ind_found:
-                    for ind, ts in zip(range(len(sequence)-1, -1, -1), reversed(sequence)):
-                        dt = getDatetime(ts)
-                        if dt.day!= last_dt.day and abs(dt.hour - last_dt.hour) <=2:
-                            print(ind, 'ind found')
-                            attn_idx = ind
-                            ind_found = True
-                            break
-                if not ind_found:
-                    print('NOT FOUND')
-                    attn_idx = len(sequence) - 11
+                seq_parsed = [timestampTotime(ts) for ts in sequence]
+                hod = [ts[2] + ts[3]*1.0/60 + ts[4]*1.0/3600 for ts in seq_parsed]
+                dow = [ts[1] for ts in seq_parsed]
+                not_same_day = (np.array(dow) != last_day)
+                if not np.any(not_same_day):
+                    attn_idx = (np.abs(np.array(hod) - last_hour)).argmin()
+                else:
+                    attn_idx = (np.abs(np.array(hod)[not_same_day] - last_hour)).argmin()
+                closest_hod = np.array(hod)[attn_idx]
+                print(attn_idx, closest_hod, last_hour)
+                #for ind, ts in zip(range(len(sequence)-1, -1, -1), reversed(sequence)):
+                #    dt = timestampTotime(ts)
+                #    if dt[1]!= last_dt[1] and dt[2] == last_dt[2]:
+                #        print(ind, 'ind found')
+                #        attn_idx = ind
+                #        ind_found = True
+                #        found_cnt += 1
+                #        break
+                #if not ind_found:
+                #    for ind, ts in zip(range(len(sequence)-1, -1, -1), reversed(sequence)):
+                #        dt = timestampTotime(ts)
+                #        if dt[1]!= last_dt[1] and abs(dt[2] - last_dt[2]) <=2:
+                #            print(ind, 'ind found')
+                #            attn_idx = ind
+                #            ind_found = True
+                #            break
+                #if not ind_found:
+                #    print('NOT FOUND')
+                #    attn_idx = len(sequence) - 11
 
                 if attn_idx-10<0:
                     begin_idx = 0
                     end_idx = 20
                 elif attn_idx+10>=len(attn_feats):
-                    begin_idx = len(attn_feats)-1-20
+                    begin_idx = max(0, len(attn_feats)-1-20)
                     end_idx = len(attn_feats)-1
                 else:
                     begin_idx = attn_idx-10
