@@ -419,7 +419,7 @@ class RMTPP:
                                 self.WT = tf.matmul(state, self.Vw) + base_intensity_bw
                                 self.WT = get_WT_constraint()(self.WT)
                                 self.WT = tf.clip_by_value(self.WT, 0.0, 10.0)
-                            elif self.ALG_NAME in ['rmtpp', 'rmtpp_mode', 'rmtpp_splusintensity', 'zero_pred', 'average_gap_pred']:
+                            elif self.ALG_NAME in ['rmtpp', 'rmtpp_mode', 'rmtpp_splusintensity', 'zero_pred', 'average_gap_pred', 'average_tr_gap_pred']:
                                 self.WT = self.wt
                             elif self.ALG_NAME in ['rmtpp_whparam', 'rmtpp_mode_whparam']:
                                 self.WT = self.wt_hparam
@@ -531,10 +531,11 @@ class RMTPP:
                     #self.val = tf.Print(self.val, [tf.reduce_sum(tf.cast(tf.is_finite(c), tf.int32)), 1.0/self.WT], message='Printing c')
                     #self.val = tf.Print(self.val, [tf.reduce_sum(tf.cast(tf.is_finite(1.0/c), tf.int32)), 1.0/self.WT], message='Printing 1/c')
                     #self.val = tf.Print(self.val, [tf.reduce_sum(tf.cast(tf.is_finite(tf.log(1.0 - u)), tf.int32)), 1.0/self.WT], message='Printing log and 1/w')
+                    self.val = tf.reduce_mean(self.val, axis=1)
                 elif self.ALG_NAME in ['rmtpp_splusintensity']:
                     self.val = (1.0/self.WT) * (-self.D + tf.sqrt(tf.square(self.D) - 2*self.WT*tf.log(1.0-u)))
+                    self.val = tf.reduce_mean(self.val, axis=1)
 
-                self.val = tf.reduce_mean(self.val, axis=1)
                 #self.val = tf.Print(self.val, [self.val], message='Printing val')
 
                 with tf.device(device_cpu):
@@ -807,6 +808,7 @@ class RMTPP:
                                        training_data['dev_time_in_seq'],
                                        training_data['dev_time_in_feats'],
                                        dec_len_for_eval,
+                                       training_data['train_time_in_seq'],
                                        single_threaded=True)
                 dev_loss, dev_time_loss, dev_mark_loss = self.evaluate_likelihood(training_data['dev_event_in_seq'],
                                                                                   training_data['dev_time_in_seq'],
@@ -868,6 +870,7 @@ class RMTPP:
                                        training_data['test_time_in_seq'],
                                        training_data['test_time_in_feats'],
                                        dec_len_for_eval,
+                                       training_data['train_time_in_seq'],
                                        single_threaded=True)
                 test_loss, test_time_loss, test_mark_loss = self.evaluate_likelihood(training_data['test_event_in_seq'],
                                                                                      training_data['test_time_in_seq'],
@@ -999,6 +1002,7 @@ class RMTPP:
                                    training_data['dev_time_in_seq'],
                                    training_data['dev_time_in_feats'],
                                    dec_len_for_eval,
+                                   training_data['train_time_in_seq'],
                                    single_threaded=True)
             dev_loss, dev_time_loss, dev_mark_loss = self.evaluate_likelihood(training_data['dev_event_in_seq'],
                                                                               training_data['dev_time_in_seq'],
@@ -1029,6 +1033,7 @@ class RMTPP:
                                    training_data['test_time_in_seq'],
                                    training_data['test_time_in_feats'],
                                    dec_len_for_eval,
+                                   training_data['train_time_in_seq'],
                                    single_threaded=True)
             test_loss, test_time_loss, test_mark_loss = self.evaluate_likelihood(training_data['test_event_in_seq'],
                                                                                  training_data['test_time_in_seq'],
@@ -1159,7 +1164,7 @@ class RMTPP:
         return float(loss_), float(time_loss_), float(mark_loss_)
 
 
-    def predict(self, event_in_seq, time_in_seq, time_in_feats, dec_len_for_eval, single_threaded=False, plot_dir=False):
+    def predict(self, event_in_seq, time_in_seq, time_in_feats, dec_len_for_eval, train_in_seq, single_threaded=False, plot_dir=False):
         """Treats the entire dataset as a single batch and processes it."""
 
 
@@ -1183,13 +1188,22 @@ class RMTPP:
             inference_time = end_time - start_time
             return time_out_seq, event_out_seq, all_event_preds_softmax, inference_time
 
-        if self.ALG_NAME in ['average_gap_pred']:
+        #if self.ALG_NAME in ['average_gap_pred']:
+        if 'average' in self.ALG_NAME:
             start_time = time.time()
             event_out_seq = [max(Counter(row).items(), key=itemgetter(1))[0] for row in event_in_seq]
             event_out_seq = np.expand_dims(np.array(event_out_seq), axis=1)
             event_out_seq = np.tile(event_out_seq, [1, dec_len_for_eval])
-            input_gaps = time_in_seq[:, 1:] - time_in_seq[:, :-1]
-            output_gaps = np.mean(input_gaps, axis=1)
+            if self.ALG_NAME in ['average_gap_pred']:
+                input_gaps = time_in_seq[:, 1:] - time_in_seq[:, :-1]
+                output_gaps = np.mean(input_gaps, axis=1)
+            elif self.ALG_NAME in ['average_tr_gap_pred']:
+                train_in_gaps = train_in_seq[:, 1:] - train_in_seq[:, :-1]
+                train_in_gaps = np.reshape(train_in_gaps, [-1])
+                train_in_gaps_sorted = np.sort(train_in_gaps)
+                train_in_gaps_sorted = train_in_gaps_sorted[:int(0.95*train_in_gaps_sorted.shape[0])]
+                output_gaps = np.mean(train_in_gaps_sorted)
+                output_gaps = np.ones((time_in_seq.shape[0])) * output_gaps
             output_gaps = np.expand_dims(np.array(output_gaps), axis=1)
             output_gaps = np.tile(output_gaps, [1, dec_len_for_eval])
             output_gaps = np.cumsum(output_gaps, axis=1)

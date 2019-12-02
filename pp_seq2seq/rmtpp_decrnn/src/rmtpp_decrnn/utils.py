@@ -302,7 +302,7 @@ def read_seq2seq_data(dataset_path, alg_name, normalization=None, pad=True):
 
             #print(len(begin_idxes), len(coarse_seq))
             #print(begin_idxes[-enc_len], len(gaps), begin_idxes[-enc_len] + 5 < len(gaps))
-            assert len(begin_idxes) == len(coarse_seq)
+            #assert len(begin_idxes) == len(coarse_seq)
             attn_gaps.append(gaps)
             attn_gaps_idxes.append(begin_idxes)
             coarse_gaps_in_seq.append(coarse_seq)
