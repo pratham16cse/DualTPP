@@ -1799,38 +1799,6 @@ class RMTPP_DECRNN:
         """Treats the entire dataset as a single batch and processes it."""
 
         start_time = time.time()
-        def get_wt_constraint():
-            if self.CONSTRAINTS == 'default':
-                return lambda x: tf.clip_by_value(x, 1e-5, 20.0)
-            elif self.CONSTRAINTS == 'c1':
-                return lambda x: tf.clip_by_value(x, 1.0, np.inf)
-            elif self.CONSTRAINTS == 'c2':
-                return lambda x: tf.clip_by_value(x, 1e-5, np.inf)
-            elif self.CONSTRAINTS == 'unconstrained':
-                return lambda x: x
-            else:
-                print('Constraint on wt not found.')
-                assert False
-
-        def get_D_constraint():
-            if self.CONSTRAINTS == 'default':
-                return lambda x: x
-            elif self.CONSTRAINTS in ['c1', 'c2']:
-                return lambda x: -softplus(-x)
-            elif self.CONSTRAINTS == 'unconstrained':
-                return lambda x: x
-            else:
-                print('Constraint on wt not found.')
-                assert False
-
-        def get_WT_constraint():
-            if self.CONSTRAINTS == 'default':
-                return lambda x: np.clip(x, 1e-5, np.inf)
-            elif self.CONSTRAINTS in ['c1', 'c2']:
-                return lambda x: softplus(x)
-            else:
-                print('Constraint on wt not found.')
-                assert False
 
         cur_state = np.zeros((len(event_in_seq), self.HIDDEN_LAYER_SIZE))
         initial_time = np.zeros(time_in_seq.shape[0])
@@ -1878,22 +1846,6 @@ class RMTPP_DECRNN:
             lookup_gaps = self.sess.run(self.lookup_gaps, feed_dict=feed_dict)
             gap_append_indices = self.sess.run(self.gap_append_indices, feed_dict=feed_dict)
             closest_input_gaps_indices = self.sess.run(self.closest_input_gaps_indices, feed_dict=feed_dict)
-            #z = self.sess.run(self.z, feed_dict=feed_dict)
-            #print(np.squeeze(lookup_gaps))
-            #print(np.squeeze(gap_append_indices))
-            #print(np.squeeze(closest_input_gaps_indices))
-            #print(np.squeeze(z_topk))
-            #z_indices_topk = self.sess.run(self.z_indices_topk, feed_dict=feed_dict)
-            #gap_append_indices = self.sess.run(self.gap_append_indices, feed_dict=feed_dict)
-            #print(z_indices_topk[:10])
-            #print(D[:10])
-            #fig_z = plt.figure()
-            #ax1 = fig_z.add_subplot(111)
-            #ax1.imshow(z[:10], cmap='hot', interpolation='nearest')
-            #pos = ax1.imshow(z[:10], vmin=0.0, vmax=1.0, cmap='Blues', interpolation='none')
-            #fig_z.colorbar(pos, ax=ax1)
-            #plt.savefig('z_heatmap.png')
-            #plt.close()
         else:
             z_topk = np.zeros_like(event_out_seq)
 
@@ -1921,71 +1873,6 @@ class RMTPP_DECRNN:
         # TODO: This calculation is completely ignoring the clipping which
         # happens during the inference step.
         [Vt, Vw, bt, bw, wt]  = self.sess.run([self.Vt, self.Vw, self.bt, self.bw, self.wt])
-
-        #global _quad_worker
-        #def _quad_worker(params):
-        #    batch_idx, (D_i, WT_i, decoder_states, time_pred_last, z_topk_i) = params
-        #    preds_i = []
-        #    #print(np.matmul(decoder_states, Vt) + bt)
-        #    for pred_idx, (D_j, WT_j, s_i, z_topk_j) in enumerate(zip(D_i, WT_i, decoder_states, z_topk_i)):
-        #        t_last = time_pred_last if pred_idx==0 else preds_i[-1]
-
-        #        c_ = np.exp(np.clip(D_j, -50.0, 50.0))
-        #        if self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_wcmpt', 'rmtpp_decrnn_whparam', 'rmtpp_decrnn_latentz', 'rmtpp_decrnn_truemarks']:
-        #            args = (c_, WT_j)
-        #            val, _err = quad(quad_func, 0, np.inf, args=args)
-        #            #print(batch_idx, D_j, c_, WT_j, val)
-        #        elif self.ALG_NAME in ['rmtpp_decrnn_attn']:
-        #            val = 0.0
-        #            for k in range(self.NUM_DISCRETE_STATES):
-        #                args = (c_[k], WT_j)
-        #                if self.USE_INTENSITY:
-        #                    val_, _err = quad(quad_func, 0, np.inf, args=args)
-        #                    val += (val_ * z_topk_j[k])
-        #                else:
-        #                    val += (D_j[k] * z_topk_j[k])
-        #        elif self.ALG_NAME in ['rmtpp_decrnn_mode', 'rmtpp_decrnn_mode_wcmpt', 'rmtpp_decrnn_mode_whparam']:
-        #            val_raw = (np.log(WT_j) - D_j)/WT_j
-        #            val = np.where(val_raw<0.0, 0.0, val_raw)
-        #            val = val.reshape(-1)[0]
-        #            #print(batch_idx, D_j, c_, WT_j, val, val_raw)
-        #        elif self.ALG_NAME in ['rmtpp_decrnn_splusintensity']:
-        #            args = (D_j, WT_j)
-        #            val, _err = quad(quad_func_splusintensity, 0, np.inf, args=args)
-        #            #print(val)
-        #        elif self.ALG_NAME in ['rmtpp_decrnn_splusintensity_attn']:
-        #            val = 0.0
-        #            for k in range(self.NUM_DISCRETE_STATES):
-        #                args = (D_j[k], WT_j)
-        #                if self.USE_INTENSITY:
-        #                    val_, _err = quad(quad_func_splusintensity, 0, np.inf, args=args)
-        #                    val += (val_ * z_topk_j[k])
-        #                else:
-        #                    val += (D_j[k] * z_topk_j[k])
-        #        elif self.ALG_NAME in ['rmtpp_decrnn_inv']:
-        #            f_val = 0.0
-        #            for num_samp in range(self.NUM_SAMP_INV):
-        #              u = np.random.random_sample()
-        #              val = np.log(c_ - WT_j * np.log(u)) - D_j
-        #              val = val / WT_j
-        #              f_val += val.reshape(-1)[0]
-
-        #            val = f_val/self.NUM_SAMP_INV
-
-        #        assert np.isfinite(val)
-        #        preds_i.append(t_last + val)
-
-        #    return preds_i
-
-        #time_pred_last = time_in_seq[:, -1]
-        #if self.CONCAT_FINAL_ENC_STATE:
-        #    all_decoder_states = np.concatenate([all_decoder_states, np.tile(np.expand_dims(cur_state, axis=1), [1, self.DEC_LEN, 1])], axis=-1)
-
-        #if single_threaded:
-        #    all_time_preds = [_quad_worker((idx, (D_i, WT_i, state, t_last, z_topk_i))) for idx, (D_i, WT_i, state, t_last, z_topk_i) in enumerate(zip(D, WT, all_decoder_states, time_pred_last, z_topk))]
-        #else:
-        #    with MP.Pool() as pool:
-        #        all_time_preds = pool.map(_quad_worker, enumerate(zip(D, WT, all_decoder_states, time_pred_last, z_topk)))
 
         time_pred_last = time_in_seq[:, -1:]
         val = self.sess.run(self.val, feed_dict=feed_dict)

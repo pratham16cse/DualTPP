@@ -1221,38 +1221,6 @@ class RMTPP:
             return time_out_seq, event_out_seq, all_event_preds_softmax, inference_time
 
         start_time = time.time()
-        def get_wt_constraint():
-            if self.CONSTRAINTS == 'default':
-                return lambda x: tf.clip_by_value(x, 1e-5, 20.0)
-            elif self.CONSTRAINTS == 'c1':
-                return lambda x: tf.clip_by_value(x, 1.0, np.inf)
-            elif self.CONSTRAINTS == 'c2':
-                return lambda x: tf.clip_by_value(x, 1e-5, np.inf)
-            elif self.CONSTRAINTS == 'unconstrained':
-                return lambda x: x
-            else:
-                print('Constraint on wt not found.')
-                assert False
-
-        def get_D_constraint():
-            if self.CONSTRAINTS == 'default':
-                return lambda x: x
-            elif self.CONSTRAINTS in ['c1', 'c2']:
-                return lambda x: -softplus(-x)
-            elif self.CONSTRAINTS == 'unconstrained':
-                return lambda x: x
-            else:
-                print('Constraint on wt not found.')
-                assert False
-
-        def get_WT_constraint():
-            if self.CONSTRAINTS == 'default':
-                return lambda x: np.clip(x, 1e-5, np.inf)
-            elif self.CONSTRAINTS in ['c1', 'c2']:
-                return lambda x: softplus(x)
-            else:
-                print('Constraint on wt not found.')
-                assert False
 
         all_hidden_states = []
         all_event_preds_softmax = []
@@ -1321,38 +1289,6 @@ class RMTPP:
             # happens during the inference step.
             [Vt, Vw, bt, bw, wt]  = self.sess.run([self.Vt, self.Vw, self.bt, self.bw, self.wt])
     
-            #global _quad_worker
-            #def _quad_worker(params):
-            #    batch_idx, (D_i, WT_i, h_i, t_last) = params
-            #    preds_i = []
-
-            #    c_ = np.exp(np.clip(D_i, -50.0, 50.0))
-            #    if self.ALG_NAME in ['rmtpp', 'rmtpp_wcmpt', 'rmtpp_whparam']:
-            #        args = (c_, WT_i)
-            #        val, _err = quad(quad_func, 0, np.inf, args=args)
-            #        #print(batch_idx, D_i, c_, WT_i, val)
-            #    elif self.ALG_NAME in ['rmtpp_mode', 'rmtpp_mode_wcmpt', 'rmtpp_mode_whparam']:
-            #        val_raw = (np.log(WT_i) - D_i)/WT_i
-            #        val = np.where(val_raw<0.0, 0.0, val_raw)
-            #        val = val.reshape(-1)[0]
-            #        #print(batch_idx, D_i, c_, WT_i, val, val_raw)
-            #    elif self.ALG_NAME in ['rmtpp_splusintensity']:
-            #        args = (D_i, WT_i)
-            #        val, _err = quad(quad_func_splusintensity, 0, np.inf, args=args)
-            #        #print(val)
-
-            #    assert np.isfinite(val)
-            #    preds_i = (t_last + val)
-
-            #    return preds_i
-    
-            #time_pred_last = time_in_seq[:, -1] if pred_idx==0 else all_time_preds[-1]
-            #if single_threaded:
-            #    step_time_preds = [_quad_worker((idx, (D_i, WT_i, state, t_last))) for idx, (D_i, WT_i, state, t_last) in enumerate(zip(D, WT, cur_state, time_pred_last))]
-            #else:
-            #    with MP.Pool() as pool:
-            #        step_time_preds = pool.map(_quad_worker, enumerate(zip(D, WT, cur_state, time_pred_last)))
-
             time_pred_last = time_in_seq[:, -1] if pred_idx==0 else all_time_preds[-1]
             val = self.sess.run(self.val, feed_dict=feed_dict)
             #print(val.shape[0], np.sum(np.isfinite(val)), val)
