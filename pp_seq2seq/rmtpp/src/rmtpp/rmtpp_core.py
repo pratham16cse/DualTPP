@@ -419,18 +419,21 @@ class RMTPP:
                                 self.WT = tf.matmul(state, self.Vw) + base_intensity_bw
                                 self.WT = get_WT_constraint()(self.WT)
                                 self.WT = tf.clip_by_value(self.WT, 0.0, 10.0)
-                            elif self.ALG_NAME in ['rmtpp', 'rmtpp_mode', 'rmtpp_splusintensity', 'zero_pred', 'average_gap_pred', 'average_tr_gap_pred']:
+                            elif self.ALG_NAME in ['rmtpp', 'rmtpp_mode', 'rmtpp_splusintensity',
+                                                   'zero_pred', 'average_gap_pred', 'average_tr_gap_pred']:
                                 self.WT = self.wt
+                            elif self.ALG_NAME in ['rmtpp_negw', 'rmtpp_splusintensity_negw']:
+                                self.WT = -1.0 * self.wt
                             elif self.ALG_NAME in ['rmtpp_whparam', 'rmtpp_mode_whparam']:
                                 self.WT = self.wt_hparam
 
-                            if self.ALG_NAME in ['rmtpp_splusintensity']:
+                            if self.ALG_NAME in ['rmtpp_splusintensity', 'rmtpp_splusintensity_negw']:
                                 lambda_ = self.D + (delta_t_next * self.WT)
                                 log_lambda_ = tf.log(lambda_)
                                 log_f_star = (log_lambda_
                                               - self.D * delta_t_next
                                               - (self.WT/2.0) * tf.square(delta_t_next))
-                            else:
+                            elif self.ALG_NAME in ['rmtpp', 'rmtpp_negw']:
                                 log_lambda_ = (self.D + (delta_t_next * self.WT))
                                 lambda_ = tf.exp(tf.minimum(ETH, log_lambda_), name='lambda_')
                                 log_f_star = (log_lambda_
@@ -521,18 +524,24 @@ class RMTPP:
 
                 # ----- Prediction using Inverse Transform Sampling ----- #
                 #u = tf.random.uniform((self.inf_batch_size, 5000), minval=0.0, maxval=0.1, seed=self.seed)
-                u = tf.ones((self.inf_batch_size, 1)) * tf.range(0.0, 1.0, 1.0/5000)
-                if self.ALG_NAME in ['rmtpp']:
+                if self.ALG_NAME in ['rmtpp', 'rmtpp_splusintensity']:
+                    u = tf.ones((self.inf_batch_size, 1)) * tf.range(0.0, 1.0, 1.0/5000)
+                elif self.ALG_NAME in ['rmtpp_negw', 'rmtpp_splusintensity_negw']:
+                    lim = 1 - tf.exp((tf.exp(tf.clip_by_value(self.D, -50.0, 50.0)))/self.WT)
+                    u = tf.ones((self.inf_batch_size, 1)) * tf.range(0.0, 0.99, 0.99/5000)
+                    u  = u * lim
+
+                if self.ALG_NAME in ['rmtpp', 'rmtpp_negw']:
                     c = -tf.exp(tf.clip_by_value(self.D, -50.0, 50.0))
                     self.val = (1.0/self.WT) * tf.log((self.WT/c) * tf.log(1.0 - u) + 1)
-                    #self.val = tf.Print(self.val, [tf.reduce_sum(tf.cast(tf.is_finite(tf.log((self.WT/c) * tf.log(1.0 - u) + 1)), tf.int32)), 1.0/self.WT], message='Printing log and 1/w')
+                    #self.val = tf.Print(self.val, [tf.shape(self.val), tf.log((self.WT/c) * tf.log(1.0 - u) + 1), 1.0/self.WT], message='Printing log and 1/w')
                     #self.val = tf.Print(self.val, [tf.reduce_sum(tf.cast(tf.is_finite(((self.WT/c) * tf.log(1.0 - u))), tf.int32)), 1.0/self.WT], message='Printing log and 1/w')
                     #self.val = tf.Print(self.val, [tf.reduce_sum(tf.cast(tf.is_finite((self.WT/c)), tf.int32)), 1.0/self.WT], message='Printing log and 1/w')
                     #self.val = tf.Print(self.val, [tf.reduce_sum(tf.cast(tf.is_finite(c), tf.int32)), 1.0/self.WT], message='Printing c')
                     #self.val = tf.Print(self.val, [tf.reduce_sum(tf.cast(tf.is_finite(1.0/c), tf.int32)), 1.0/self.WT], message='Printing 1/c')
                     #self.val = tf.Print(self.val, [tf.reduce_sum(tf.cast(tf.is_finite(tf.log(1.0 - u)), tf.int32)), 1.0/self.WT], message='Printing log and 1/w')
                     self.val = tf.reduce_mean(self.val, axis=1)
-                elif self.ALG_NAME in ['rmtpp_splusintensity']:
+                elif self.ALG_NAME in ['rmtpp_splusintensity', 'rmtpp_splusintensity_negw']:
                     self.val = (1.0/self.WT) * (-self.D + tf.sqrt(tf.square(self.D) - 2*self.WT*tf.log(1.0-u)))
                     self.val = tf.reduce_mean(self.val, axis=1)
 
@@ -1274,7 +1283,7 @@ class RMTPP:
                 [self.hidden_states, self.event_preds, self.final_state, self.D, self.WT],
                 feed_dict=feed_dict
             )
-            if self.ALG_NAME in ['rmtpp', 'rmtpp_mode', 'rmtpp_splusintensity']:
+            if self.ALG_NAME in ['rmtpp', 'rmtpp_mode', 'rmtpp_splusintensity', 'rmtpp_negw', 'rmtpp_splusintensity_negw']:
                 WT = np.ones((len(event_in_seq), 1)) * WT
             elif self.ALG_NAME in ['rmtpp_whparam', 'rmtpp_mode_whparam']:
                 raise NotImplemented('For whparam methods')
@@ -1291,6 +1300,7 @@ class RMTPP:
     
             time_pred_last = time_in_seq[:, -1] if pred_idx==0 else all_time_preds[-1]
             val = self.sess.run(self.val, feed_dict=feed_dict)
+            #print(val)
             #print(val.shape[0], np.sum(np.isfinite(val)), val)
             step_time_preds = time_pred_last + val
 

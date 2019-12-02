@@ -755,6 +755,8 @@ class RMTPP_DECRNN:
                                            'rmtpp_decrnn_attnstate', 'rmtpp_decrnn_splusintensity_attnstate',
                                            'rmtpp_decrnn_pastattnstate', 'rmtpp_decrnn_splusintensity_pastattnstate']:
                         self.WT = self.wt
+                    elif self.ALG_NAME in ['rmtpp_decrnn_negw']:
+                        self.WT = -1.0 * self.wt
                     elif self.ALG_NAME in ['rmtpp_decrnn_whparam', 'rmtpp_decrnn_mode_whparam']:
                         self.WT = self.wt_hparam
 
@@ -1016,8 +1018,14 @@ class RMTPP_DECRNN:
 
                 # ----- Prediction using Inverse Transform Sampling ----- #
                 #u = tf.random.uniform((self.inf_batch_size, self.DEC_LEN, 5000), minval=0.0, maxval=0.1, seed=self.seed)
-                u = tf.ones((self.inf_batch_size, self.DEC_LEN, 1)) * tf.range(0.0, 1.0, 1.0/5000)
-                if self.ALG_NAME in ['rmtpp_decrnn']:
+                if self.ALG_NAME in ['rmtpp_decrnn_negw']:
+                    lim = 1 - tf.exp((tf.exp(tf.clip_by_value(self.D, -50.0, 50.0)))/self.WT)
+                    u = tf.ones((self.inf_batch_size, self.DEC_LEN, 1)) * tf.range(0.0, 0.99, 0.99/5000)
+                    u  = u * tf.expand_dims(lim, axis=-1)
+                else:
+                    u = tf.ones((self.inf_batch_size, self.DEC_LEN, 1)) * tf.range(0.0, 1.0, 1.0/5000)
+
+                if self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_negw']:
                     c = -tf.exp(tf.clip_by_value(self.D, -50.0, 50.0))
                     c = tf.expand_dims(c, axis=-1)
                     self.val = (1.0/self.WT) * tf.log((self.WT/c) * tf.log(1.0 - u) + 1)
@@ -1857,7 +1865,8 @@ class RMTPP_DECRNN:
                              'rmtpp_decrnn_pastattn', 'rmtpp_decrnn_splusintensity_pastattn',
                              'rmtpp_decrnn_pastattn_r', 'rmtpp_decrnn_splusintensity_pastattn_r',
                              'rmtpp_decrnn_attnstate', 'rmtpp_decrnn_splusintensity_attnstate',
-                             'rmtpp_decrnn_pastattnstate', 'rmtpp_decrnn_splusintensity_pastattnstate']:
+                             'rmtpp_decrnn_pastattnstate', 'rmtpp_decrnn_splusintensity_pastattnstate', 
+                             'rmtpp_decrnn_negw']:
             WT = np.ones((len(event_in_seq), self.DEC_LEN, 1)) * WT
         elif self.ALG_NAME in ['rmtpp_decrnn_whparam', 'rmtpp_decrnn_mode_whparam']:
             raise NotImplemented('For whparam methods')
