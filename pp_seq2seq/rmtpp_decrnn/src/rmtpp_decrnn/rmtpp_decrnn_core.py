@@ -411,7 +411,8 @@ class RMTPP_DECRNN:
 
                 if self.ALG_NAME in ['rmtpp_decrnn_attn', 'rmtpp_decrnn_splusintensity_attn',
                                      'rmtpp_decrnn_attn_r', 'rmtpp_decrnn_splusintensity_attn_r',
-                                     'rmtpp_decrnn_attnstate', 'rmtpp_decrnn_splusintensity_attnstate'] \
+                                     'rmtpp_decrnn_attnstate', 'rmtpp_decrnn_splusintensity_attnstate',
+                                     'rmtpp_decrnn_attn_negw', 'rmtpp_decrnn_attnstate_negw'] \
                         and self.ATTN_RNN:
                     enc_cell_t = tf.contrib.rnn.BasicLSTMCell(self.HIDDEN_LAYER_SIZE, forget_bias=1.0, name='attn_rnn')
                     self.enc_cell_t = tf.contrib.rnn.MultiRNNCell([enc_cell_t for _ in range(self.NUM_ENC_LAYERS)],
@@ -442,7 +443,8 @@ class RMTPP_DECRNN:
 
                 if self.ALG_NAME in ['rmtpp_decrnn_attn', 'rmtpp_decrnn_splusintensity_attn',
                                      'rmtpp_decrnn_attn_r', 'rmtpp_decrnn_splusintensity_attn_r',
-                                     'rmtpp_decrnn_attnstate', 'rmtpp_decrnn_splusintensity_attnstate'] \
+                                     'rmtpp_decrnn_attnstate', 'rmtpp_decrnn_splusintensity_attnstate',
+                                     'rmtpp_decrnn_attn_negw', 'rmtpp_decrnn_attnstate_negw'] \
                         and self.ATTN_RNN:
                     state_t = tf.zeros([self.inf_batch_size, int(self.HIDDEN_LAYER_SIZE)],
                                        dtype=self.FLOAT_TYPE,
@@ -516,7 +518,8 @@ class RMTPP_DECRNN:
 
                                 if self.ALG_NAME in ['rmtpp_decrnn_attn', 'rmtpp_decrnn_splusintensity_attn',
                                                      'rmtpp_decrnn_attn_r', 'rmtpp_decrnn_splusintensity_attn_r',
-                                                     'rmtpp_decrnn_attnstate', 'rmtpp_decrnn_splusintensity_attnstate'] \
+                                                     'rmtpp_decrnn_attnstate', 'rmtpp_decrnn_splusintensity_attnstate',
+                                                     'rmtpp_decrnn_attn_negw', 'rmtpp_decrnn_attnstate_negw'] \
                                         and self.ATTN_RNN:
                                     p_embedded = tf.nn.embedding_lookup(self.enc_Wem_position,
                                                                         i * tf.ones((self.inf_batch_size), dtype=tf.int32))
@@ -530,14 +533,16 @@ class RMTPP_DECRNN:
                             state = tf.where(self.events_in[:, i] > 0, new_state, state)
                             if self.ALG_NAME in ['rmtpp_decrnn_attn', 'rmtpp_decrnn_splusintensity_attn',
                                                  'rmtpp_decrnn_attn_r', 'rmtpp_decrnn_splusintensity_attn_r',
-                                                 'rmtpp_decrnn_attnstate', 'rmtpp_decrnn_splusintensity_attnstate'] \
+                                                 'rmtpp_decrnn_attnstate', 'rmtpp_decrnn_splusintensity_attnstate',
+                                                 'rmtpp_decrnn_attn_negw', 'rmtpp_decrnn_attnstate_negw'] \
                                     and self.ATTN_RNN:
                                 state_t = tf.where(self.events_in[:, i] > 0, new_state_t, state_t)
 
                         self.hidden_states.append(state)
                         if self.ALG_NAME in ['rmtpp_decrnn_attn', 'rmtpp_decrnn_splusintensity_attn',
                                              'rmtpp_decrnn_attn_r', 'rmtpp_decrnn_splusintensity_attn_r',
-                                             'rmtpp_decrnn_attnstate', 'rmtpp_decrnn_splusintensity_attnstate'] \
+                                             'rmtpp_decrnn_attnstate', 'rmtpp_decrnn_splusintensity_attnstate',
+                                             'rmtpp_decrnn_attn_negw', 'rmtpp_decrnn_attnstate_negw'] \
                                 and self.ATTN_RNN:
                             self.hidden_states_t.append(state_t)
 
@@ -564,13 +569,15 @@ class RMTPP_DECRNN:
                     self.hidden_states = tf.stack(self.hidden_states, axis=1)
                     if self.ALG_NAME in ['rmtpp_decrnn_attn', 'rmtpp_decrnn_splusintensity_attn',
                                          'rmtpp_decrnn_attn_r', 'rmtpp_decrnn_splusintensity_attn_r',
-                                         'rmtpp_decrnn_attnstate', 'rmtpp_decrnn_splusintensity_attnstate'] \
+                                         'rmtpp_decrnn_attnstate', 'rmtpp_decrnn_splusintensity_attnstate',
+                                         'rmtpp_decrnn_attn_negw', 'rmtpp_decrnn_attnstate_negw'] \
                             and self.ATTN_RNN:
                         self.hidden_states_t = tf.stack(self.hidden_states_t, axis=1)
 
                     # Computing z-attention values
                     if self.ALG_NAME in ['rmtpp_decrnn_attn', 'rmtpp_decrnn_splusintensity_attn',
-                                         'rmtpp_decrnn_attnstate', 'rmtpp_decrnn_splusintensity_attnstate'] \
+                                         'rmtpp_decrnn_attnstate', 'rmtpp_decrnn_splusintensity_attnstate',
+                                         'rmtpp_decrnn_attn_negw', 'rmtpp_decrnn_attnstate_negw'] \
                                         and self.ATTN_RNN:
 
                         #if self.ATTN_RNN:
@@ -755,7 +762,7 @@ class RMTPP_DECRNN:
                                            'rmtpp_decrnn_attnstate', 'rmtpp_decrnn_splusintensity_attnstate',
                                            'rmtpp_decrnn_pastattnstate', 'rmtpp_decrnn_splusintensity_pastattnstate']:
                         self.WT = self.wt
-                    elif self.ALG_NAME in ['rmtpp_decrnn_negw']:
+                    elif self.ALG_NAME in ['rmtpp_decrnn_negw', 'rmtpp_decrnn_attn_negw', 'rmtpp_decrnn_attnstate_negw']:
                         self.WT = -1.0 * self.wt
                     elif self.ALG_NAME in ['rmtpp_decrnn_whparam', 'rmtpp_decrnn_mode_whparam']:
                         self.WT = self.wt_hparam
@@ -767,7 +774,7 @@ class RMTPP_DECRNN:
                                       - self.D * gaps
                                       - (self.WT/2.0) * tf.square(gaps))
                     elif 'attn' in self.ALG_NAME:
-                        if self.ALG_NAME in ['rmtpp_decrnn_attn', 'rmtpp_decrnn_splusintensity_attn'] and self.ATTN_RNN:
+                        if self.ALG_NAME in ['rmtpp_decrnn_attn', 'rmtpp_decrnn_splusintensity_attn', 'rmtpp_decrnn_attn_negw'] and self.ATTN_RNN:
                             z_indices_sorted = tf.argsort(self.z, axis=-1, direction='DESCENDING', stable=True, name='argsort_z')
                             z_indices_topk = z_indices_sorted[:, :self.NUM_DISCRETE_STATES]
                             self.z_indices_topk = z_indices_topk
@@ -827,7 +834,7 @@ class RMTPP_DECRNN:
                             self.z_topk = tf.gather(self.z, z_indices_topk, batch_dims=2)
                             gap_append_indices = z_indices_topk
                             lookup_gaps = tf.gather(attn_gaps_in, gap_append_indices, batch_dims=1)
-                        elif self.ALG_NAME in ['rmtpp_decrnn_attnstate', 'rmtpp_decrnn_splusintensity_attnstate']:
+                        elif self.ALG_NAME in ['rmtpp_decrnn_attnstate', 'rmtpp_decrnn_splusintensity_attnstate', 'rmtpp_decrnn_attnstate_negw']:
                             z_indices_sorted = tf.argsort(self.z, axis=-1, direction='DESCENDING', stable=True, name='argsort_z')
                             z_indices_topk = z_indices_sorted[:, :self.NUM_DISCRETE_STATES]
                             self.z_indices_topk = z_indices_topk
@@ -869,7 +876,8 @@ class RMTPP_DECRNN:
                         elif self.ALG_NAME in ['rmtpp_decrnn_attn', 'rmtpp_decrnn_attn_r',
                                                'rmtpp_decrnn_coarseattn','rmtpp_decrnn_coarseattn_r',
                                                'rmtpp_decrnn_pastattn', 'rmtpp_decrnn_pastattn_r',
-                                               'rmtpp_decrnn_pastattnstate']:
+                                               'rmtpp_decrnn_pastattnstate',
+                                               'rmtpp_decrnn_attn_negw', 'rmtpp_decrnn_attnstate_negw']:
                             self.D = tf.expand_dims(self.D, axis=-1) + self.wt_attn * lookup_gaps
                         elif 'attnstate' in self.ALG_NAME:
                             decoder_states_concat = tf.tile(tf.expand_dims(decoder_states_concat, axis=2), [1, 1, self.NUM_DISCRETE_STATES, 1])
@@ -886,7 +894,8 @@ class RMTPP_DECRNN:
                         if self.ALG_NAME in ['rmtpp_decrnn_attn', 'rmtpp_decrnn_attn_r',
                                              'rmtpp_decrnn_coarseattn', 'rmtpp_decrnn_coarseattn_r',
                                              'rmtpp_decrnn_pastattn', 'rmtpp_decrnn_pastattn_r',
-                                             'rmtpp_decrnn_attnstate', 'rmtpp_decrnn_pastattnstate']:
+                                             'rmtpp_decrnn_attnstate', 'rmtpp_decrnn_pastattnstate',
+                                             'rmtpp_decrnn_attn_negw', 'rmtpp_decrnn_attnstate_negw']:
                             log_lambda_ = (self.D + tf.expand_dims(gaps, axis=-1) * self.WT)
                             lambda_ = tf.exp(tf.minimum(ETH, log_lambda_), name='lambda_')
                             if self.USE_INTENSITY:
@@ -937,7 +946,7 @@ class RMTPP_DECRNN:
                     if 'attn' in self.ALG_NAME:
                         with tf.variable_scope('attn_pred', reuse=tf.AUTO_REUSE):
                             first_output_gap = self.times_out[:, 0:1] - self.times_in[:, -1:]
-                            if self.ALG_NAME in ['rmtpp_decrnn_attn', 'rmtpp_decrnn_splusintensity_attn']:
+                            if self.ALG_NAME in ['rmtpp_decrnn_attn', 'rmtpp_decrnn_splusintensity_attn', 'rmtpp_decrnn_attn_negw']:
                                 closest_input_gaps_indices = tf.argmin(tf.abs(first_output_gap - gaps_in[:, :self.BPTT-self.DEC_LEN]), axis=-1)
                             elif self.ALG_NAME in ['rmtpp_decrnn_attn_r', 'rmtpp_decrnn_splusintensity_attn_r']:
                                 output_gaps = tf.concat([first_output_gap, self.times_out[:, 1:]-self.times_out[:, :-1]], axis=-1)
@@ -952,7 +961,7 @@ class RMTPP_DECRNN:
                             elif self.ALG_NAME in ['rmtpp_decrnn_pastattn_r', 'rmtpp_decrnn_splusintensity_pastattn_r']:
                                 output_gaps = tf.concat([first_output_gap, self.times_out[:, 1:]-self.times_out[:, :-1]], axis=-1)
                                 closest_input_gaps_indices = tf.argmin(tf.abs(tf.expand_dims(output_gaps, axis=2)-tf.expand_dims(attn_gaps_in, axis=1)), axis=-1)
-                            elif self.ALG_NAME in ['rmtpp_decrnn_attnstate', 'rmtpp_decrnn_splusintensity_attnstate']:
+                            elif self.ALG_NAME in ['rmtpp_decrnn_attnstate', 'rmtpp_decrnn_splusintensity_attnstate', 'rmtpp_decrnn_attnstate_negw']:
                                 closest_input_gaps_indices = tf.argmin(tf.abs(first_output_gap - gaps_in[:, :self.BPTT-self.DEC_LEN]), axis=-1)
                             elif self.ALG_NAME in ['rmtpp_decrnn_pastattnstate', 'rmtpp_decrnn_splusintensity_pastattnstate']:
                                 closest_input_gaps_indices = tf.argmin(tf.abs(first_output_gap - attn_gaps_in[:, :-self.DEC_LEN]), axis=-1)
@@ -991,7 +1000,8 @@ class RMTPP_DECRNN:
                                          'rmtpp_decrnn_coarseattn', 'rmtpp_decrnn_splusintensity_coarseattn',
                                          'rmtpp_decrnn_coarseattn_r', 'rmtpp_decrnn_splusintensity_coarseattn_r',
                                          'rmtpp_decrnn_pastattn', 'rmtpp_decrnn_splusintensity_pastattn',
-                                         'rmtpp_decrnn_pastattn_r', 'rmtpp_decrnn_splusintensity_pastattn_r']:
+                                         'rmtpp_decrnn_pastattn_r', 'rmtpp_decrnn_splusintensity_pastattn_r',
+                                         'rmtpp_decrnn_attn_negw', 'rmtpp_decrnn_attnstate_negw']:
                         self.loss += attn_loss
 
                     self.time_loss = (-1) * tf.reduce_sum(
@@ -1020,7 +1030,20 @@ class RMTPP_DECRNN:
                 #u = tf.random.uniform((self.inf_batch_size, self.DEC_LEN, 5000), minval=0.0, maxval=0.1, seed=self.seed)
                 if self.ALG_NAME in ['rmtpp_decrnn_negw']:
                     lim = 1 - tf.exp((tf.exp(tf.clip_by_value(self.D, -50.0, 50.0)))/self.WT)
+                    lim = tf.clip_by_value(lim, 0.0, 1.0)
                     u = tf.ones((self.inf_batch_size, self.DEC_LEN, 1)) * tf.range(0.0, 0.99, 0.99/5000)
+                    u  = u * tf.expand_dims(lim, axis=-1)
+                elif self.ALG_NAME in ['rmtpp_decrnn_attn', 'rmtpp_decrnn_attn_r',
+                                       'rmtpp_decrnn_coarseattn', 'rmtpp_decrnn_coarseattn_r',
+                                       'rmtpp_decrnn_pastattn', 'rmtpp_decrnn_pastattn_r',
+                                       'rmtpp_decrnn_attnstate', 'rmtpp_decrnn_pastattnstate']:
+                    u = tf.ones((self.inf_batch_size, self.DEC_LEN, self.NUM_DISCRETE_STATES, 1)) * tf.range(0.0, 1.0, 1.0/5000)
+                elif self.ALG_NAME in ['rmtpp_decrnn_attn_negw', 'rmtpp_decrnn_attnstate_negw']:
+                    lim = 1 - tf.exp(tf.clip_by_value((tf.exp(tf.clip_by_value(self.D, -50.0, 50.0)))/self.WT, -50.0, 50.0))
+                    #lim = tf.clip_by_value(lim, 0.0, 1.0)
+                    lim = tf.Print(lim, [tf.shape(lim), tf.reduce_sum(tf.cast(lim<=1.0, tf.int32)), tf.reduce_sum(tf.cast(lim>=0.0, tf.int32))])
+                    self.lim = lim
+                    u = tf.ones((self.inf_batch_size, self.DEC_LEN, self.NUM_DISCRETE_STATES, 1)) * tf.range(0.0, 0.99, 0.99/5000)
                     u  = u * tf.expand_dims(lim, axis=-1)
                 else:
                     u = tf.ones((self.inf_batch_size, self.DEC_LEN, 1)) * tf.range(0.0, 1.0, 1.0/5000)
@@ -1041,12 +1064,19 @@ class RMTPP_DECRNN:
                 elif self.ALG_NAME in ['rmtpp_decrnn_attn', 'rmtpp_decrnn_attn_r',
                                        'rmtpp_decrnn_coarseattn', 'rmtpp_decrnn_coarseattn_r',
                                        'rmtpp_decrnn_pastattn', 'rmtpp_decrnn_pastattn_r',
-                                       'rmtpp_decrnn_attnstate', 'rmtpp_decrnn_pastattnstate']:
+                                       'rmtpp_decrnn_attnstate', 'rmtpp_decrnn_pastattnstate',
+                                       'rmtpp_decrnn_attn_negw', 'rmtpp_decrnn_attnstate_negw']:
                     if self.USE_INTENSITY:
-                        u = tf.ones((self.inf_batch_size, self.DEC_LEN, self.NUM_DISCRETE_STATES, 1)) * tf.range(0.0, 1.0, 1.0/5000)
                         c = -tf.exp(tf.clip_by_value(self.D, -50.0, 50.0))
                         c = tf.expand_dims(c, axis=-1)
-                        self.val = (1.0/self.WT) * tf.log((self.WT/c) * tf.log(1.0 - u) + 1)
+                        self.val = (1.0/self.WT) * tf.log(tf.maximum((self.WT/c) * tf.log(1.0 - u) + 1, 1e-10))
+                        self.val = tf.clip_by_value(self.val, 0.0, np.inf)
+                        self.val = tf.Print(self.val, [tf.log((self.WT/c) * tf.log(1.0 - u) + 1),
+                                                       tf.reduce_sum(tf.cast(tf.is_finite(self.val), tf.int32)),
+                                                       self.WT])
+                        self.log_part = (self.WT/c) * tf.log(1.0 - u) + 1
+                        self.log_1mu = tf.log(1.0 - u)
+                        self.c = c
                     else:
                         self.val = tf.expand_dims(self.D, axis=-1)
                 elif self.ALG_NAME in ['rmtpp_decrnn_splusintensity_attn', 'rmtpp_decrnn_splusintensity_attn_r',
@@ -1060,8 +1090,8 @@ class RMTPP_DECRNN:
                     else:
                         self.val = tf.expand_dims(self.D, axis=-1)
 
-                self.val = tf.reduce_mean(self.val, axis=-1)
                 #self.val = tf.Print(self.val, [self.val], message='Printing val')
+                self.val = tf.reduce_mean(self.val, axis=-1)
 
                 if self.ALG_NAME in ['rmtpp_decrnn_attn', 'rmtpp_decrnn_splusintensity_attn',
                                      'rmtpp_decrnn_attn_r', 'rmtpp_decrnn_splusintensity_attn_r',
@@ -1070,7 +1100,8 @@ class RMTPP_DECRNN:
                                      'rmtpp_decrnn_pastattn', 'rmtpp_decrnn_splusintensity_pastattn',
                                      'rmtpp_decrnn_pastattn_r', 'rmtpp_decrnn_splusintensity_pastattn_r',
                                      'rmtpp_decrnn_attnstate', 'rmtpp_decrnn_splusintensity_attnstate', 
-                                     'rmtpp_decrnn_pastattnstate', 'rmtpp_decrnn_splusintensity_pastattnstate']:
+                                     'rmtpp_decrnn_pastattnstate', 'rmtpp_decrnn_splusintensity_pastattnstate',
+                                     'rmtpp_decrnn_attn_negw', 'rmtpp_decrnn_attnstate_negw']:
                     self.val = tf.reduce_sum(self.val * self.z_topk, axis=-1)
 
                 # self.delta_ts.append(tf.clip_by_value(delta_t, 0.0, np.inf))
@@ -1849,7 +1880,8 @@ class RMTPP_DECRNN:
                              'rmtpp_decrnn_pastattn', 'rmtpp_decrnn_splusintensity_pastattn',
                              'rmtpp_decrnn_pastattn_r', 'rmtpp_decrnn_splusintensity_pastattn_r', 
                              'rmtpp_decrnn_attnstate', 'rmtpp_decrnn_splusintensity_attnstate', 
-                             'rmtpp_decrnn_pastattnstate', 'rmtpp_decrnn_splusintensity_pastattnstate']:
+                             'rmtpp_decrnn_pastattnstate', 'rmtpp_decrnn_splusintensity_pastattnstate',
+                             'rmtpp_decrnn_attn_negw', 'rmtpp_decrnn_attnstate_negw']:
             z_topk = self.sess.run(self.z_topk, feed_dict=feed_dict)
             lookup_gaps = self.sess.run(self.lookup_gaps, feed_dict=feed_dict)
             gap_append_indices = self.sess.run(self.gap_append_indices, feed_dict=feed_dict)
@@ -1866,7 +1898,7 @@ class RMTPP_DECRNN:
                              'rmtpp_decrnn_pastattn_r', 'rmtpp_decrnn_splusintensity_pastattn_r',
                              'rmtpp_decrnn_attnstate', 'rmtpp_decrnn_splusintensity_attnstate',
                              'rmtpp_decrnn_pastattnstate', 'rmtpp_decrnn_splusintensity_pastattnstate', 
-                             'rmtpp_decrnn_negw']:
+                             'rmtpp_decrnn_negw', 'rmtpp_decrnn_attn_negw', 'rmtpp_decrnn_attnstate_negw']:
             WT = np.ones((len(event_in_seq), self.DEC_LEN, 1)) * WT
         elif self.ALG_NAME in ['rmtpp_decrnn_whparam', 'rmtpp_decrnn_mode_whparam']:
             raise NotImplemented('For whparam methods')
@@ -1884,8 +1916,15 @@ class RMTPP_DECRNN:
         [Vt, Vw, bt, bw, wt]  = self.sess.run([self.Vt, self.Vw, self.bt, self.bw, self.wt])
 
         time_pred_last = time_in_seq[:, -1:]
-        val = self.sess.run(self.val, feed_dict=feed_dict)
+        val, log_1mu, lim, c = self.sess.run([self.val, self.log_1mu, self.lim, self.c], feed_dict=feed_dict)
         all_time_preds = np.cumsum(val, axis=1) + time_pred_last
+        #print('printing val')
+        #print(val)
+        ##print('printing log_part')
+        ##print(c)
+        #print('printing lim')
+        #print(lim)
+        #print('-----------------------------------------------------------------------------')
 
         all_time_preds = np.asarray(all_time_preds).T
         assert np.isfinite(all_time_preds).sum() == all_time_preds.size
