@@ -876,8 +876,7 @@ class RMTPP_DECRNN:
                         elif self.ALG_NAME in ['rmtpp_decrnn_attn', 'rmtpp_decrnn_attn_r',
                                                'rmtpp_decrnn_coarseattn','rmtpp_decrnn_coarseattn_r',
                                                'rmtpp_decrnn_pastattn', 'rmtpp_decrnn_pastattn_r',
-                                               'rmtpp_decrnn_pastattnstate',
-                                               'rmtpp_decrnn_attn_negw', 'rmtpp_decrnn_attnstate_negw']:
+                                               'rmtpp_decrnn_attn_negw']:
                             self.D = tf.expand_dims(self.D, axis=-1) + self.wt_attn * lookup_gaps
                         elif 'attnstate' in self.ALG_NAME:
                             decoder_states_concat = tf.tile(tf.expand_dims(decoder_states_concat, axis=2), [1, 1, self.NUM_DISCRETE_STATES, 1])
