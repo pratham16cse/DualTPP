@@ -12,9 +12,21 @@ from itertools import chain
 from collections import Counter, OrderedDict
 from operator import itemgetter
 import pandas as pd
+from datetime import datetime
+import time
+from bisect import bisect_left
 #from preprocess_rmtpp_data import preprocess
 
-DELTA = 3600.0 * 24
+DELTA = 3600.0 * 24 *2
+
+def getDatetime(epoch):
+    date_string=time.strftime("%d-%m-%Y %H:%M:%S", time.localtime(epoch))
+    date= datetime.strptime(date_string, "%d-%m-%Y %H:%M:%S")
+    return date
+
+def getHour(epoch):
+    return getDatetime(epoch).hour
+
 
 def print_dataset_stats(dataset_name, train_data, dev_data, test_data):
     print('\n#----- Dataset_name:{} -----#'.format(dataset_name))
@@ -66,6 +78,25 @@ def print_dataset_stats_table_format(dataset_name, train_data, dev_data, test_da
     print(str(min(all_seq_lens))+' & '+str(np.mean(all_seq_lens))+' & '+str(max(all_seq_lens))+' & '),
 
     print(str(len(train_seq_lens))+' & '+str(len(dev_seq_lens))+' & '+str(len(test_seq_lens)))
+
+def take_closest(myList, myNumber):
+    """
+    Assumes myList is sorted. Returns closest value to myNumber.
+
+    If two numbers are equally close, return the smallest number.
+    """
+    pos = bisect_left(myList, myNumber)
+    if pos == 0:
+        return myList[0]
+    if pos == len(myList):
+        return myList[-1]
+    before = myList[pos - 1]
+    after = myList[pos]
+    #if after - myNumber < myNumber - before:
+    #   return after
+    #else:
+    #   return before
+    return before
 
 def create_superclasses(events, num_classes=0):
     if num_classes == 0: # Do not create superclasses
@@ -159,12 +190,13 @@ def generate_norm_seq(sequences, encoder_length, check=0):
 
 def preprocess(raw_dataset_name,
                dataset_name,
+               all_timestamps,
                event_train, time_train,
                event_dev, time_dev,
                event_test, time_test,
                encoder_length, decoder_length,
                train_step_length=None, dev_step_length=None, test_step_length=None,
-               keep_classes=0, num_coarse_seq=0):
+               keep_classes=0, num_coarse_seq=0, offset=0.0):
 
     sequence_length = encoder_length + decoder_length
 
@@ -268,6 +300,39 @@ def preprocess(raw_dataset_name,
 
         test_tsIndices += tsIndices
 
+
+    # ----- Start: Create Input-Output sequences using offset ----- #
+    all_timestamps_dict = dict()
+    for ind, ts in enumerate(all_timestamps):
+        all_timestamps_dict[ts] = ind
+
+    if offset > 0.0:
+        offset_sec = offset * 3600.0
+        def get_offset_time_in_seq(pp_time_in_seq, pp_time_out_seq):
+            offset_time_in_seq = list()
+            last_input_ts_list = [seq[-1] for seq in pp_time_in_seq]
+            for i, l_ts in enumerate(last_input_ts_list):
+                print('In offset', i)
+                closest_ts = take_closest(all_timestamps, max(l_ts-offset_sec, all_timestamps[0]))
+                closest_ts_ind = all_timestamps_dict[closest_ts]
+                if closest_ts_ind<encoder_length:
+                    end_ind = encoder_length
+                else:
+                    end_ind = closest_ts_ind + 1
+                offset_time_in_seq.append(all_timestamps[end_ind-encoder_length:end_ind])
+
+            return offset_time_in_seq
+
+        pp_train_time_in_seq = get_offset_time_in_seq(pp_train_time_in_seq, pp_train_time_out_seq)
+        pp_dev_time_in_seq = get_offset_time_in_seq(pp_dev_time_in_seq, pp_dev_time_out_seq)
+        pp_test_time_in_seq = get_offset_time_in_seq(pp_test_time_in_seq, pp_test_time_out_seq)
+
+        assert len(pp_train_time_out_seq) == len(pp_train_time_in_seq)
+        assert len(pp_dev_time_out_seq) == len(pp_dev_time_in_seq)
+        assert len(pp_test_time_out_seq) == len(pp_test_time_in_seq)
+
+    # ----- End: Create Input-Output sequences using offset ----- #
+
     assert len(test_tsIndices) == len(pp_test_time_in_seq)
 
 
@@ -279,6 +344,7 @@ def preprocess(raw_dataset_name,
 
     dataset_name = dataset_name if dataset_name[-1]!='/' else dataset_name[:-1]
     dataset_name = dataset_name + '_chop' if num_coarse_seq>0 else dataset_name
+    dataset_name = dataset_name + '_off'+str(offset) if offset>0.0 else dataset_name
     dataset_name = dataset_name + '_' + str(encoder_length) + '_' + str(decoder_length) \
                    + '_' + str(train_step_length) + '_' + str(dev_step_length) + '_' + str(test_step_length) \
 
@@ -316,52 +382,34 @@ def preprocess(raw_dataset_name,
         for lbl in unique_labels:
             f.write(str(lbl) + '\n')
 
-    # ----- Start: Create coarse sequence of timestamps for attention ----- #
+    # ----- Start: Create sequence of previous-day timestamps for attention ----- #
 
-    attn_train_time_in_seq = [[] for _ in pp_train_time_in_seq]
-    last_input_ts_list = [seq[-1] for seq in pp_train_time_in_seq]
-    for i, sequence in enumerate(train_time_seq):
-        for ts in sequence:
-            for j, (k, l_ts) in zip(train_tsIndices, enumerate(last_input_ts_list)):
-                if i==j:
-                    #print(i, j, ts, l_ts, ts <= l_ts and ts + DELTA > l_ts)
-                    if ts <= l_ts and ts + DELTA > l_ts:
-                        attn_train_time_in_seq[k].append(ts)
-                    #elif ts > l_ts:
-                    #    break
-        #print('-----------------------------------')
-    #print(last_input_ts_list)
-    #for a,b in [(len(i), len(j)) for i,j in zip(attn_train_time_in_seq, pp_train_time_in_seq)]:
-    #    print(a, b)
-    #print((np.array(last_input_ts_list)[1:] - np.array(last_input_ts_list)[:-1]).tolist())
-    #print(train_tsIndices)
-    print(attn_train_time_in_seq[44])
-    print(last_input_ts_list[44])
-    #print(len(attn_train_time_in_seq))
+    def get_attn_time_in_seq(pp_time_in_seq):
+        attn_time_in_seq = [[] for _ in pp_time_in_seq]
+        last_input_ts_list = [seq[-1] for seq in pp_time_in_seq]
+        for ind, ts in enumerate(all_timestamps):
+            #print(ts)
+            #print(dataset_name, ind)
+            for i, l_ts in enumerate(last_input_ts_list):
+                if ts <= l_ts and ts + DELTA > l_ts:
+                    attn_time_in_seq[i].append(ts)
 
-    attn_dev_time_in_seq = [[] for _ in pp_dev_time_in_seq]
-    last_input_ts_list = [seq[-1] for seq in pp_dev_time_in_seq]
-    for i, sequence in enumerate(dev_time_seq):
-        for ts in sequence:
-            for j, (k, l_ts) in zip(dev_tsIndices, enumerate(last_input_ts_list)):
-                if i==j:
-                    #print(i, j, ts, l_ts, ts <= l_ts and ts + DELTA > l_ts)
-                    if ts <= l_ts and ts + DELTA > l_ts:
-                        attn_dev_time_in_seq[k].append(ts)
-    #for a,b in [(len(i), len(j)) for i,j in zip(attn_dev_time_in_seq, pp_dev_time_in_seq)]:
-    #    print(a, b)
+        #for a,b in [(len(i), len(j)) for i,j in zip(attn_time_in_seq, pp_time_in_seq)]:
+        #    print(a, b)
+        for attn_seq, time_seq in zip(attn_time_in_seq, pp_time_in_seq):
+            #print(time_seq)
+            #print(attn_seq[-len(time_seq):])
+            #print('-----------------------')
+            for a, b in zip(time_seq, attn_seq[-len(time_seq):]):
+                #print(getHour(a), getHour(b))
+                assert a==b
 
-    attn_test_time_in_seq = [[] for _ in pp_test_time_in_seq]
-    last_input_ts_list = [seq[-1] for seq in pp_test_time_in_seq]
-    for i, sequence in enumerate(test_time_seq):
-        for ts in sequence:
-            for j, (k, l_ts) in zip(test_tsIndices, enumerate(last_input_ts_list)):
-                if i==j:
-                    #print(i, j, ts, l_ts, ts <= l_ts and ts + DELTA > l_ts)
-                    if ts <= l_ts and ts + DELTA > l_ts:
-                        attn_test_time_in_seq[k].append(ts)
-    for a,b in [(len(i), len(j)) for i,j in zip(attn_test_time_in_seq, pp_test_time_in_seq)]:
-        print(a, b)
+
+        return attn_time_in_seq
+
+    attn_train_time_in_seq = get_attn_time_in_seq(pp_train_time_in_seq)
+    attn_dev_time_in_seq = get_attn_time_in_seq(pp_dev_time_in_seq)
+    attn_test_time_in_seq = get_attn_time_in_seq(pp_test_time_in_seq)
 
     assert len(attn_train_time_in_seq) == len(pp_train_time_in_seq)
     assert len(attn_dev_time_in_seq) == len(pp_dev_time_in_seq)
@@ -374,7 +422,7 @@ def preprocess(raw_dataset_name,
     with open(os.path.join(dataset_name, 'attn.test.time.in'), 'w') as f:
         write_to_file(f, attn_test_time_in_seq)
 
-    # ----- End: Create coarse sequence of timestamps for attention ----- #
+    # ----- End: Create sequence of previous-day timestamps for attention ----- #
 
     #----------- Gap Statistics Start-------------#
     train_gap_seq, dev_gap_seq, test_gap_seq = list(), list(), list()
@@ -497,6 +545,7 @@ def main():
                                                                      from the data, retains all classes when set to zero")
     parser.add_argument("--num_coarse_seq", type=int, default=0, help="Chop a single-large-seqeunce data into C sequences \
                                                                        of approx equal size, no chopping when set to zero")
+    parser.add_argument("--offset", type=float, default=0.0, help="Output Sequence offset by 'offset'-hours")
     args = parser.parse_args()
 
     dataset = args.dataset
@@ -508,6 +557,7 @@ def main():
     test_step_length = args.test_step_length
     keep_classes = args.keep_classes
     num_coarse_seq = args.num_coarse_seq
+    offset = args.offset
     sequence_length = encoder_length + decoder_length
     output_path = 'NewDataParsed'
     
@@ -630,14 +680,16 @@ def main():
     print(np.shape(event_test))
     print(np.shape(event_dev))
 
+    all_timestamps = arr
     preprocess(dataset,
                os.path.join(output_path, dataset),
+               all_timestamps,
                event_train, time_train,
                event_dev, time_dev,
                event_test, time_test,
                encoder_length, decoder_length,
                train_step_length, dev_step_length, test_step_length,
-               keep_classes, num_coarse_seq)
+               keep_classes, num_coarse_seq, offset)
 
 if __name__ == '__main__':
     main()
