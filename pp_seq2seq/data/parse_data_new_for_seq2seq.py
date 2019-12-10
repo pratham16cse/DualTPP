@@ -191,6 +191,7 @@ def generate_norm_seq(sequences, encoder_length, check=0):
 def preprocess(raw_dataset_name,
                dataset_name,
                all_timestamps,
+               all_events,
                event_train, time_train,
                event_dev, time_dev,
                event_test, time_test,
@@ -309,7 +310,7 @@ def preprocess(raw_dataset_name,
     if offset > 0.0:
         offset_sec = offset * 3600.0
         def get_offset_time_in_seq(pp_time_in_seq, pp_time_out_seq):
-            offset_time_in_seq = list()
+            offset_time_in_seq, offset_event_in_seq = list(), list()
             last_input_ts_list = [seq[-1] for seq in pp_time_in_seq]
             for i, l_ts in enumerate(last_input_ts_list):
                 print('In offset', i)
@@ -320,12 +321,13 @@ def preprocess(raw_dataset_name,
                 else:
                     end_ind = closest_ts_ind + 1
                 offset_time_in_seq.append(all_timestamps[end_ind-encoder_length:end_ind])
+                offset_event_in_seq.append(all_events[end_ind-encoder_length:end_ind])
 
-            return offset_time_in_seq
+            return offset_time_in_seq, offset_event_in_seq
 
-        pp_train_time_in_seq = get_offset_time_in_seq(pp_train_time_in_seq, pp_train_time_out_seq)
-        pp_dev_time_in_seq = get_offset_time_in_seq(pp_dev_time_in_seq, pp_dev_time_out_seq)
-        pp_test_time_in_seq = get_offset_time_in_seq(pp_test_time_in_seq, pp_test_time_out_seq)
+        pp_train_time_in_seq, pp_train_event_in_seq = get_offset_time_in_seq(pp_train_time_in_seq, pp_train_time_out_seq)
+        pp_dev_time_in_seq, pp_dev_event_in_seq = get_offset_time_in_seq(pp_dev_time_in_seq, pp_dev_time_out_seq)
+        pp_test_time_in_seq, pp_test_event_in_seq = get_offset_time_in_seq(pp_test_time_in_seq, pp_test_time_out_seq)
 
         assert len(pp_train_time_out_seq) == len(pp_train_time_in_seq)
         assert len(pp_dev_time_out_seq) == len(pp_dev_time_in_seq)
@@ -681,9 +683,11 @@ def main():
     print(np.shape(event_dev))
 
     all_timestamps = arr
+    all_events = arr_eve
     preprocess(dataset,
                os.path.join(output_path, dataset),
                all_timestamps,
+               all_events,
                event_train, time_train,
                event_dev, time_dev,
                event_test, time_test,
