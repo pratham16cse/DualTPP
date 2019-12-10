@@ -74,6 +74,8 @@ def_opts = Deco.Options(
     use_time_features=False,
     use_avg_gaps=False,
 
+    offset=0.0,
+
     wt_hparam=1.0,
 
     enc_cell_type='manual',
@@ -142,7 +144,7 @@ class RMTPP_DECRNN:
                  mark_triggers_time, mark_loss,
                  Wt, Wem, Wh, bh, Ws, bs, wt, wt_attn, Wy, Vy, Vt, Vw, bk, bt, bw, wt_hparam, Wem_position, enc_Wem_position,
                  plot_pred_dev, plot_pred_test, enc_cell_type, dec_cell_type, num_discrete_states,
-                 position_encode, attn_rnn, use_intensity, num_feats, use_time_features, use_avg_gaps):
+                 position_encode, attn_rnn, use_intensity, num_feats, use_time_features, use_avg_gaps, offset):
 
         self.seed = seed
         tf.set_random_seed(self.seed)
@@ -210,6 +212,8 @@ class RMTPP_DECRNN:
         self.NUM_FEATS = num_feats
         self.USE_TIME_FEATS = use_time_features
         self.USE_AVG_GAPS = use_avg_gaps
+
+        self.OFFSET = offset
 
         if self.CONCAT_FINAL_ENC_STATE:
             self.DEC_STATE_SIZE = 2 * self.HIDDEN_LAYER_SIZE
@@ -1040,7 +1044,7 @@ class RMTPP_DECRNN:
                 elif self.ALG_NAME in ['rmtpp_decrnn_attn_negw', 'rmtpp_decrnn_attnstate_negw']:
                     lim = 1 - tf.exp(tf.clip_by_value((tf.exp(tf.clip_by_value(self.D, -50.0, 50.0)))/self.WT, -50.0, 50.0))
                     #lim = tf.clip_by_value(lim, 0.0, 1.0)
-                    lim = tf.Print(lim, [tf.shape(lim), tf.reduce_sum(tf.cast(lim<=1.0, tf.int32)), tf.reduce_sum(tf.cast(lim>=0.0, tf.int32))])
+                    #lim = tf.Print(lim, [tf.shape(lim), tf.reduce_sum(tf.cast(lim<=1.0, tf.int32)), tf.reduce_sum(tf.cast(lim>=0.0, tf.int32))])
                     self.lim = lim
                     u = tf.ones((self.inf_batch_size, self.DEC_LEN, self.NUM_DISCRETE_STATES, 1)) * tf.range(0.0, 0.99, 0.99/5000)
                     u  = u * tf.expand_dims(lim, axis=-1)
@@ -1070,9 +1074,9 @@ class RMTPP_DECRNN:
                         c = tf.expand_dims(c, axis=-1)
                         self.val = (1.0/self.WT) * tf.log(tf.maximum((self.WT/c) * tf.log(1.0 - u) + 1, 1e-10))
                         self.val = tf.clip_by_value(self.val, 0.0, np.inf)
-                        self.val = tf.Print(self.val, [tf.log((self.WT/c) * tf.log(1.0 - u) + 1),
-                                                       tf.reduce_sum(tf.cast(tf.is_finite(self.val), tf.int32)),
-                                                       self.WT])
+                        #self.val = tf.Print(self.val, [tf.log((self.WT/c) * tf.log(1.0 - u) + 1),
+                        #                               tf.reduce_sum(tf.cast(tf.is_finite(self.val), tf.int32)),
+                        #                               self.WT])
                         self.log_part = (self.WT/c) * tf.log(1.0 - u) + 1
                         self.log_1mu = tf.log(1.0 - u)
                         self.c = c
@@ -1915,8 +1919,8 @@ class RMTPP_DECRNN:
         [Vt, Vw, bt, bw, wt]  = self.sess.run([self.Vt, self.Vw, self.bt, self.bw, self.wt])
 
         time_pred_last = time_in_seq[:, -1:]
-        val, log_1mu, lim, c = self.sess.run([self.val, self.log_1mu, self.lim, self.c], feed_dict=feed_dict)
-        all_time_preds = np.cumsum(val, axis=1) + time_pred_last
+        val = self.sess.run(self.val, feed_dict=feed_dict)
+        all_time_preds = np.cumsum(val, axis=1) + time_pred_last + self.OFFSET
         #print('printing val')
         #print(val)
         ##print('printing log_part')

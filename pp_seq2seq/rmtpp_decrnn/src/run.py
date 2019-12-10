@@ -67,10 +67,19 @@ def cmd(dataset_name, alg_name, dataset_path,
 
     clear_clutter = True
 
+    if 'off' in dataset_name:
+        off_ind = dataset_name.find('off') + 3
+        offset = float(dataset_name[off_ind:int(dataset_name.find('_', off_ind, len(dataset_name)-1))])
+        offset = offset * 3600.0
+        print('OFFSET', offset)
+    else:
+        offset = 0.0
+
     data = rmtpp_decrnn.utils.read_seq2seq_data(
         dataset_path=dataset_path,
         alg_name=alg_name,
         normalization=normalization,
+        offset=offset,
     )
 
     data['train_time_out_seq'] /= scale
@@ -150,6 +159,7 @@ def cmd(dataset_name, alg_name, dataset_path,
             attn_rnn=attn_rnn,
             use_intensity=use_intensity,
             use_avg_gaps=use_avg_gaps,
+            offset=offset,
             _opts=def_opts_local
         )
 

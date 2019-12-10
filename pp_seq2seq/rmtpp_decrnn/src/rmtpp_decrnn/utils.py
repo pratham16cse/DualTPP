@@ -83,7 +83,7 @@ def generate_norm_seq(timeTrain, timeDev, timeTest, enc_len, normalization, chec
             timeDev, devND, devNA, devIG, \
             timeTest, testND, testNA, testIG
 
-def read_seq2seq_data(dataset_path, alg_name, normalization=None, pad=True):
+def read_seq2seq_data(dataset_path, alg_name, normalization=None, offset=0.0, pad=True):
     """Read data from given files and return it as a dictionary."""
 
     with open(dataset_path+'train.event.in', 'r') as in_file:
@@ -351,9 +351,9 @@ def read_seq2seq_data(dataset_path, alg_name, normalization=None, pad=True):
                 dow = [ts[1] for ts in seq_parsed]
                 not_same_day = (np.array(dow) != last_day)
                 if not np.any(not_same_day):
-                    attn_idx = (np.abs(np.array(hod) - last_hour)).argmin()
+                    attn_idx = (np.abs(np.array(hod) - last_hour+offset)).argmin()
                 else:
-                    attn_idx = (np.abs(np.array(hod)[not_same_day] - last_hour)).argmin()
+                    attn_idx = (np.abs(np.array(hod)[not_same_day] - last_hour+offset)).argmin()
                 closest_hod = np.array(hod)[attn_idx]
                 print(attn_idx, closest_hod, last_hour)
                 #for ind, ts in zip(range(len(sequence)-1, -1, -1), reversed(sequence)):
