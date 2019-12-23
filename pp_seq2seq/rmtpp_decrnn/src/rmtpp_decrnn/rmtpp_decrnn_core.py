@@ -4,7 +4,7 @@ import numpy as np
 import os
 import decorated_options as Deco
 from .utils import create_dir, variable_summaries, MAE, RMSE, ACC, MRR, PERCENT_ERROR, DTW
-from .utils import get_output_indices, timestampTotime
+from .utils import get_output_indices, get_attn_seqs_from_offset, timestampTotime
 from scipy.integrate import quad
 import multiprocessing as MP
 import matplotlib
@@ -886,21 +886,16 @@ class RMTPP_DECRNN:
 
 
                         #self.D = tf.reduce_sum(decoder_states_concat * newVt, axis=-1) + base_intensity_bt
-                        self.D = tf.squeeze(tf.layers.dense(decoder_states_concat, 1, name='attn_D_layer',
-                                                            kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed),
-                                                            kernel_regularizer=self.EXTLYR_REGULARIZER,
-                                                            bias_regularizer=self.EXTLYR_REGULARIZER), axis=-1)
-                        if self.ALG_NAME in ['rmtpp_decrnn_splusintensity_attn', 'rmtpp_decrnn_splusintensity_attn_r',
-                                             'rmtpp_decrnn_splusintensity_coarseattn', 'rmtpp_decrnn_splusintensity_coarseattn_r',
-                                             'rmtpp_decrnn_splusintensity_pastattn', 'rmtpp_decrnn_splusintensity_pastattn_r',
-                                             'rmtpp_decrnn_splusintensity_pastattnstate']:
-                            self.D = tf.nn.softplus(self.D)
-                            self.D = tf.expand_dims(self.D, axis=-1) + self.wt_attn * lookup_gaps
-                        elif self.ALG_NAME in ['rmtpp_decrnn_attn', 'rmtpp_decrnn_attn_r',
-                                               'rmtpp_decrnn_coarseattn','rmtpp_decrnn_coarseattn_r',
-                                               'rmtpp_decrnn_pastattn', 'rmtpp_decrnn_pastattn_r',
-                                               'rmtpp_decrnn_attn_negw']:
-                            self.D = tf.expand_dims(self.D, axis=-1) + self.wt_attn * lookup_gaps
+                        if 'attnstate' not in self.ALG_NAME:
+                            decoder_states_concat = tf.tile(tf.expand_dims(decoder_states_concat, axis=2), [1, 1, self.NUM_DISCRETE_STATES, 1])
+                            lookup_gaps = tf.expand_dims(lookup_gaps, axis=-1)
+                            decoder_states_concat = tf.concat([decoder_states_concat, lookup_gaps], axis=-1)
+                            self.D = tf.squeeze(tf.layers.dense(decoder_states_concat, 1, name='attn_D_layer',
+                                                                kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed),
+                                                                kernel_regularizer=self.EXTLYR_REGULARIZER,
+                                                                bias_regularizer=self.EXTLYR_REGULARIZER), axis=-1)
+                            if 'splusintensity' in self.ALG_NAME:
+                                self.D = tf.nn.softplus(self.D)
                         elif 'attnstate' in self.ALG_NAME:
                             decoder_states_concat = tf.tile(tf.expand_dims(decoder_states_concat, axis=2), [1, 1, self.NUM_DISCRETE_STATES, 1])
                             append_states = tf.tile(append_states, [1, 1, 1, decoder_states_concat.get_shape().as_list()[-1]])
@@ -1326,11 +1321,13 @@ class RMTPP_DECRNN:
         train_time_out_seq = training_data['train_time_out_seq']
         train_time_in_feats = training_data['train_time_in_feats']
         train_time_out_feats = training_data['train_time_out_feats']
+        train_actual_time_in_seq = np.array(training_data['train_actual_time_in_seq'])
         coarse_train_gaps_in_seq = training_data['coarse_train_gaps_in_seq']
         coarse_train_time_in_feats = training_data['coarse_train_time_in_feats']
         attn_train_time_in_feats = training_data['attn_train_time_in_feats']
         attn_train_gaps = training_data['attn_train_gaps']
         attn_train_gaps_idxes = training_data['attn_train_gaps_idxes']
+        attn_train_time_in_seq = training_data['attn_train_time_in_seq']
 
         best_dev_mae, best_test_mae = np.inf, np.inf
         best_dev_gap_mae, best_test_gap_mae = np.inf, np.inf
@@ -1385,17 +1382,29 @@ class RMTPP_DECRNN:
                 batch_time_train_out_feats = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
                                               zip(batch_time_train_out_feats, out_begin_indices, out_end_indices)]
 
-                batch_coarse_train_gaps_in_seq = pad_sequences(np.array(coarse_train_gaps_in_seq)[batch_idxes], dtype=float, padding='post')
-                batch_coarse_train_time_in_feats = pad_sequences(np.array(coarse_train_time_in_feats)[batch_idxes], dtype=float, padding='post')
-                batch_attn_train_gaps = pad_sequences(np.array(attn_train_gaps)[batch_idxes], dtype=float, padding='post')
-                batch_attn_train_gaps_idxes = pad_sequences(np.array(attn_train_gaps_idxes)[batch_idxes], dtype=float, padding='post')
-                batch_attn_train_time_in_feats = pad_sequences(np.array(attn_train_time_in_feats)[batch_idxes], dtype=float, padding='post')
-                #print(batch_attn_train_time_in_feats)
-                #print(batch_time_train_feats)
-
-                train_actual_time_in_seq = np.array(training_data['train_actual_time_in_seq'])
                 batch_train_actual_time_in_seq = [train_actual_time_in_seq[batch_idx] for batch_idx in batch_idxes]
                 offset_feats = [[getHour(s+offset) for s in seq] for seq, offset in zip(batch_train_actual_time_in_seq, offsets)]
+
+                batch_coarse_train_gaps_in_seq = pad_sequences(np.array(coarse_train_gaps_in_seq)[batch_idxes], dtype=float, padding='post')
+                batch_coarse_train_time_in_feats = pad_sequences(np.array(coarse_train_time_in_feats)[batch_idxes], dtype=float, padding='post')
+                batch_attn_train_time_in_seq = [attn_train_time_in_seq[batch_idx] for batch_idx in batch_idxes]
+                batch_attn_train_gaps = [attn_train_gaps[batch_idx] for batch_idx in batch_idxes]
+                batch_attn_train_gaps_idxes = [attn_train_gaps_idxes[batch_idx] for batch_idx in batch_idxes]
+                batch_attn_train_time_in_feats = [attn_train_time_in_feats[batch_idx] for batch_idx in batch_idxes]
+
+                attn_begin_indices, attn_end_indices = \
+                        get_attn_seqs_from_offset(batch_train_actual_time_in_seq, batch_attn_train_time_in_seq, offsets, self.BPTT)
+                for beg_ind, end_ind, seq in zip(attn_begin_indices, attn_end_indices, batch_attn_train_time_in_seq):
+                    #print(beg_ind, end_ind, len(seq))
+                    assert end_ind <= len(seq)
+                batch_attn_train_gaps = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
+                                            zip(batch_attn_train_gaps, attn_begin_indices, attn_end_indices)]
+                batch_attn_train_gaps_idxes = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
+                                                zip(batch_attn_train_gaps_idxes, attn_begin_indices, attn_end_indices)]
+                batch_attn_train_time_in_feats = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
+                                                    zip(batch_attn_train_time_in_feats, attn_begin_indices, attn_end_indices)]
+                #print(batch_attn_train_time_in_feats)
+                #print(batch_time_train_feats)
 
                 num_elems = np.sum(np.ones_like(batch_time_train_feats))
                 #print(np.sum(batch_time_train_feats == batch_attn_train_time_in_feats), num_elems, 'Verifying Features')
@@ -1423,7 +1432,7 @@ class RMTPP_DECRNN:
                     self.attn_times_in_feats: batch_attn_train_time_in_feats,
                     self.coarse_gaps_in: batch_coarse_train_gaps_in_seq,
                     self.attn_gaps: batch_attn_train_gaps,
-                    self.attn_gaps_idxes: batch_attn_train_gaps_idxes,
+                    #self.attn_gaps_idxes: batch_attn_train_gaps_idxes,
                     self.offset_begin: offsets,
                     self.offset_begin_feats: offset_feats,
                     self.mode: 1.0, # Train Mode
@@ -1485,6 +1494,7 @@ class RMTPP_DECRNN:
                                        training_data['dev_time_in_seq'],
                                        training_data['dev_time_in_feats'],
                                        dec_len_for_eval,
+                                       training_data['attn_dev_time_in_seq'],
                                        pad_sequences(training_data['attn_dev_gaps'], dtype=float, padding='post'),
                                        pad_sequences(training_data['attn_dev_gaps_idxes'], dtype=float, padding='post'),
                                        pad_sequences(training_data['coarse_dev_gaps_in_seq'], dtype=float, padding='post'),
@@ -1502,6 +1512,7 @@ class RMTPP_DECRNN:
                                                    training_data['dev_time_in_feats'],
                                                    training_data['dev_time_out_feats'],
                                                    dec_len_for_eval,
+                                                   training_data['attn_dev_time_in_seq'],
                                                    pad_sequences(training_data['attn_dev_gaps'], dtype=float, padding='post'),
                                                    pad_sequences(training_data['attn_dev_gaps_idxes'], dtype=float, padding='post'),
                                                    pad_sequences(training_data['coarse_dev_gaps_in_seq'], dtype=float, padding='post'),
@@ -1589,6 +1600,7 @@ class RMTPP_DECRNN:
                                        training_data['test_time_in_seq'],
                                        training_data['test_time_in_feats'],
                                        dec_len_for_eval,
+                                       training_data['attn_test_time_in_seq'],
                                        pad_sequences(training_data['attn_test_gaps'], dtype=float, padding='post'),
                                        pad_sequences(training_data['attn_test_gaps_idxes'], dtype=float, padding='post'),
                                        pad_sequences(training_data['coarse_test_gaps_in_seq'], dtype=float, padding='post'),
@@ -1606,6 +1618,7 @@ class RMTPP_DECRNN:
                                                    training_data['test_time_in_feats'],
                                                    training_data['test_time_out_feats'],
                                                    dec_len_for_eval,
+                                                   training_data['attn_test_time_in_seq'],
                                                    pad_sequences(training_data['attn_test_gaps'], dtype=float, padding='post'),
                                                    pad_sequences(training_data['attn_test_gaps_idxes'], dtype=float, padding='post'),
                                                    pad_sequences(training_data['coarse_test_gaps_in_seq'], dtype=float, padding='post'),
@@ -1761,6 +1774,7 @@ class RMTPP_DECRNN:
                                    training_data['dev_time_in_seq'],
                                    training_data['dev_time_in_feats'],
                                    dec_len_for_eval,
+                                   training_data['attn_dev_time_in_seq'],
                                    pad_sequences(training_data['attn_dev_gaps'], dtype=float, padding='post'),
                                    pad_sequences(training_data['attn_dev_gaps_idxes'], dtype=float, padding='post'),
                                    pad_sequences(training_data['coarse_dev_gaps_in_seq'], dtype=float, padding='post'),
@@ -1778,6 +1792,7 @@ class RMTPP_DECRNN:
                                                training_data['dev_time_in_feats'],
                                                training_data['dev_time_out_feats'],
                                                dec_len_for_eval,
+                                               training_data['attn_dev_time_in_seq'],
                                                pad_sequences(training_data['attn_dev_gaps'], dtype=float, padding='post'),
                                                pad_sequences(training_data['attn_dev_gaps_idxes'], dtype=float, padding='post'),
                                                pad_sequences(training_data['coarse_dev_gaps_in_seq'], dtype=float, padding='post'),
@@ -1834,6 +1849,7 @@ class RMTPP_DECRNN:
                                    training_data['test_time_in_seq'],
                                    training_data['test_time_in_feats'],
                                    dec_len_for_eval,
+                                   training_data['attn_test_time_in_seq'],
                                    pad_sequences(training_data['attn_test_gaps'], dtype=float, padding='post'),
                                    pad_sequences(training_data['attn_test_gaps_idxes'], dtype=float, padding='post'),
                                    pad_sequences(training_data['coarse_test_gaps_in_seq'], dtype=float, padding='post'),
@@ -1851,6 +1867,7 @@ class RMTPP_DECRNN:
                                                training_data['test_time_in_feats'],
                                                training_data['test_time_out_feats'],
                                                dec_len_for_eval,
+                                               training_data['attn_test_time_in_seq'],
                                                pad_sequences(training_data['attn_test_gaps'], dtype=float, padding='post'),
                                                pad_sequences(training_data['attn_test_gaps_idxes'], dtype=float, padding='post'),
                                                pad_sequences(training_data['coarse_test_gaps_in_seq'], dtype=float, padding='post'),
@@ -1980,7 +1997,8 @@ class RMTPP_DECRNN:
 
     def evaluate_likelihood(self, event_in_seq, time_in_seq, event_out_seq, time_out_seq,
                             time_in_feats, time_out_feats, decoder_length,
-                            attn_gaps, attn_gaps_idxes, coarse_gaps_in_seq, coarse_times_in_feats,
+                            attn_time_in_seq, attn_gaps, attn_gaps_idxes,
+                            coarse_gaps_in_seq, coarse_times_in_feats,
                             times_out_feats, attn_times_in_feats, actual_time_in_seq):
 
         offsets = np.ones((len(time_in_seq))) * self.MAX_OFFSET
@@ -1998,6 +2016,18 @@ class RMTPP_DECRNN:
                             zip(time_out_seq, out_begin_indices, out_end_indices)]
         time_out_feats = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
                             zip(time_out_feats, out_begin_indices, out_end_indices)]
+
+        attn_begin_indices, attn_end_indices = \
+                get_attn_seqs_from_offset(actual_time_in_seq, attn_time_in_seq, offsets, self.BPTT)
+        for beg_ind, end_ind, seq in zip(attn_begin_indices, attn_end_indices, attn_time_in_seq):
+            #print(beg_ind, end_ind, len(seq))
+            assert end_ind <= len(seq)
+        attn_gaps = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
+                        zip(attn_gaps, attn_begin_indices, attn_end_indices)]
+        attn_gaps_idxes = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
+                            zip(attn_gaps_idxes, attn_begin_indices, attn_end_indices)]
+        attn_times_in_feats = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
+                                zip(attn_times_in_feats, attn_begin_indices, attn_end_indices)]
 
         num_events = sum([e>0 for seq in event_in_seq for e in seq])
         cur_state = np.zeros((len(event_in_seq), self.HIDDEN_LAYER_SIZE))
@@ -2017,7 +2047,7 @@ class RMTPP_DECRNN:
             self.coarse_times_in_feats: coarse_times_in_feats,
             self.coarse_gaps_in: coarse_gaps_in_seq,
             self.attn_gaps: attn_gaps,
-            self.attn_gaps_idxes: attn_gaps_idxes,
+            #self.attn_gaps_idxes: attn_gaps_idxes,
             self.attn_times_in_feats: attn_times_in_feats,
             self.offset_begin: offsets,
             self.offset_begin_feats: offset_feats,
@@ -2033,7 +2063,8 @@ class RMTPP_DECRNN:
 
 
     def predict(self, event_in_seq, time_in_seq, time_in_feats, dec_len_for_eval,
-                attn_gaps, attn_gaps_idxes, coarse_gaps_in_seq, coarse_times_in_feats,
+                attn_time_in_seq, attn_gaps, attn_gaps_idxes,
+                coarse_gaps_in_seq, coarse_times_in_feats,
                 times_out_feats, attn_times_in_feats, actual_time_in_seq,
                 single_threaded=False, plot_dir=False, event_out_seq=None):
         """Treats the entire dataset as a single batch and processes it."""
@@ -2044,6 +2075,19 @@ class RMTPP_DECRNN:
         #offsets = np.random.uniform(low=0.0, high=self.MAX_OFFSET, size=(self.BATCH_SIZE))
         offsets = np.ones((len(time_in_seq))) * self.MAX_OFFSET
         offset_feats = [[getHour(s+offset) for s in seq] for seq, offset in zip(actual_time_in_seq, offsets)]
+
+        attn_begin_indices, attn_end_indices = \
+                get_attn_seqs_from_offset(actual_time_in_seq, attn_time_in_seq, offsets, self.BPTT)
+        for beg_ind, end_ind, seq in zip(attn_begin_indices, attn_end_indices, attn_time_in_seq):
+            #print(beg_ind, end_ind, len(seq))
+            assert end_ind <= len(seq)
+        attn_gaps = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
+                        zip(attn_gaps, attn_begin_indices, attn_end_indices)]
+        attn_gaps_idxes = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
+                            zip(attn_gaps_idxes, attn_begin_indices, attn_end_indices)]
+        attn_times_in_feats = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
+                                zip(attn_times_in_feats, attn_begin_indices, attn_end_indices)]
+
 
         cur_state = np.zeros((len(event_in_seq), self.HIDDEN_LAYER_SIZE))
         initial_time = np.zeros(len(time_in_seq))
@@ -2069,7 +2113,7 @@ class RMTPP_DECRNN:
             self.coarse_times_in_feats: coarse_times_in_feats,
             self.coarse_gaps_in: coarse_gaps_in_seq,
             self.attn_gaps: attn_gaps,
-            self.attn_gaps_idxes: attn_gaps_idxes,
+            #self.attn_gaps_idxes: attn_gaps_idxes,
             self.attn_times_in_feats: attn_times_in_feats,
             self.offset_begin: offsets,
             self.offset_begin_feats: offset_feats,

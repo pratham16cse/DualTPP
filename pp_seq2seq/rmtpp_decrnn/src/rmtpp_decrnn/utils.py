@@ -443,9 +443,9 @@ def read_seq2seq_data(dataset_path, alg_name, normalization=None, offset=0.0, pa
 
             return attn_feats_past_day, attn_gaps_past_day
 
-        attn_train_time_in_feats, attn_train_gaps = get_past_attn_feats(attn_timeTrainIn, attn_train_time_in_feats, attn_train_gaps)
-        attn_dev_time_in_feats, attn_dev_gaps = get_past_attn_feats(attn_timeDevIn, attn_dev_time_in_feats, attn_dev_gaps)
-        attn_test_time_in_feats, attn_test_gaps = get_past_attn_feats(attn_timeTestIn, attn_test_time_in_feats, attn_test_gaps)
+        #attn_train_time_in_feats, attn_train_gaps = get_past_attn_feats(attn_timeTrainIn, attn_train_time_in_feats, attn_train_gaps)
+        #attn_dev_time_in_feats, attn_dev_gaps = get_past_attn_feats(attn_timeDevIn, attn_dev_time_in_feats, attn_dev_gaps)
+        #attn_test_time_in_feats, attn_test_gaps = get_past_attn_feats(attn_timeTestIn, attn_test_time_in_feats, attn_test_gaps)
 
     #for sequence in coarse_train_gaps_in_seq[:20]:
     #    for s in sequence:
@@ -490,16 +490,19 @@ def read_seq2seq_data(dataset_path, alg_name, normalization=None, offset=0.0, pa
         'dev_time_out_feats': dev_time_out_feats,
         'test_time_out_feats': test_time_out_feats,
 
+        'attn_train_time_in_seq': attn_timeTrainIn,
         'attn_train_gaps': attn_train_gaps,
         'attn_train_gaps_idxes': attn_train_gaps_idxes,
         'coarse_train_gaps_in_seq': coarse_train_gaps_in_seq,
         'coarse_train_time_in_feats': coarse_train_time_in_feats,
         'attn_train_time_in_feats': attn_train_time_in_feats,
+        'attn_dev_time_in_seq': attn_timeDevIn,
         'attn_dev_gaps': attn_dev_gaps,
         'attn_dev_gaps_idxes': attn_dev_gaps_idxes,
         'coarse_dev_gaps_in_seq': coarse_dev_gaps_in_seq,
         'coarse_dev_time_in_feats': coarse_dev_time_in_feats,
         'attn_dev_time_in_feats': attn_dev_time_in_feats,
+        'attn_test_time_in_seq': attn_timeTestIn,
         'attn_test_gaps': attn_test_gaps,
         'attn_test_gaps_idxes': attn_test_gaps_idxes,
         'coarse_test_gaps_in_seq': coarse_test_gaps_in_seq,
@@ -772,3 +775,28 @@ def get_output_indices(input_seqs, horizon_output_seqs, offsets, decoder_length)
         out_end_indices.append(out_end_ind)
 
     return out_begin_indices, out_end_indices
+
+def get_attn_seqs_from_offset(input_seqs, attn_seqs, offsets, encoder_length):
+    attn_begin_indices, attn_end_indices = list(), list()
+
+    for seq, attn_seq, offset in zip(input_seqs, attn_seqs, offsets):
+        key = seq[-1] + offset - 3600.0 * 24.0 # One day in the past
+        attn_idx = bisect_right(attn_seq, key)
+        #print(key, attn_seq[attn_idx], abs(key-attn_seq[attn_idx]))
+        #begin_idx = int(np.clip(attn_idx - encoder_length/2, 0, len(attn_seq)-1))
+        #end_idx = int(np.clip(attn_idx + encoder_length/2, 0, len(attn_seq)-1))
+
+        if attn_idx-encoder_length<0:
+            begin_idx = 0
+            end_idx = encoder_length
+        elif attn_idx+encoder_length>=len(attn_seq):
+            begin_idx = int(max(0, len(attn_seq)-1-encoder_length))
+            end_idx = len(attn_seq)-1
+        else:
+            begin_idx = attn_idx-encoder_length//2
+            end_idx = attn_idx+encoder_length//2
+
+        attn_begin_indices.append(begin_idx)
+        attn_end_indices.append(end_idx)
+
+    return attn_begin_indices, attn_end_indices
