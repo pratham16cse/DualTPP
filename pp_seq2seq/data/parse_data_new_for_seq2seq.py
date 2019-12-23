@@ -14,7 +14,7 @@ from operator import itemgetter
 import pandas as pd
 from datetime import datetime
 import time
-from bisect import bisect_left
+from bisect import bisect_left, bisect_right
 #from preprocess_rmtpp_data import preprocess
 
 DELTA = 3600.0 * 24 *2
@@ -188,6 +188,29 @@ def generate_norm_seq(sequences, encoder_length, check=0):
 
     return gap_norm_seq, avg_gaps
 
+def get_input_output_seqs(time_input_seqs, event_input_seqs, time_seqs, event_seqs,
+                          ts_indices, max_offset, decoder_length):
+
+    max_offset_sec = max_offset * 3600.0
+
+    time_input_seqs_new, event_input_seqs_new, time_output_seqs, event_output_seqs, ts_indices_new \
+            = list(), list(), list(), list(), list()
+
+    for ts_ind, time_in_seq, event_in_seq in zip(ts_indices, time_input_seqs, event_input_seqs):
+        start_ind = bisect_right(time_seqs[ts_ind], time_in_seq[-1])
+        end_ind = bisect_right(time_seqs[ts_ind], time_in_seq[-1]+max_offset_sec) + decoder_length + 1
+        #print(start_ind, end_ind)
+        if end_ind < len(time_seqs[ts_ind]):
+            time_out_seq = time_seqs[ts_ind][start_ind:end_ind]
+            event_out_seq = event_seqs[ts_ind][start_ind:end_ind]
+            time_output_seqs.append(time_out_seq)
+            event_output_seqs.append(event_out_seq)
+            time_input_seqs_new.append(time_in_seq)
+            event_input_seqs_new.append(event_in_seq)
+            ts_indices_new.append(ts_ind)
+
+    return time_input_seqs_new, event_input_seqs_new, time_output_seqs, event_output_seqs, ts_indices_new
+
 def preprocess(raw_dataset_name,
                dataset_name,
                all_timestamps,
@@ -197,7 +220,7 @@ def preprocess(raw_dataset_name,
                event_test, time_test,
                encoder_length, decoder_length,
                train_step_length=None, dev_step_length=None, test_step_length=None,
-               keep_classes=0, num_coarse_seq=0, offset=0.0):
+               keep_classes=0, num_coarse_seq=0, offset=0.0, max_offset=0.0):
 
     sequence_length = encoder_length + decoder_length
 
@@ -253,10 +276,21 @@ def preprocess(raw_dataset_name,
 
         #if ctr == 1: print(train_event_batch.shape)
 
-        pp_train_event_in_seq.extend(train_event_batch[:, :encoder_length].tolist())
-        pp_train_time_in_seq.extend(train_time_batch[:, :encoder_length].tolist())
-        pp_train_event_out_seq.extend(train_event_batch[:, encoder_length:].tolist())
-        pp_train_time_out_seq.extend(train_time_batch[:, encoder_length:].tolist())
+        if max_offset:
+            train_time_batch_in, train_event_batch_in, \
+            train_time_batch_out, train_event_batch_out, tsIndices \
+                    = get_input_output_seqs(train_time_batch[:, :encoder_length].tolist(),
+                                            train_event_batch[:, :encoder_length].tolist(),
+                                            train_time_seq, train_event_seq, tsIndices, max_offset, decoder_length)
+            pp_train_event_in_seq.extend(train_event_batch_in)
+            pp_train_time_in_seq.extend(train_time_batch_in)
+            pp_train_event_out_seq.extend(train_event_batch_out)
+            pp_train_time_out_seq.extend(train_time_batch_out)
+        else:
+            pp_train_event_in_seq.extend(train_event_batch[:, :encoder_length].tolist())
+            pp_train_time_in_seq.extend(train_time_batch[:, :encoder_length].tolist())
+            pp_train_event_out_seq.extend(train_event_batch[:, encoder_length:].tolist())
+            pp_train_time_out_seq.extend(train_time_batch[:, encoder_length:].tolist())
 
         train_tsIndices += tsIndices
 
@@ -273,10 +307,21 @@ def preprocess(raw_dataset_name,
 
         #if ctr == 1: print(dev_event_batch.shape)
 
-        pp_dev_event_in_seq.extend(dev_event_batch[:, :encoder_length].tolist())
-        pp_dev_time_in_seq.extend(dev_time_batch[:, :encoder_length].tolist())
-        pp_dev_event_out_seq.extend(dev_event_batch[:, encoder_length:].tolist())
-        pp_dev_time_out_seq.extend(dev_time_batch[:, encoder_length:].tolist())
+        if max_offset:
+            dev_time_batch_in, dev_event_batch_in, \
+            dev_time_batch_out, dev_event_batch_out, tsIndices \
+                    = get_input_output_seqs(dev_time_batch[:, :encoder_length].tolist(),
+                                            dev_event_batch[:, :encoder_length].tolist(),
+                                            dev_time_seq, dev_event_seq, tsIndices, max_offset, decoder_length)
+            pp_dev_event_in_seq.extend(dev_event_batch_in)
+            pp_dev_time_in_seq.extend(dev_time_batch_in)
+            pp_dev_event_out_seq.extend(dev_event_batch_out)
+            pp_dev_time_out_seq.extend(dev_time_batch_out)
+        else:
+            pp_dev_event_in_seq.extend(dev_event_batch[:, :encoder_length].tolist())
+            pp_dev_time_in_seq.extend(dev_time_batch[:, :encoder_length].tolist())
+            pp_dev_event_out_seq.extend(dev_event_batch[:, encoder_length:].tolist())
+            pp_dev_time_out_seq.extend(dev_time_batch[:, encoder_length:].tolist())
 
         dev_tsIndices += tsIndices
 
@@ -294,10 +339,21 @@ def preprocess(raw_dataset_name,
 
         #if ctr == 1: print(test_event_batch.shape)
 
-        pp_test_event_in_seq.extend(test_event_batch[:, :encoder_length].tolist())
-        pp_test_time_in_seq.extend(test_time_batch[:, :encoder_length].tolist())
-        pp_test_event_out_seq.extend(test_event_batch[:, encoder_length:].tolist())
-        pp_test_time_out_seq.extend(test_time_batch[:, encoder_length:].tolist())
+        if max_offset:
+            test_time_batch_in, test_event_batch_in, \
+            test_time_batch_out, test_event_batch_out, tsIndices \
+                    = get_input_output_seqs(test_time_batch[:, :encoder_length].tolist(),
+                                            test_event_batch[:, :encoder_length].tolist(),
+                                            test_time_seq, test_event_seq, tsIndices, max_offset, decoder_length)
+            pp_test_event_in_seq.extend(test_event_batch_in)
+            pp_test_time_in_seq.extend(test_time_batch_in)
+            pp_test_event_out_seq.extend(test_event_batch_out)
+            pp_test_time_out_seq.extend(test_time_batch_out)
+        else:
+            pp_test_event_in_seq.extend(test_event_batch[:, :encoder_length].tolist())
+            pp_test_time_in_seq.extend(test_time_batch[:, :encoder_length].tolist())
+            pp_test_event_out_seq.extend(test_event_batch[:, encoder_length:].tolist())
+            pp_test_time_out_seq.extend(test_time_batch[:, encoder_length:].tolist())
 
         test_tsIndices += tsIndices
 
@@ -347,6 +403,7 @@ def preprocess(raw_dataset_name,
     dataset_name = dataset_name if dataset_name[-1]!='/' else dataset_name[:-1]
     dataset_name = dataset_name + '_chop' if num_coarse_seq>0 else dataset_name
     dataset_name = dataset_name + '_off'+str(offset) if offset>0.0 else dataset_name
+    dataset_name = dataset_name + '_maxoff'+str(max_offset) if max_offset>0.0 else dataset_name
     dataset_name = dataset_name + '_' + str(encoder_length) + '_' + str(decoder_length) \
                    + '_' + str(train_step_length) + '_' + str(dev_step_length) + '_' + str(test_step_length) \
 
@@ -548,6 +605,7 @@ def main():
     parser.add_argument("--num_coarse_seq", type=int, default=0, help="Chop a single-large-seqeunce data into C sequences \
                                                                        of approx equal size, no chopping when set to zero")
     parser.add_argument("--offset", type=float, default=0.0, help="Output Sequence offset by 'offset'-hours")
+    parser.add_argument("--max_offset", type=float, default=0.0, help="Output Sequence contains all future timestamps between [0, max_offset] hours")
     args = parser.parse_args()
 
     dataset = args.dataset
@@ -560,6 +618,7 @@ def main():
     keep_classes = args.keep_classes
     num_coarse_seq = args.num_coarse_seq
     offset = args.offset
+    max_offset = args.max_offset
     sequence_length = encoder_length + decoder_length
     output_path = 'NewDataParsed'
     
@@ -693,7 +752,7 @@ def main():
                event_test, time_test,
                encoder_length, decoder_length,
                train_step_length, dev_step_length, test_step_length,
-               keep_classes, num_coarse_seq, offset)
+               keep_classes, num_coarse_seq, offset, max_offset)
 
 if __name__ == '__main__':
     main()

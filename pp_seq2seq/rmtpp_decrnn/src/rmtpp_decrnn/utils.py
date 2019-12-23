@@ -9,6 +9,7 @@ from itertools import chain
 from dtw import dtw
 from datetime import datetime
 import time
+from bisect import bisect_right
 
 def getDatetime(epoch):
     date_string=time.strftime("%d-%m-%Y %H:%M:%S", time.gmtime(epoch))
@@ -39,41 +40,81 @@ def change_zero_label(sequences):
 def generate_norm_seq(timeTrain, timeDev, timeTest, enc_len, normalization, check=0):
 
     def _generate_norm_seq(sequences, enc_len, normalization, check=0):
-        sequences = np.array(sequences)
-        gap_seqs = sequences[:, 1:]-sequences[:, :-1]
-        #initial_gaps = np.mean(gap_seqs[:, :enc_len-1], axis=1, keepdims=True)
-        initial_gaps = np.zeros_like(np.mean(gap_seqs[:, :enc_len-1], axis=1, keepdims=True))
-        gap_seqs = np.hstack((initial_gaps, gap_seqs))
-        N = len(gap_seqs)
-        if normalization == 'minmax':
-            max_gaps = np.clip(np.max(gap_seqs[:, :enc_len-1], keepdims=True), 1.0, np.inf)
-            min_gaps = np.clip(np.min(gap_seqs[:, :enc_len-1], keepdims=True), 1.0, np.inf)
-            normalizer_d = np.ones((N, 1)) * (max_gaps - min_gaps)
-            normalizer_a = np.ones((N, 1)) * (-mjn_gaps/(max_gaps - min_gaps))
-        elif normalization == 'average':
-            avg_gaps = np.clip(np.mean(gap_seqs[:, :enc_len-1], keepdims=True), 1.0, np.inf)
-            normalizer_d = np.ones((N, 1)) * avg_gaps
-            normalizer_a = np.zeros((N, 1))
-        elif normalization == 'average_per_seq':
-            avg_gaps = np.clip(np.mean(gap_seqs[:, :enc_len-1], axis=1, keepdims=True), 1.0, np.inf)
-            normalizer_d = avg_gaps
-            normalizer_a = np.zeros((N, 1))
-        elif normalization is None:
-            normalizer_d = np.ones((N, 1))
-            normalizer_a = np.zeros((N, 1))
-        else:
-            print('Normalization not found')
-            assert False
 
-        avg_gaps_norm = gap_seqs/normalizer_d + normalizer_a
-        avg_gaps_norm = np.cumsum(avg_gaps_norm, axis=1)
-        #gap_norm_seq = np.hstack((np.zeros((N, 1)), avg_gaps_norm))
+        def _norm_seq(sequence):
+            sequence = np.array(sequence)
+            gap_seq = sequence[1:]-sequence[:-1]
+            init_gap = np.zeros((1))
+            gap_seq = np.hstack((init_gap, gap_seq))
 
-        if check==1:
-            print("sequences[:,:1]")
-            print(sequences[:,:1])
+            if normalization in ['minmax', 'average']:
+                max_gap = np.clip(np.max(gap_seq[:enc_len-1]), 1.0, np.inf)
+                min_gap = np.clip(np.min(gap_seq[:enc_len-1]), 1.0, np.inf)
+                n_d, n_a = [(max_gap - min_gap)], [(-min_gap/(max_gap - min_gap))]
+            elif normalization == 'average_per_seq':
+                avg_gap = np.clip(np.mean(gap_seq[:enc_len-1]), 1.0, np.inf)
+                n_d, n_a = [avg_gap], [0.0]
+            elif normalization is None:
+                n_d, n_a = [1.0], [0.0]
+            else:
+                print('Normalization not found')
+                assert False
+
+            avg_gap_norm = gap_seq/n_d + n_a
+            avg_gap_norm = np.cumsum(avg_gap_norm)
+
+            return avg_gap_norm, n_d, n_a, init_gap
+
+        avg_gaps_norm, normalizer_d, normalizer_a, initial_gaps = list(), list(), list(), list()
+        for sequence in sequences:
+            avg_gap_norm, n_d, n_a, init_gap = _norm_seq(sequence)
+            avg_gaps_norm.append(avg_gap_norm)
+            normalizer_d.append(n_d)
+            normalizer_a.append(n_a)
+            initial_gaps.append(init_gap)
+
+        if normalization == 'average':
+            normalizer_d = np.mean([s for sequence in sequences for s in sequence])
+            normalizer_d = np.ones((len(sequences), 1)) * normalizer_d
 
         return avg_gaps_norm, normalizer_d, normalizer_a, initial_gaps
+
+
+        #sequences = np.array(sequences)
+        #gap_seqs = sequences[:, 1:]-sequences[:, :-1]
+        ##initial_gaps = np.mean(gap_seqs[:, :enc_len-1], axis=1, keepdims=True)
+        #initial_gaps = np.zeros_like(np.mean(gap_seqs[:, :enc_len-1], axis=1, keepdims=True))
+        #gap_seqs = np.hstack((initial_gaps, gap_seqs))
+        #N = len(gap_seqs)
+        #if normalization == 'minmax':
+        #    max_gaps = np.clip(np.max(gap_seqs[:, :enc_len-1], keepdims=True), 1.0, np.inf)
+        #    min_gaps = np.clip(np.min(gap_seqs[:, :enc_len-1], keepdims=True), 1.0, np.inf)
+        #    normalizer_d = np.ones((N, 1)) * (max_gaps - min_gaps)
+        #    normalizer_a = np.ones((N, 1)) * (-mjn_gaps/(max_gaps - min_gaps))
+        #elif normalization == 'average':
+        #    avg_gaps = np.clip(np.mean(gap_seqs[:, :enc_len-1], keepdims=True), 1.0, np.inf)
+        #    normalizer_d = np.ones((N, 1)) * avg_gaps
+        #    normalizer_a = np.zeros((N, 1))
+        #elif normalization == 'average_per_seq':
+        #    avg_gaps = np.clip(np.mean(gap_seqs[:, :enc_len-1], axis=1, keepdims=True), 1.0, np.inf)
+        #    normalizer_d = avg_gaps
+        #    normalizer_a = np.zeros((N, 1))
+        #elif normalization is None:
+        #    normalizer_d = np.ones((N, 1))
+        #    normalizer_a = np.zeros((N, 1))
+        #else:
+        #    print('Normalization not found')
+        #    assert False
+
+        #avg_gaps_norm = gap_seqs/normalizer_d + normalizer_a
+        #avg_gaps_norm = np.cumsum(avg_gaps_norm, axis=1)
+        ##gap_norm_seq = np.hstack((np.zeros((N, 1)), avg_gaps_norm))
+
+        #if check==1:
+        #    print("sequences[:,:1]")
+        #    print(sequences[:,:1])
+
+        #return avg_gaps_norm, normalizer_d, normalizer_a, initial_gaps
 
     timeTrain, trainND, trainNA, trainIG = _generate_norm_seq(timeTrain, enc_len, normalization)
     timeDev, devND, devNA, devIG = _generate_norm_seq(timeDev, enc_len, normalization)
@@ -83,7 +124,7 @@ def generate_norm_seq(timeTrain, timeDev, timeTest, enc_len, normalization, chec
             timeDev, devND, devNA, devIG, \
             timeTest, testND, testNA, testIG
 
-def read_seq2seq_data(dataset_path, alg_name, normalization=None, offset=0.0, pad=True):
+def read_seq2seq_data(dataset_path, alg_name, normalization=None, offset=0.0, pad=False):
     """Read data from given files and return it as a dictionary."""
 
     with open(dataset_path+'train.event.in', 'r') as in_file:
@@ -167,9 +208,10 @@ def read_seq2seq_data(dataset_path, alg_name, normalization=None, offset=0.0, pa
         unique_samples = unique_samples.union(x)
 
     enc_len = len(timeTrainIn[0])
+    trainActualTimeIn = np.array(timeTrainIn)[:, enc_len-1:enc_len].tolist()
     devActualTimeIn = np.array(timeDevIn)[:, enc_len-1:enc_len].tolist()
     testActualTimeIn = np.array(timeTestIn)[:, enc_len-1:enc_len].tolist()
-    devActualTimeOut, testActualTimeOut = timeDevOut, timeTestOut
+    trainActualTimeOut, devActualTimeOut, testActualTimeOut = timeTrainOut, timeDevOut, timeTestOut
 
     # ----- Normalization by gaps ----- #
     timeTrain, trainND, trainNA, trainIG, \
@@ -177,9 +219,12 @@ def read_seq2seq_data(dataset_path, alg_name, normalization=None, offset=0.0, pa
             timeTest, testND, testNA, testIG \
             = generate_norm_seq(timeTrain, timeDev, timeTest, enc_len, normalization)
 
-    timeTrainIn, timeTrainOut = timeTrain[:, :enc_len], timeTrain[:, enc_len:]
-    timeDevIn, timeDevOut = timeDev[:, :enc_len], timeDev[:, enc_len:]
-    timeTestIn, timeTestOut = timeTest[:, :enc_len], timeTest[:, enc_len:]
+    timeTrainIn = [seq[:enc_len] for seq in timeTrain]
+    timeTrainOut = [seq[enc_len:] for seq in timeTrain]
+    timeDevIn = [seq[:enc_len] for seq in timeDev]
+    timeDevOut = [seq[enc_len:] for seq in timeDev]
+    timeTestIn = [seq[:enc_len] for seq in timeTest]
+    timeTestOut = [seq[enc_len:] for seq in timeTest]
 
 #    timeTrainIn = [[(y - minTime) / (maxTime - minTime) for y in x] for x in timeTrainIn]
 #    timeTrainOut = [[(y - minTime) / (maxTime - minTime) for y in x] for x in timeTrainOut]
@@ -187,9 +232,12 @@ def read_seq2seq_data(dataset_path, alg_name, normalization=None, offset=0.0, pa
     timeTrainFeats = np.array(timeTrainFeats)
     timeDevFeats = np.array(timeDevFeats)
     timeTestFeats = np.array(timeTestFeats)
-    timeTrainInFeats, timeTrainOutFeats = timeTrainFeats[:, :enc_len], timeTrainFeats[:, enc_len:]
-    timeDevInFeats, timeDevOutFeats = timeDevFeats[:, :enc_len], timeDevFeats[:, enc_len:]
-    timeTestInFeats, timeTestOutFeats = timeTestFeats[:, :enc_len], timeTestFeats[:, enc_len:]
+    timeTrainInFeats = [seq[:enc_len] for seq in timeTrainFeats]
+    timeTrainOutFeats = [seq[enc_len:] for seq in timeTrainFeats]
+    timeDevInFeats = [seq[:enc_len] for seq in timeDevFeats]
+    timeDevOutFeats = [seq[enc_len:] for seq in timeDevFeats]
+    timeTestInFeats = [seq[:enc_len] for seq in timeTestFeats]
+    timeTestOutFeats = [seq[enc_len:] for seq in timeTestFeats]
 
     if pad:
         train_event_in_seq = pad_sequences(eventTrainIn, padding='post')
@@ -426,11 +474,14 @@ def read_seq2seq_data(dataset_path, alg_name, normalization=None, offset=0.0, pa
         'test_time_in_seq': test_time_in_seq,
         'test_time_out_seq': test_time_out_seq,
 
-        'test_actual_time_in_seq': testActualTimeIn,
-        'test_actual_time_out_seq': testActualTimeOut,
+        'train_actual_time_in_seq': trainActualTimeIn,
+        'train_actual_time_out_seq': trainActualTimeOut,
 
         'dev_actual_time_in_seq': devActualTimeIn,
         'dev_actual_time_out_seq': devActualTimeOut,
+
+        'test_actual_time_in_seq': testActualTimeIn,
+        'test_actual_time_out_seq': testActualTimeOut,
 
         'train_time_in_feats': train_time_in_feats,
         'dev_time_in_feats': dev_time_in_feats,
@@ -630,6 +681,9 @@ def MAE(time_preds, time_true, events_out):
 
     # Predictions may not cover the entire time dimension.
     # This clips time_true to the correct size.
+    time_true = np.array(time_true)
+    time_preds = np.array(time_preds)
+    events_out = np.array(events_out)
     seq_limit = time_preds.shape[1]
     batch_limit = time_preds.shape[0]
     clipped_time_true = time_true[:batch_limit, :seq_limit]
@@ -644,16 +698,16 @@ def MAE(time_preds, time_true, events_out):
 
 def DTW(time_preds, time_true, events_out):
 
-    seq_limit = time_preds.shape[1]
-    clipped_time_true = time_true[:, :seq_limit]
-    clipped_events_out = events_out[:, :seq_limit]
+    #seq_limit = time_preds.shape[1]
+    clipped_time_true = time_true#[:, :seq_limit]
+    clipped_events_out = events_out#[:, :seq_limit]
 
     euclidean_norm = lambda x, y: np.abs(x - y)
     distance = 0
     for time_preds_, clipped_time_true_ in zip(time_preds, clipped_time_true):
         d, cost_matrix, acc_cost_matrix, path = dtw(time_preds_, clipped_time_true_, dist=euclidean_norm)
         distance += d
-    distance = distance / clipped_time_true.shape[0]
+    distance = distance / len(clipped_time_true)
 
     return distance
 
@@ -674,6 +728,8 @@ def RMSE(time_preds, time_true, events_out):
 
 def ACC(event_preds, event_true):
     """Returns the accuracy of the event prediction, provided the output probability vector."""
+    event_preds = np.array(event_preds)
+    event_true = np.array(event_true)
     clipped_event_true = event_true[:event_preds.shape[0], :event_preds.shape[1]]
     is_valid = clipped_event_true > 0
 
@@ -705,3 +761,14 @@ def MRR(event_preds_softmax, event_true):
 
 def PERCENT_ERROR(event_preds, event_true):
     return (1.0 - ACC(event_preds, event_true)) * 100
+
+def get_output_indices(input_seqs, horizon_output_seqs, offsets, decoder_length):
+    out_begin_indices, out_end_indices = list(), list()
+
+    for input_seq, hor_out_seq, offset in zip(input_seqs, horizon_output_seqs, offsets):
+        out_begin_ind = bisect_right(hor_out_seq, input_seq[-1]+offset)
+        out_end_ind = out_begin_ind + decoder_length
+        out_begin_indices.append(out_begin_ind)
+        out_end_indices.append(out_end_ind)
+
+    return out_begin_indices, out_end_indices
