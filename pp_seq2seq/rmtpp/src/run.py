@@ -56,17 +56,36 @@ def cmd(dataset_name, alg_name, dataset_path,
 
     clear_clutter = True
 
+    if 'off' in dataset_name and 'maxoff' not in dataset_name:
+        off_ind = dataset_name.find('off') + 3
+        offset = float(dataset_name[off_ind:int(dataset_name.find('_', off_ind, len(dataset_name)-1))])
+        offset = offset * 3600.0
+        print('OFFSET', offset)
+    else:
+        offset = 0.0
+
+    if 'maxoff' in dataset_name:
+        maxoff_ind = dataset_name.find('maxoff') + 6
+        max_offset = float(dataset_name[maxoff_ind:int(dataset_name.find('_', maxoff_ind, len(dataset_name)-1))])
+        max_offset = max_offset * 3600.0
+        print('MAX_OFFSET', max_offset)
+    else:
+        max_offset = 0.0
+
     data = rmtpp.utils.read_seq2seq_data(
         dataset_path=dataset_path,
+        alg_name=alg_name,
+        dec_len=decoder_length,
         normalization=normalization,
+        offset=offset,
     )
 
-    data['train_time_out_seq'] /= scale
-    data['train_time_in_seq'] /= scale
-    data['dev_time_out_seq'] /= scale
-    data['dev_time_in_seq'] /= scale
-    data['test_time_out_seq'] /= scale
-    data['test_time_in_seq'] /= scale
+    #data['train_time_out_seq'] /= scale
+    #data['train_time_in_seq'] /= scale
+    #data['dev_time_out_seq'] /= scale
+    #data['dev_time_in_seq'] /= scale
+    #data['test_time_out_seq'] /= scale
+    #data['test_time_in_seq'] /= scale
 
     def print_dump_merger(old_save_dir, decoder_length_run, total_files):
         filenames = list()
@@ -113,8 +132,8 @@ def cmd(dataset_name, alg_name, dataset_path,
             save_dir=save_dir,
             summary_dir=summary_dir,
             batch_size=batch_size,
-            bptt=data['encoder_length']+data['decoder_length']-1,
-            decoder_length=data['decoder_length'],
+            bptt=data['encoder_length'] + decoder_length-1,
+            decoder_length=decoder_length,
             #learning_rate=learning_rate,
             cpu_only=cpu_only,
             constraints=constraints,
@@ -128,6 +147,8 @@ def cmd(dataset_name, alg_name, dataset_path,
             seed=seed,
             num_feats=num_feats,
             use_time_features=use_time_features,
+            offset=offset,
+            max_offset=max_offset,
             _opts=def_opts_local
         )
 
@@ -153,7 +174,7 @@ def cmd(dataset_name, alg_name, dataset_path,
         return result
 
     #decoder_length_run = [0, 1, 2, 3]
-    decoder_length_run = np.arange(data['decoder_length']+1).tolist()
+    decoder_length_run = np.arange(decoder_length+1).tolist()
 
     old_save_dir = save_dir
     th_loop_cnt = 0
@@ -217,7 +238,7 @@ def cmd(dataset_name, alg_name, dataset_path,
                     param_names_lst.append(param_names)
 
                 th_loop_cnt = len(param_names_lst)
-                
+
                 with MP.Pool() as pool:
                         results = pool.map(hparam_loop, enumerate(zip(param_names_lst, param_values_lst)))
 
@@ -260,15 +281,16 @@ def cmd(dataset_name, alg_name, dataset_path,
                 f.close()
 
             if save_dir:
-                np.savetxt(os.path.join(save_dir)+'/test.pred.events.out.csv', best_result['best_test_event_preds'], delimiter=',')
-                np.savetxt(os.path.join(save_dir)+'/test.pred.times.out.csv', best_result['best_test_time_preds'], delimiter=',')
-                np.savetxt(os.path.join(save_dir)+'/test.gt.events.out.csv', data['test_event_out_seq'][:,:dec_len], delimiter=',')
-                np.savetxt(os.path.join(save_dir)+'/test.gt.times.out.csv', np.array(data['test_actual_time_out_seq'])[:,:dec_len], delimiter=',')
+                #TODO Rewrite below functions to save correct ground-truth and predicted values according to offset
+                #np.savetxt(os.path.join(save_dir)+'/test.pred.events.out.csv', best_result['best_test_event_preds'], delimiter=',')
+                #np.savetxt(os.path.join(save_dir)+'/test.pred.times.out.csv', best_result['best_test_time_preds'], delimiter=',')
+                #np.savetxt(os.path.join(save_dir)+'/test.gt.events.out.csv', data['test_event_out_seq'][:,:dec_len], delimiter=',')
+                #np.savetxt(os.path.join(save_dir)+'/test.gt.times.out.csv', np.array(data['test_actual_time_out_seq'])[:,:dec_len], delimiter=',')
 
-                np.savetxt(os.path.join(save_dir)+'/dev.pred.events.out.csv', best_result['best_dev_event_preds'], delimiter=',')
-                np.savetxt(os.path.join(save_dir)+'/dev.pred.times.out.csv', best_result['best_dev_time_preds'], delimiter=',')
-                np.savetxt(os.path.join(save_dir)+'/dev.gt.events.out.csv', data['dev_event_out_seq'][:,:dec_len], delimiter=',')
-                np.savetxt(os.path.join(save_dir)+'/dev.gt.times.out.csv', np.array(data['dev_actual_time_out_seq'])[:,:dec_len], delimiter=',')
+                #np.savetxt(os.path.join(save_dir)+'/dev.pred.events.out.csv', best_result['best_dev_event_preds'], delimiter=',')
+                #np.savetxt(os.path.join(save_dir)+'/dev.pred.times.out.csv', best_result['best_dev_time_preds'], delimiter=',')
+                #np.savetxt(os.path.join(save_dir)+'/dev.gt.events.out.csv', data['dev_event_out_seq'][:,:dec_len], delimiter=',')
+                #np.savetxt(os.path.join(save_dir)+'/dev.gt.times.out.csv', np.array(data['dev_actual_time_out_seq'])[:,:dec_len], delimiter=',')
 
                 for result in results:
                     del result['best_train_event_preds'], result['best_train_time_preds'], \

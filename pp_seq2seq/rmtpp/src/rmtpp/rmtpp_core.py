@@ -3,6 +3,7 @@ import numpy as np
 import os
 import decorated_options as Deco
 from .utils import create_dir, variable_summaries, MAE, RMSE, ACC, MRR, PERCENT_ERROR, DTW
+from .utils import get_output_indices
 from scipy.integrate import quad
 import multiprocessing as MP
 import matplotlib
@@ -43,7 +44,7 @@ def_opts = Deco.Options(
     device_cpu='/cpu:0',
 
     bptt=20,
-    decoder_length=10,
+    decoder_length=5,
     cpu_only=False,
 
     normalization=None,
@@ -55,10 +56,12 @@ def_opts = Deco.Options(
 
     num_extra_layer=0,
     mark_loss=True,
-    plot_pred_dev=True,
+    plot_pred_dev=False,
     plot_pred_test=False,
     num_feats=1,
     use_time_features=False,
+
+    max_offset=0.0,
 
     wt_hparam=1.0,
 
@@ -119,7 +122,8 @@ class RMTPP:
                  device_gpu, device_cpu, summary_dir, cpu_only, constraints,
                  patience, stop_criteria, epsilon, num_extra_layer, mark_loss,
                  Wt, Wem, Wem_feats, Wh, bh, Ws, bs, wt, Wy, Vy, Vt, Vw, bk, bt, bw, wt_hparam,
-                 plot_pred_dev, plot_pred_test, rnn_cell_type, num_feats, use_time_features):
+                 plot_pred_dev, plot_pred_test, rnn_cell_type, num_feats, use_time_features,
+                 max_offset):
 
         self.seed = seed
         tf.set_random_seed(self.seed)
@@ -171,6 +175,8 @@ class RMTPP:
 
         self.NUM_FEATS = num_feats
         self.USE_TIME_FEATS = use_time_features
+
+        self.MAX_OFFSET = max_offset
 
         if True:
             self.DEC_STATE_SIZE = 2 * self.HIDDEN_LAYER_SIZE
@@ -700,6 +706,8 @@ class RMTPP:
         train_event_out_seq = training_data['train_event_out_seq']
         train_time_out_seq = training_data['train_time_out_seq']
         train_time_in_feats = training_data['train_time_in_feats']
+        train_time_out_feats = training_data['train_time_out_feats']
+        train_actual_time_in_seq = np.array(training_data['train_actual_time_in_seq'])
 
         best_dev_mae, best_test_mae = np.inf, np.inf
         best_dev_gap_mae, best_test_gap_mae = np.inf, np.inf
@@ -731,18 +739,33 @@ class RMTPP:
 
             for batch_idx in range(n_batches):
                 batch_idxes = idxes[batch_idx * self.BATCH_SIZE:(batch_idx + 1) * self.BATCH_SIZE]
-                batch_event_train_in = train_event_in_seq[batch_idxes, :self.BPTT]
-                batch_event_train_out = train_event_out_seq[batch_idxes, :self.BPTT]
-                batch_time_train_in = train_time_in_seq[batch_idxes, :self.BPTT]
-                batch_time_train_out = train_time_out_seq[batch_idxes, :self.BPTT]
-                batch_time_train_feats = train_time_in_feats[batch_idxes, :self.BPTT]
+
+                batch_event_train_in = [train_event_in_seq[batch_idx][:self.BPTT] for batch_idx in batch_idxes]
+                batch_time_train_in = [train_time_in_seq[batch_idx][:self.BPTT] for batch_idx in batch_idxes]
+                batch_time_train_feats = [train_time_in_feats[batch_idx][:self.BPTT] for batch_idx in batch_idxes]
+
+                batch_time_train_out = [train_time_out_seq[batch_idx][:self.BPTT] for batch_idx in batch_idxes]
+                batch_event_train_out = [train_event_out_seq[batch_idx][:self.BPTT] for batch_idx in batch_idxes]
+                #offsets = np.zeros((self.BATCH_SIZE))
+                #out_begin_indices, out_end_indices \
+                #        = get_output_indices(batch_time_train_in, batch_time_train_out, offsets, self.DEC_LEN)
+                ##print(offsets)
+                #for beg_ind, end_ind, seq in zip(out_begin_indices, out_end_indices, batch_event_train_out):
+                #    print(beg_ind, end_ind, len(seq))
+                #    assert end_ind < len(seq)
+                #batch_event_train_out = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
+                #                         zip(batch_event_train_out, out_begin_indices, out_end_indices)]
+                #batch_time_train_out = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
+                #                        zip(batch_time_train_out, out_begin_indices, out_end_indices)]
+                batch_train_actual_time_in_seq = [train_actual_time_in_seq[batch_idx] for batch_idx in batch_idxes]
+
 
                 cur_state = np.zeros((self.BATCH_SIZE, self.HIDDEN_LAYER_SIZE))
                 batch_loss, batch_time_loss, batch_mark_loss = 0.0, 0.0, 0.0
 
-                batch_num_events = np.sum(batch_event_train_in > 0)
+                batch_num_events = np.sum(np.array(batch_event_train_in) > 0)
 
-                initial_time = np.zeros(batch_time_train_in.shape[0])
+                initial_time = np.zeros(len(batch_time_train_in))
 
                 feed_dict = {
                     self.initial_state: cur_state,
@@ -812,7 +835,7 @@ class RMTPP:
                 else:
                     train_mae, train_acc, train_mrr, train_time_preds, train_event_preds = None, None, None, np.array([]), np.array([])
 
-                dev_time_preds, dev_event_preds, dev_event_preds_softmax, inference_time \
+                dev_time_preds, dev_event_preds, dev_event_preds_softmax, inference_time, dev_offsets \
                         = self.predict(training_data['dev_event_in_seq'],
                                        training_data['dev_time_in_seq'],
                                        training_data['dev_time_in_feats'],
@@ -830,17 +853,43 @@ class RMTPP:
                 dev_time_loss_list.append(dev_time_loss)
                 dev_mark_loss_list.append(dev_mark_loss)
                 dev_inference_times.append(inference_time)
-                dev_time_out_seq = np.array(training_data['dev_actual_time_out_seq'])
-                dev_time_in_seq = training_data['dev_time_in_seq']
-                gaps = dev_time_preds - np.concatenate([dev_time_in_seq[:, -1:], dev_time_preds[:, :-1]], axis=-1)
-                unnorm_gaps = gaps * training_data['devND']
-                dev_time_preds = np.cumsum(unnorm_gaps, axis=1) + training_data['dev_actual_time_in_seq'] - training_data['devIG']
-                tru_gaps = dev_time_out_seq - np.concatenate([training_data['dev_actual_time_in_seq'], dev_time_out_seq[:, :-1]], axis=1)
 
-                dev_mae, dev_total_valid, dev_acc, dev_gap_mae, dev_mrr, dev_gap_dtw = self.eval(dev_time_preds, dev_time_out_seq,
-                                                                                                 dev_event_preds, training_data['dev_event_out_seq'],
-                                                                                                 training_data['dev_actual_time_in_seq'],
-                                                                                                 dev_event_preds_softmax)
+                dev_time_in_seq = training_data['dev_time_in_seq']
+                dev_actual_time_in_seq = training_data['dev_actual_time_in_seq']
+                dev_time_out_seq = training_data['dev_actual_time_out_seq']
+                dev_event_out_seq = training_data['dev_event_out_seq']
+
+                out_begin_indices, out_end_indices \
+                        = get_output_indices(dev_actual_time_in_seq, dev_time_out_seq, dev_offsets, self.DEC_LEN)
+                for beg_ind, end_ind, seq in zip(out_begin_indices, out_end_indices, dev_event_out_seq):
+                    #print(beg_ind, end_ind, len(seq))
+                    assert end_ind < len(seq)
+                dev_event_out_seq = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
+                                        zip(dev_event_out_seq, out_begin_indices, out_end_indices)]
+                dev_time_out_seq = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
+                                        zip(dev_time_out_seq, out_begin_indices, out_end_indices)]
+
+
+                dev_time_preds_prev = [np.concatenate([in_seq[-1:] + off, seq[:-1]]) for in_seq, seq, off in
+                                        zip(dev_time_in_seq, dev_time_preds, dev_offsets)]
+                #dev_time_preds_prev = np.concatenate([dev_time_in_seq[:, -1:] + dev_offsets, dev_time_preds[:, :-1]], axis=-1)
+                gaps = [curr-prev for curr, prev in zip(dev_time_preds, dev_time_preds_prev)]
+                unnorm_gaps = [seq * devND for seq, devND in zip(gaps, training_data['devND'])]
+                #TODO In both normalized and un-normalized space, we are using same offset values, 
+                # Use normalized offset values in normalized space and same for un-normalized space.
+                dev_time_preds = [np.cumsum(gap_seq) + seq + off - devIG for gap_seq, seq, off, devIG in
+                                    zip(unnorm_gaps, dev_actual_time_in_seq, dev_offsets, training_data['devIG'])]
+                dev_time_out_seq_prev = [np.concatenate([act_seq + off, seq[:-1]]) for act_seq, off, seq in
+                                            zip(dev_actual_time_in_seq, dev_offsets, dev_time_out_seq)]
+                #dev_time_out_seq_prev = np.concatenate([dev_actual_time_in_seq + dev_offsets, dev_time_out_seq[:, :-1]], axis=1)
+                tru_gaps = [curr-prev for curr, prev in zip(dev_time_out_seq, dev_time_out_seq_prev)]
+
+                dev_mae, dev_total_valid, dev_acc, dev_gap_mae, dev_mrr, dev_gap_dtw \
+                        = self.eval(dev_time_preds, dev_time_out_seq,
+                                    dev_event_preds, dev_event_out_seq,
+                                    training_data['dev_actual_time_in_seq'],
+                                    dev_event_preds_softmax,
+                                    dev_offsets)
                 print('DEV: MAE = {:.5f}; valid = {}, ACC = {:.5f}, MAGE = {:.5f}, DTW = {:.5f}'.format(
                     dev_mae, dev_total_valid, dev_acc, dev_gap_mae, dev_gap_dtw))
 
@@ -874,7 +923,7 @@ class RMTPP:
                     plt.savefig(name_plot+'.png')
                     plt.close()
     
-                test_time_preds, test_event_preds, test_event_preds_softmax, inference_time \
+                test_time_preds, test_event_preds, test_event_preds_softmax, inference_time, test_offsets \
                         = self.predict(training_data['test_event_in_seq'],
                                        training_data['test_time_in_seq'],
                                        training_data['test_time_in_feats'],
@@ -892,17 +941,43 @@ class RMTPP:
                 test_time_loss_list.append(test_time_loss)
                 test_mark_loss_list.append(test_mark_loss)
                 test_inference_times.append(inference_time)
-                test_time_out_seq = np.array(training_data['test_actual_time_out_seq'])
-                test_time_in_seq = training_data['test_time_in_seq']
-                gaps = test_time_preds - np.concatenate([test_time_in_seq[:, -1:], test_time_preds[:, :-1]], axis=-1)
-                tru_gaps = test_time_out_seq - np.concatenate([training_data['test_actual_time_in_seq'], test_time_out_seq[:, :-1]], axis=-1)
-                unnorm_gaps = gaps * training_data['testND']
-                test_time_preds = np.cumsum(unnorm_gaps, axis=1) + training_data['test_actual_time_in_seq'] - training_data['testIG']
 
-                test_mae, test_total_valid, test_acc, test_gap_mae, test_mrr, test_gap_dtw = self.eval(test_time_preds, test_time_out_seq,
-                                                                                                       test_event_preds, training_data['test_event_out_seq'],
-                                                                                                       training_data['test_actual_time_in_seq'],
-                                                                                                       test_event_preds_softmax)
+                test_time_in_seq = training_data['test_time_in_seq']
+                test_actual_time_in_seq = training_data['test_actual_time_in_seq']
+                test_time_out_seq = training_data['test_actual_time_out_seq']
+                test_event_out_seq = training_data['test_event_out_seq']
+
+                out_begin_indices, out_end_indices \
+                        = get_output_indices(test_actual_time_in_seq, test_time_out_seq, test_offsets, self.DEC_LEN)
+                for beg_ind, end_ind, seq in zip(out_begin_indices, out_end_indices, test_event_out_seq):
+                    #print(beg_ind, end_ind, len(seq))
+                    assert end_ind < len(seq)
+                test_event_out_seq = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
+                                        zip(test_event_out_seq, out_begin_indices, out_end_indices)]
+                test_time_out_seq = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
+                                        zip(test_time_out_seq, out_begin_indices, out_end_indices)]
+
+
+                test_time_preds_prev = [np.concatenate([in_seq[-1:] + off, seq[:-1]]) for in_seq, seq, off in
+                                        zip(test_time_in_seq, test_time_preds, test_offsets)]
+                #test_time_preds_prev = np.concatenate([test_time_in_seq[:, -1:] + test_offsets, test_time_preds[:, :-1]], axis=-1)
+                gaps = [curr-prev for curr, prev in zip(test_time_preds, test_time_preds_prev)]
+                unnorm_gaps = [seq * testND for seq, testND in zip(gaps, training_data['testND'])]
+                #TODO In both normalized and un-normalized space, we are using same offset values, 
+                # Use normalized offset values in normalized space and same for un-normalized space.
+                test_time_preds = [np.cumsum(gap_seq) + seq + off - testIG for gap_seq, seq, off, testIG in
+                                    zip(unnorm_gaps, test_actual_time_in_seq, test_offsets, training_data['testIG'])]
+                test_time_out_seq_prev = [np.concatenate([act_seq + off, seq[:-1]]) for act_seq, off, seq in
+                                            zip(test_actual_time_in_seq, test_offsets, test_time_out_seq)]
+                #test_time_out_seq_prev = np.concatenate([test_actual_time_in_seq + test_offsets, test_time_out_seq[:, :-1]], axis=1)
+                tru_gaps = [curr-prev for curr, prev in zip(test_time_out_seq, test_time_out_seq_prev)]
+
+                test_mae, test_total_valid, test_acc, test_gap_mae, test_mrr, test_gap_dtw \
+                        = self.eval(test_time_preds, test_time_out_seq,
+                                    test_event_preds, test_event_out_seq,
+                                    training_data['test_actual_time_in_seq'],
+                                    test_event_preds_softmax,
+                                    test_offsets)
                 print('TEST: MAE = {:.5f}; valid = {}, ACC = {:.5f}, MAGE = {:.5f}, DTW = {:.5f}'.format(
                     test_mae, test_total_valid, test_acc, test_gap_mae, test_gap_dtw))
 
@@ -1006,7 +1081,7 @@ class RMTPP:
                 train_mae, train_acc, train_mrr, train_time_preds, train_event_preds = None, None, None, np.array([]), np.array([])
 
 
-            dev_time_preds, dev_event_preds, dev_event_preds_softmax, inference_time \
+            dev_time_preds, dev_event_preds, dev_event_preds_softmax, inference_time, dev_offsets \
                     = self.predict(training_data['dev_event_in_seq'],
                                    training_data['dev_time_in_seq'],
                                    training_data['dev_time_in_feats'],
@@ -1020,24 +1095,51 @@ class RMTPP:
                                                                               training_data['dev_time_in_feats'],
                                                                               training_data['dev_time_out_feats'],
                                                                               dec_len_for_eval)
+            dev_loss_list.append(dev_loss)
+            dev_time_loss_list.append(dev_time_loss)
+            dev_mark_loss_list.append(dev_mark_loss)
             dev_inference_times.append(inference_time)
-            dev_time_preds = dev_time_preds[:,:dec_len_for_eval]
-            dev_time_out_seq = np.array(training_data['dev_actual_time_out_seq'])[:,:dec_len_for_eval]
-            dev_event_out_seq = np.array(training_data['dev_event_out_seq'])[:,:dec_len_for_eval]
-            dev_time_in_seq = training_data['dev_time_in_seq']
-            gaps = dev_time_preds - np.concatenate([dev_time_in_seq[:, -1:], dev_time_preds[:, :-1]], axis=-1)
-            unnorm_gaps = gaps * training_data['devND']
-            unnorm_gaps = np.cumsum(unnorm_gaps, axis=1)
-            dev_time_preds = unnorm_gaps + training_data['dev_actual_time_in_seq'] - training_data['devIG']
 
-            dev_mae, dev_total_valid, dev_acc, dev_gap_mae, dev_mrr, dev_gap_dtw = self.eval(dev_time_preds, dev_time_out_seq,
-                                                                                             dev_event_preds, dev_event_out_seq,
-                                                                                             training_data['dev_actual_time_in_seq'],
-                                                                                             dev_event_preds_softmax)
+            dev_time_in_seq = training_data['dev_time_in_seq']
+            dev_actual_time_in_seq = training_data['dev_actual_time_in_seq']
+            dev_time_out_seq = training_data['dev_actual_time_out_seq']
+            dev_event_out_seq = training_data['dev_event_out_seq']
+
+            out_begin_indices, out_end_indices \
+                    = get_output_indices(dev_actual_time_in_seq, dev_time_out_seq, dev_offsets, dec_len_for_eval)
+            for beg_ind, end_ind, seq in zip(out_begin_indices, out_end_indices, dev_event_out_seq):
+                #print(beg_ind, end_ind, len(seq))
+                assert end_ind < len(seq)
+            dev_event_out_seq = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
+                                    zip(dev_event_out_seq, out_begin_indices, out_end_indices)]
+            dev_time_out_seq = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
+                                    zip(dev_time_out_seq, out_begin_indices, out_end_indices)]
+
+
+            dev_time_preds_prev = [np.concatenate([in_seq[-1:] + off, seq[:-1]]) for in_seq, seq, off in
+                                    zip(dev_time_in_seq, dev_time_preds, dev_offsets)]
+            #dev_time_preds_prev = np.concatenate([dev_time_in_seq[:, -1:] + dev_offsets, dev_time_preds[:, :-1]], axis=-1)
+            gaps = [curr-prev for curr, prev in zip(dev_time_preds, dev_time_preds_prev)]
+            unnorm_gaps = [seq * devND for seq, devND in zip(gaps, training_data['devND'])]
+            #TODO In both normalized and un-normalized space, we are using same offset values, 
+            # Use normalized offset values in normalized space and same for un-normalized space.
+            dev_time_preds = [np.cumsum(gap_seq) + seq + off - devIG for gap_seq, seq, off, devIG in
+                                zip(unnorm_gaps, dev_actual_time_in_seq, dev_offsets, training_data['devIG'])]
+            dev_time_out_seq_prev = [np.concatenate([act_seq + off, seq[:-1]]) for act_seq, off, seq in
+                                        zip(dev_actual_time_in_seq, dev_offsets, dev_time_out_seq)]
+            #dev_time_out_seq_prev = np.concatenate([dev_actual_time_in_seq + dev_offsets, dev_time_out_seq[:, :-1]], axis=1)
+            tru_gaps = [curr-prev for curr, prev in zip(dev_time_out_seq, dev_time_out_seq_prev)]
+
+            dev_mae, dev_total_valid, dev_acc, dev_gap_mae, dev_mrr, dev_gap_dtw \
+                    = self.eval(dev_time_preds, dev_time_out_seq,
+                                dev_event_preds, dev_event_out_seq,
+                                training_data['dev_actual_time_in_seq'],
+                                dev_event_preds_softmax,
+                                dev_offsets)
             print('DEV: MAE = {:.5f}; valid = {}, ACC = {:.5f}, MAGE = {:.5f}, DTW = {:.5f}'.format(
                 dev_mae, dev_total_valid, dev_acc, dev_gap_mae, dev_gap_dtw))
 
-            test_time_preds, test_event_preds, test_event_preds_softmax, inference_time \
+            test_time_preds, test_event_preds, test_event_preds_softmax, inference_time, test_offsets \
                     = self.predict(training_data['test_event_in_seq'],
                                    training_data['test_time_in_seq'],
                                    training_data['test_time_in_feats'],
@@ -1051,21 +1153,47 @@ class RMTPP:
                                                                                  training_data['test_time_in_feats'],
                                                                                  training_data['test_time_out_feats'],
                                                                                  dec_len_for_eval)
+            test_loss_list.append(test_loss)
+            test_time_loss_list.append(test_time_loss)
+            test_mark_loss_list.append(test_mark_loss)
             test_inference_times.append(inference_time)
-            test_time_preds = test_time_preds[:,:dec_len_for_eval]
-            test_time_out_seq = np.array(training_data['test_actual_time_out_seq'])[:,:dec_len_for_eval]
-            test_event_out_seq = np.array(training_data['test_event_out_seq'])[:,:dec_len_for_eval]
-            test_time_in_seq = training_data['test_time_in_seq']
-            gaps = test_time_preds - np.concatenate([test_time_in_seq[:, -1:], test_time_preds[:, :-1]], axis=-1)
-            unnorm_gaps = gaps * training_data['testND']
-            unnorm_gaps = np.cumsum(unnorm_gaps, axis=1)
-            tru_gaps = test_time_out_seq - np.concatenate([training_data['test_actual_time_in_seq'], test_time_out_seq[:, :-1]], axis=1)
-            test_time_preds = unnorm_gaps + training_data['test_actual_time_in_seq'] - training_data['testIG']
 
-            test_mae, test_total_valid, test_acc, test_gap_mae, test_mrr, test_gap_dtw = self.eval(test_time_preds, test_time_out_seq,
-                                                                                                   test_event_preds, test_event_out_seq,
-                                                                                                   training_data['test_actual_time_in_seq'],
-                                                                                                   test_event_preds_softmax)
+            test_time_in_seq = training_data['test_time_in_seq']
+            test_actual_time_in_seq = training_data['test_actual_time_in_seq']
+            test_time_out_seq = training_data['test_actual_time_out_seq']
+            test_event_out_seq = training_data['test_event_out_seq']
+
+            out_begin_indices, out_end_indices \
+                    = get_output_indices(test_actual_time_in_seq, test_time_out_seq, test_offsets, dec_len_for_eval)
+            for beg_ind, end_ind, seq in zip(out_begin_indices, out_end_indices, test_event_out_seq):
+                #print(beg_ind, end_ind, len(seq))
+                assert end_ind < len(seq)
+            test_event_out_seq = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
+                                    zip(test_event_out_seq, out_begin_indices, out_end_indices)]
+            test_time_out_seq = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
+                                    zip(test_time_out_seq, out_begin_indices, out_end_indices)]
+
+
+            test_time_preds_prev = [np.concatenate([in_seq[-1:] + off, seq[:-1]]) for in_seq, seq, off in
+                                    zip(test_time_in_seq, test_time_preds, test_offsets)]
+            #test_time_preds_prev = np.concatenate([test_time_in_seq[:, -1:] + test_offsets, test_time_preds[:, :-1]], axis=-1)
+            gaps = [curr-prev for curr, prev in zip(test_time_preds, test_time_preds_prev)]
+            unnorm_gaps = [seq * testND for seq, testND in zip(gaps, training_data['testND'])]
+            #TODO In both normalized and un-normalized space, we are using same offset values, 
+            # Use normalized offset values in normalized space and same for un-normalized space.
+            test_time_preds = [np.cumsum(gap_seq) + seq + off - testIG for gap_seq, seq, off, testIG in
+                                zip(unnorm_gaps, test_actual_time_in_seq, test_offsets, training_data['testIG'])]
+            test_time_out_seq_prev = [np.concatenate([act_seq + off, seq[:-1]]) for act_seq, off, seq in
+                                        zip(test_actual_time_in_seq, test_offsets, test_time_out_seq)]
+            #test_time_out_seq_prev = np.concatenate([test_actual_time_in_seq + test_offsets, test_time_out_seq[:, :-1]], axis=1)
+            tru_gaps = [curr-prev for curr, prev in zip(test_time_out_seq, test_time_out_seq_prev)]
+
+            test_mae, test_total_valid, test_acc, test_gap_mae, test_mrr, test_gap_dtw \
+                    = self.eval(test_time_preds, test_time_out_seq,
+                                test_event_preds, test_event_out_seq,
+                                training_data['test_actual_time_in_seq'],
+                                test_event_preds_softmax,
+                                test_offsets)
             print('TEST: MAE = {:.5f}; valid = {}, ACC = {:.5f}, MAGE = {:.5f}, DTW = {:.5f}'.format(
                 test_mae, test_total_valid, test_acc, test_gap_mae, test_gap_dtw))
 
@@ -1111,12 +1239,12 @@ class RMTPP:
                 'best_test_gap_dtw': best_test_gap_dtw,
                 'best_dev_loss': best_dev_loss,
                 'best_test_loss': best_test_loss,
-                'best_train_event_preds': best_train_event_preds.tolist(),
-                'best_train_time_preds': best_train_time_preds.tolist(),
-                'best_dev_event_preds': best_dev_event_preds.tolist(),
-                'best_dev_time_preds': best_dev_time_preds.tolist(),
-                'best_test_event_preds': best_test_event_preds.tolist(),
-                'best_test_time_preds': best_test_time_preds.tolist(),
+                'best_train_event_preds': best_train_event_preds,
+                'best_train_time_preds': best_train_time_preds,
+                'best_dev_event_preds': best_dev_event_preds,
+                'best_dev_time_preds': best_dev_time_preds,
+                'best_test_event_preds': best_test_event_preds,
+                'best_test_time_preds': best_test_time_preds,
                 'best_w': best_w,
                 'wt_hparam': self.wt_hparam,
                 'checkpoint_dir': checkpoint_dir,
@@ -1146,22 +1274,28 @@ class RMTPP:
 
     def evaluate_likelihood(self, event_in_seq, time_in_seq, event_out_seq, time_out_seq, time_in_feats, time_out_feats, decoder_length):
 
-        num_events = np.sum(event_in_seq > 0)
-        cur_state = np.zeros((event_in_seq.shape[0], self.HIDDEN_LAYER_SIZE))
-        initial_time = np.zeros(event_in_seq.shape[0])
+        num_events = np.sum(np.array(event_in_seq) > 0)
+        cur_state = np.zeros((len(event_in_seq), self.HIDDEN_LAYER_SIZE))
+        initial_time = np.zeros(len(event_in_seq))
 
-        event_seq = np.concatenate([event_in_seq, event_out_seq], axis=1)
-        time_seq = np.concatenate([time_in_seq, time_out_seq], axis=1)
-        time_feats = np.concatenate([time_in_feats, time_out_feats], axis=1)
+        event_seq = [(in_seq + out_seq)[:self.BPTT+1] for in_seq, out_seq in zip(event_in_seq, event_out_seq)]
+        time_seq = [(in_seq.tolist() + out_seq.tolist())[:self.BPTT+1] for in_seq, out_seq in zip(time_in_seq, time_out_seq)]
+        time_feats = [(in_seq + out_seq)[:self.BPTT+1] for in_seq, out_seq in zip(time_in_feats, time_out_feats)]
+
+        events_in = [seq[:-1] for seq in event_seq]
+        events_out = [seq[1:] for seq in event_seq]
+        times_in = [seq[:-1] for seq in time_seq]
+        times_out = [seq[1:] for seq in time_seq]
+        times_in_feats = [seq[:-1] for seq in time_feats]
 
         feed_dict = {
             self.initial_state: cur_state,
             self.initial_time: initial_time,
-            self.events_in: event_seq[:, :-1],
-            self.events_out: event_seq[:, 1:],
-            self.times_in: time_seq[:, :-1],
-            self.times_out: time_seq[:, 1:],
-            self.times_in_feats: time_feats[:, :-1],
+            self.events_in: events_in,
+            self.events_out: events_out,
+            self.times_in: times_in,
+            self.times_out: times_out,
+            self.times_in_feats: times_in_feats,
             self.batch_num_events: num_events
         }
 
@@ -1173,7 +1307,8 @@ class RMTPP:
         return float(loss_), float(time_loss_), float(mark_loss_)
 
 
-    def predict(self, event_in_seq, time_in_seq, time_in_feats, dec_len_for_eval, train_in_seq, single_threaded=False, plot_dir=False):
+    def predict(self, event_in_seq, time_in_seq, time_in_feats, dec_len_for_eval,
+                train_in_seq, single_threaded=False, plot_dir=False):
         """Treats the entire dataset as a single batch and processes it."""
 
 
@@ -1231,45 +1366,57 @@ class RMTPP:
 
         start_time = time.time()
 
+        N = len(time_in_seq)
+
+        # Default offsets = self.MAX_OFFSET
+        #offsets = np.random.uniform(low=0.0, high=self.MAX_OFFSET, size=(self.BATCH_SIZE))
+        offsets = np.ones((N)) * self.MAX_OFFSET
+
         all_hidden_states = []
-        all_event_preds_softmax = []
-        all_event_preds = []
-        all_time_preds = []
+        simul_event_preds_softmax = []
+        simul_event_preds = []
+        simul_time_preds = []
 
         cur_state = np.zeros((len(event_in_seq), self.HIDDEN_LAYER_SIZE))
 
-        for pred_idx in range(0, dec_len_for_eval):
-            print('pred_idx', pred_idx, dec_len_for_eval)
-            if pred_idx == 0:
-                #bptt_range = range(pred_idx, (pred_idx + self.BPTT))
+        total_vals = np.zeros(N)
+        pred_idxes = -1.0 * np.ones(N)
+        begin_idxes, end_idxes = np.zeros(N, dtype=int), np.zeros(N, dtype=int)
+        simul_idx = 0
+        #for pred_idx in range(0, dec_len_for_eval):
+        while any(total_vals<offsets) or any(pred_idxes<dec_len_for_eval):
+            if simul_idx % 1000 == 0:
+                print('simul_idx', simul_idx, dec_len_for_eval)
+            if simul_idx == 0:
+                #bptt_range = range(simul_idx, (simul_idx + self.BPTT))
                 #bptt_event_in = event_in_seq[:, bptt_range]
                 #bptt_time_in = time_in_seq[:, bptt_range]
-                bptt_event_in = np.concatenate([event_in_seq, np.zeros((event_in_seq.shape[0], self.DEC_LEN-1))], axis=1)
-                bptt_time_in = np.concatenate([time_in_seq, np.zeros((time_in_seq.shape[0], self.DEC_LEN-1))], axis=1)
-                bptt_time_in_feats = np.concatenate([time_in_feats, np.zeros((time_in_feats.shape[0], self.DEC_LEN-1))], axis=1)
+                bptt_event_in = np.concatenate([event_in_seq, np.zeros((N, self.DEC_LEN-1))], axis=1)
+                bptt_time_in = np.concatenate([time_in_seq, np.zeros((N, self.DEC_LEN-1))], axis=1)
+                bptt_time_in_feats = np.concatenate([time_in_feats, np.zeros((N, self.DEC_LEN-1))], axis=1)
             else:
-                #bptt_event_in = event_in_seq[:, self.BPTT-1+pred_idx]
-                bptt_event_in = np.asarray(all_event_preds[-1])
+                #bptt_event_in = event_in_seq[:, self.BPTT-1+simul_idx]
+                bptt_event_in = np.asarray(simul_event_preds[-1])
                 bptt_event_in = np.concatenate([np.expand_dims(bptt_event_in, axis=-1),
                                                 np.zeros((bptt_event_in.shape[0], self.BPTT-1))],
                                                 axis=-1)
-                #bptt_time_in = time_in_seq[:, self.BPTT-1+pred_idx]
-                bptt_time_in = np.asarray(all_time_preds[-1])
+                #bptt_time_in = time_in_seq[:, self.BPTT-1+simul_idx]
+                bptt_time_in = np.asarray(simul_time_preds[-1])
                 bptt_time_in = np.concatenate([np.expand_dims(bptt_time_in, axis=-1),
                                                np.zeros((bptt_time_in.shape[0], self.BPTT-1))],
                                                axis=-1)
 
-                bptt_time_in_feats = np.asarray(all_time_preds[-1]) // 3600 % 24
+                bptt_time_in_feats = np.asarray(simul_time_preds[-1]) // 3600 % 24
                 bptt_time_in_feats = np.concatenate([np.expand_dims(bptt_time_in_feats, axis=-1),
                                                      np.zeros((bptt_time_in_feats.shape[0], self.BPTT-1))],
                                                      axis=-1)
 
-            if pred_idx == 0:
+            if simul_idx == 0:
                 initial_time = np.zeros(bptt_time_in.shape[0])
-            elif pred_idx == 1:
-                initial_time = time_in_seq[:, -1]
-            elif pred_idx > 1:
-                initial_time = all_time_preds[-2]
+            elif simul_idx == 1:
+                initial_time = [seq[-1] for seq in time_in_seq]
+            elif simul_idx > 1:
+                initial_time = simul_time_preds[-2]
 
             feed_dict = {
                 self.initial_state: cur_state,
@@ -1290,37 +1437,66 @@ class RMTPP:
                 WT = self.wt_hparam
 
             all_hidden_states.extend(bptt_hidden_states)
-            all_event_preds_softmax.append(bptt_events_pred[-1])
+            simul_event_preds_softmax.append(bptt_events_pred[-1])
             #print(bptt_events_pred[-1], np.array(bptt_events_pred[-1]).shape)
-            all_event_preds.extend([np.argmax(bptt_events_pred[-1], axis=-1)+1])
+            simul_event_preds.extend([np.argmax(bptt_events_pred[-1], axis=-1)+1])
 
             # TODO: This calculation is completely ignoring the clipping which
             # happens during the inference step.
             [Vt, Vw, bt, bw, wt]  = self.sess.run([self.Vt, self.Vw, self.bt, self.bw, self.wt])
-    
-            time_pred_last = time_in_seq[:, -1] if pred_idx==0 else all_time_preds[-1]
+
+            if simul_idx==0:
+                time_pred_last = [seq[-1] for seq in time_in_seq]
+            else:
+                time_pred_last = simul_time_preds[-1]
+
             val = self.sess.run(self.val, feed_dict=feed_dict)
             #print(val)
             #print(val.shape[0], np.sum(np.isfinite(val)), val)
             step_time_preds = time_pred_last + val
 
-            all_time_preds.append(step_time_preds)
+            total_vals += val
+            for idx, (t_val, offset) in enumerate(zip(total_vals, offsets)):
+                if t_val>offset:
+                    pred_idxes[idx] += 1
+                    if pred_idxes[idx] == 0:
+                        begin_idxes[idx] = simul_idx
+                    if pred_idxes[idx] == dec_len_for_eval:
+                        end_idxes[idx] = simul_idx
 
-        all_time_preds = np.asarray(all_time_preds)
+
+            simul_time_preds.append(step_time_preds)
+            simul_idx += 1
+
+
+        simul_time_preds = np.array(simul_time_preds).T
+        all_time_preds = [sml_pred[b_idx:e_idx] for sml_pred, b_idx, e_idx in
+                            zip(simul_time_preds, begin_idxes, end_idxes)]
+        all_time_preds = np.array(all_time_preds)
         assert np.isfinite(all_time_preds).sum() == all_time_preds.size
+
+        simul_event_preds_softmax = np.transpose(np.array(simul_event_preds_softmax),
+                                                 axes=[1, 0, 2])
+        simul_event_preds = np.array(simul_event_preds).T
+
+        all_event_preds = [sml_pred[b_idx:e_idx] for sml_pred, b_idx, e_idx in
+                            zip(simul_event_preds, begin_idxes, end_idxes)]
+        all_event_preds = np.array(all_event_preds)
+
+        all_event_preds_softmax = [sml_pred[b_idx:e_idx] for sml_pred, b_idx, e_idx in
+                            zip(simul_event_preds_softmax, begin_idxes, end_idxes)]
+        all_event_preds_softmax = np.array(all_event_preds_softmax)
 
         end_time = time.time()
         inference_time = end_time - start_time
 
-        all_event_preds_softmax = np.stack(all_event_preds_softmax, axis=1)
-
-        all_time_preds = np.asarray(all_time_preds).T[:, :dec_len_for_eval]
-        all_event_preds = np.asarray(all_event_preds).swapaxes(0, 1)[:, :dec_len_for_eval]
+        all_time_preds = all_time_preds[:, :dec_len_for_eval]
+        all_event_preds = all_event_preds[:, :dec_len_for_eval]
         all_event_preds_softmax = all_event_preds_softmax[:, :dec_len_for_eval]
 
-        return all_time_preds, all_event_preds, all_event_preds_softmax, inference_time
+        return all_time_preds, all_event_preds, all_event_preds_softmax, inference_time, offsets
 
-    def eval(self, time_preds, time_true, event_preds, event_true, time_input_last, event_preds_softmax):
+    def eval(self, time_preds, time_true, event_preds, event_true, time_input_last, event_preds_softmax, offsets):
         """Prints evaluation of the model on the given dataset."""
         # Print test error once every epoch:
         mae, total_valid = MAE(time_preds, time_true, event_true)
@@ -1328,8 +1504,10 @@ class RMTPP:
         #print('** MAE = {:.3f}; valid = {}, ACC = {:.3f}'.format(
         #    mae, total_valid, acc))
         if time_input_last is not None:
-            gap_true = time_true - np.concatenate([time_input_last, time_true[:, :-1]], axis=1)
-            gap_preds = time_preds - np.concatenate([time_input_last, time_preds[:, :-1]], axis=1)
+            #gap_true = time_true - np.concatenate([time_input_last, time_true[:, :-1]], axis=1)
+            #gap_preds = time_preds - np.concatenate([time_input_last, time_preds[:, :-1]], axis=1)
+            gap_true = [seq - np.concatenate([last+off, seq[:-1]]) for seq, last, off in zip(time_true, time_input_last, offsets)]
+            gap_preds = [seq - np.concatenate([last+off, seq[:-1]]) for seq, last, off in zip(time_preds, time_input_last, offsets)]
             gap_mae, gap_total_valid = MAE(gap_true, gap_preds, event_true)
             gap_dtw = DTW(gap_true, gap_preds, event_true)
         else:
