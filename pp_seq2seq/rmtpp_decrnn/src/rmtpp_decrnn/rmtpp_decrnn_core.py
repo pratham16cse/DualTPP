@@ -92,6 +92,8 @@ def_opts = Deco.Options(
     num_discrete_states = 5,
 
     embed_size=__EMBED_SIZE,
+    embed_gaps=None,
+    gap_embed_size=8,
     Wem=lambda num_categories: np.random.RandomState(42).randn(num_categories, __EMBED_SIZE) * 0.01,
     Wem_feats=lambda num_categories: np.random.RandomState(42).randn(num_categories, __EMBED_SIZE) * 0.01,
 
@@ -153,7 +155,7 @@ class RMTPP_DECRNN:
                  Wt, Wem, Wh, bh, Ws, bs, wt, wt_attn, Wy, Vy, Vt, Vw, bk, bt, bw, wt_hparam, Wem_position, enc_Wem_position,
                  plot_pred_dev, plot_pred_test, enc_cell_type, dec_cell_type, num_discrete_states,
                  position_encode, attn_rnn, use_intensity, num_feats, use_time_features, use_avg_gaps, offset, max_offset,
-                 discrete_offset_feats):
+                 discrete_offset_feats, embed_gaps, gap_embed_size):
 
         self.seed = seed
         tf.set_random_seed(self.seed)
@@ -170,6 +172,8 @@ class RMTPP_DECRNN:
         self.MOMENTUM = momentum
         self.L2_PENALTY = l2_penalty
         self.EMBED_SIZE = embed_size
+        self.EMBED_GAPS = embed_gaps
+        self.GAP_EMBED_SIZE = gap_embed_size
         self.BPTT = bptt
         self.DEC_LEN = decoder_length
         self.ALG_NAME = alg_name
@@ -495,7 +499,7 @@ class RMTPP_DECRNN:
                 self.times = []
 
                 #----------- Encoder Begin ----------#
-                with tf.name_scope('BPTT'):
+                with tf.variable_scope('BPTT', reuse=tf.AUTO_REUSE):
                     for i in range(self.BPTT):
 
                         events_embedded = tf.nn.embedding_lookup(self.Wem,
@@ -503,6 +507,7 @@ class RMTPP_DECRNN:
                         time = self.times_in[:, i]
 
                         delta_t_prev = tf.expand_dims(time - last_time, axis=-1)
+                        delta_t_prev = self.embedGaps(delta_t_prev)
 
                         time_feat_embd = self.embedFeatures(self.times_in_feats[:, i])
 
@@ -575,7 +580,7 @@ class RMTPP_DECRNN:
                         attn_gaps_in = self.attn_gaps
                         for i in range(self.BPTT):
                             attn_times_in_feats_embd = self.embedFeatures(self.attn_times_in_feats[:, i])
-                            attn_gaps_in_ = self.attn_gaps[:, i]
+                            attn_gaps_in_ = self.embedGaps(self.attn_gaps[:, i])
                             inputs = tf.concat([attn_times_in_feats_embd, tf.expand_dims(attn_gaps_in_, axis=-1)], axis=-1)
                             #self.hidden_states_c, _ = tf.nn.dynamic_rnn(cell=self.enc_cell_c, inputs=inputs, initial_state=state_c)
                             new_state_c, enc_internal_state_c = self.enc_cell_c(inputs, enc_internal_state_c)
@@ -889,6 +894,7 @@ class RMTPP_DECRNN:
                         if 'attnstate' not in self.ALG_NAME:
                             decoder_states_concat = tf.tile(tf.expand_dims(decoder_states_concat, axis=2), [1, 1, self.NUM_DISCRETE_STATES, 1])
                             lookup_gaps = tf.expand_dims(lookup_gaps, axis=-1)
+                            lookup_gaps = self.expandGaps(lookup_gaps)
                             decoder_states_concat = tf.concat([decoder_states_concat, lookup_gaps], axis=-1)
                             self.D = tf.squeeze(tf.layers.dense(decoder_states_concat, 1, name='attn_D_layer',
                                                                 kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed),
@@ -1183,6 +1189,19 @@ class RMTPP_DECRNN:
 
     def embedFeatures(self, inputs):
         return tf.nn.embedding_lookup(self.Wem_feats, inputs)
+
+    def embedGaps(self, inputs):
+        if self.EMBED_GAPS is None:
+            out = inputs
+        elif self.EMBED_GAPS=='soft_onehot':
+            num_units = self.GAP_EMBED_SIZE
+            h_1 = tf.layers.dense(inputs, num_units, name='embed_gaps_softmax',
+                                  kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed),
+                                  activation=tf.nn.softmax)
+            out = tf.layers.dense(h_1, num_units, name='embed_gaps_linear',
+                                  kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed))
+
+        return out
 
     def offset_feats_network(self):
         offset_begin_feats_discrete = tf.cast(self.offset_begin_feats, tf.int32)
