@@ -83,6 +83,7 @@ def_opts = Deco.Options(
     offset=0.0,
     max_offset=0.0,
     discrete_offset_feats=False,
+    sample_trn_offsets=True,
 
     wt_hparam=1.0,
 
@@ -155,7 +156,7 @@ class RMTPP_DECRNN:
                  Wt, Wem, Wh, bh, Ws, bs, wt, wt_attn, Wy, Vy, Vt, Vw, bk, bt, bw, wt_hparam, Wem_position, enc_Wem_position,
                  plot_pred_dev, plot_pred_test, enc_cell_type, dec_cell_type, num_discrete_states,
                  position_encode, attn_rnn, use_intensity, num_feats, use_time_features, use_avg_gaps, offset, max_offset,
-                 discrete_offset_feats, embed_gaps, gap_embed_size):
+                 discrete_offset_feats, sample_trn_offsets, embed_gaps, gap_embed_size):
 
         self.seed = seed
         tf.set_random_seed(self.seed)
@@ -229,6 +230,7 @@ class RMTPP_DECRNN:
         self.OFFSET = offset
         self.MAX_OFFSET = max_offset
         self.DISCRETE_OFFSET_FEATS = discrete_offset_feats
+        self.SAMPLE_TRN_OFFSETS = sample_trn_offsets
 
         if self.CONCAT_FINAL_ENC_STATE:
             self.DEC_STATE_SIZE = 2 * self.HIDDEN_LAYER_SIZE
@@ -1418,7 +1420,10 @@ class RMTPP_DECRNN:
                 batch_event_train_out = [train_event_out_seq[batch_idx] for batch_idx in batch_idxes]
                 batch_trainND = [trainND[batch_idx] for batch_idx in batch_idxes]
                 batch_time_train_out_feats = [train_time_out_feats[batch_idx] for batch_idx in batch_idxes]
-                offsets = np.random.uniform(low=0.0, high=self.MAX_OFFSET, size=(self.BATCH_SIZE))
+                if self.SAMPLE_TRN_OFFSETS:
+                    offsets = np.random.uniform(low=0.0, high=self.MAX_OFFSET, size=(self.BATCH_SIZE))
+                else:
+                    offsets = np.zeros((self.BATCH_SIZE), dtype=float)
                 offsets_normalized = offsets / np.squeeze(np.array(batch_trainND), axis=-1)
                 #offsets = np.ones((self.BATCH_SIZE)) * self.MAX_OFFSET
                 out_begin_indices, out_end_indices \

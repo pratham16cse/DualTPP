@@ -59,12 +59,13 @@ def_opts = rmtpp_decrnn.rmtpp_decrnn_core.def_opts
 @click.option('--use-intensity/--no-use-intensity', 'use_intensity', help='If true, use intensity formulation, otherwise use network to predict gaps', default=def_opts.use_intensity)
 @click.option('--use-avg-gaps/--no-use-avg-gaps', 'use_avg_gaps', help='Use Average Encoder gaps as input in the decoder', default=def_opts.use_avg_gaps)
 @click.option('--embed-gaps', 'embed_gaps', help='Embedding technique to use to embed gaps (None if no embedding to be used)', default=def_opts.embed_gaps)
+@click.option('--sample-trn-offsets/--no-sample-trn-offsets', 'sample_trn_offsets', help='If false, model is trained on immediate events after last input event', default=def_opts.sample_trn_offsets)
 def cmd(dataset_name, alg_name, dataset_path,
         save_dir, summary_dir, num_epochs, restart, train_eval, test_eval, scale,
         batch_size, bptt, decoder_length, learning_rate, cpu_only, normalization, constraints,
         patience, stop_criteria, epsilon, share_dec_params, init_zero_dec_state, concat_final_enc_state, num_extra_dec_layer, concat_before_dec_update,
         mark_triggers_time, mark_loss, enc_cell_type, dec_cell_type, parallel_hparam, seed, position_encode, num_feats, use_time_features, attn_rnn, use_intensity, use_avg_gaps,
-        embed_gaps):
+        embed_gaps, sample_trn_offsets):
     """Read data from EVENT_TRAIN_FILE, TIME_TRAIN_FILE and try to predict the values in EVENT_TEST_FILE, TIME_TEST_FILE."""
 
     clear_clutter = True
@@ -172,6 +173,7 @@ def cmd(dataset_name, alg_name, dataset_path,
             offset=offset,
             max_offset=max_offset,
             embed_gaps=embed_gaps,
+            sample_trn_offsets=sample_trn_offsets,
             _opts=def_opts_local
         )
 
