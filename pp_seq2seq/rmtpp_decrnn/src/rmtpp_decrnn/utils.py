@@ -47,14 +47,17 @@ def generate_norm_seq(timeTrain, timeDev, timeTest, enc_len, normalization, chec
             init_gap = np.zeros((1))
             gap_seq = np.hstack((init_gap, gap_seq))
 
-            if normalization in ['minmax', 'average']:
+            if normalization in ['minmax']:
                 max_gap = np.clip(np.max(gap_seq[:enc_len-1]), 1.0, np.inf)
                 min_gap = np.clip(np.min(gap_seq[:enc_len-1]), 1.0, np.inf)
                 n_d, n_a = [(max_gap - min_gap)], [(-min_gap/(max_gap - min_gap))]
             elif normalization == 'average_per_seq':
                 avg_gap = np.clip(np.mean(gap_seq[:enc_len-1]), 1.0, np.inf)
                 n_d, n_a = [avg_gap], [0.0]
-            elif normalization is None:
+            elif normalization == 'max_per_seq':
+                max_gap = np.clip(np.max(gap_seq[:enc_len-1]), 1.0, np.inf)
+                n_d, n_a = [max_gap], [0.0]
+            elif normalization is None or normalization=='average':
                 n_d, n_a = [1.0], [0.0]
             else:
                 print('Normalization not found')
@@ -74,47 +77,16 @@ def generate_norm_seq(timeTrain, timeDev, timeTest, enc_len, normalization, chec
             initial_gaps.append(init_gap)
 
         if normalization == 'average':
-            normalizer_d = np.mean([s for sequence in sequences for s in sequence])
-            normalizer_d = np.ones((len(sequences), 1)) * normalizer_d
+            #normalizer_d = np.mean([n_d * (enc_len-1) for n_d in normalizer_d])
+            #normalizer_d = np.ones((len(sequences), 1)) * normalizer_d
+            n_d = 0.0
+            for gap_seq in avg_gaps_norm:
+                n_d += np.sum(gap_seq[1:]-gap_seq[:-1])
+            n_d = n_d / (len(sequences) * (enc_len-1))
+            avg_gaps_norm = [gap_seq/n_d for gap_seq in avg_gaps_norm]
+            normalizer_d = np.ones((len(sequences), 1)) * n_d
 
         return avg_gaps_norm, normalizer_d, normalizer_a, initial_gaps
-
-
-        #sequences = np.array(sequences)
-        #gap_seqs = sequences[:, 1:]-sequences[:, :-1]
-        ##initial_gaps = np.mean(gap_seqs[:, :enc_len-1], axis=1, keepdims=True)
-        #initial_gaps = np.zeros_like(np.mean(gap_seqs[:, :enc_len-1], axis=1, keepdims=True))
-        #gap_seqs = np.hstack((initial_gaps, gap_seqs))
-        #N = len(gap_seqs)
-        #if normalization == 'minmax':
-        #    max_gaps = np.clip(np.max(gap_seqs[:, :enc_len-1], keepdims=True), 1.0, np.inf)
-        #    min_gaps = np.clip(np.min(gap_seqs[:, :enc_len-1], keepdims=True), 1.0, np.inf)
-        #    normalizer_d = np.ones((N, 1)) * (max_gaps - min_gaps)
-        #    normalizer_a = np.ones((N, 1)) * (-mjn_gaps/(max_gaps - min_gaps))
-        #elif normalization == 'average':
-        #    avg_gaps = np.clip(np.mean(gap_seqs[:, :enc_len-1], keepdims=True), 1.0, np.inf)
-        #    normalizer_d = np.ones((N, 1)) * avg_gaps
-        #    normalizer_a = np.zeros((N, 1))
-        #elif normalization == 'average_per_seq':
-        #    avg_gaps = np.clip(np.mean(gap_seqs[:, :enc_len-1], axis=1, keepdims=True), 1.0, np.inf)
-        #    normalizer_d = avg_gaps
-        #    normalizer_a = np.zeros((N, 1))
-        #elif normalization is None:
-        #    normalizer_d = np.ones((N, 1))
-        #    normalizer_a = np.zeros((N, 1))
-        #else:
-        #    print('Normalization not found')
-        #    assert False
-
-        #avg_gaps_norm = gap_seqs/normalizer_d + normalizer_a
-        #avg_gaps_norm = np.cumsum(avg_gaps_norm, axis=1)
-        ##gap_norm_seq = np.hstack((np.zeros((N, 1)), avg_gaps_norm))
-
-        #if check==1:
-        #    print("sequences[:,:1]")
-        #    print(sequences[:,:1])
-
-        #return avg_gaps_norm, normalizer_d, normalizer_a, initial_gaps
 
     timeTrain, trainND, trainNA, trainIG = _generate_norm_seq(timeTrain, enc_len, normalization)
     timeDev, devND, devNA, devIG = _generate_norm_seq(timeDev, enc_len, normalization)
