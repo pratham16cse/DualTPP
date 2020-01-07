@@ -70,7 +70,7 @@ def_opts = Deco.Options(
     concat_before_dec_update=False,
     mark_triggers_time=True,
     mark_loss=True,
-    plot_pred_dev=False,
+    plot_pred_dev=True,
     plot_pred_test=False,
     position_encode=False,
     attn_rnn=False,
@@ -1546,19 +1546,21 @@ class RMTPP_DECRNN:
                 else:
                     train_mae, train_acc, train_mrr, train_time_preds, train_event_preds = None, None, None, np.array([]), np.array([])
 
-                dev_time_preds, dev_event_preds, dev_event_preds_softmax, inference_time, dev_offsets \
+                dev_time_preds, dev_gaps_preds, dev_event_preds, \
+                        dev_event_preds_softmax, inference_time, dev_offsets_normalized \
                         = self.predict(training_data['dev_event_in_seq'],
                                        training_data['dev_time_in_seq'],
                                        training_data['dev_time_in_feats'],
                                        dec_len_for_eval,
                                        training_data['attn_dev_time_in_seq'],
-                                       pad_sequences(training_data['attn_dev_gaps'], dtype=float, padding='post'),
-                                       pad_sequences(training_data['attn_dev_gaps_idxes'], dtype=float, padding='post'),
+                                       training_data['attn_dev_gaps'],
+                                       training_data['attn_dev_gaps_idxes'],
                                        pad_sequences(training_data['coarse_dev_gaps_in_seq'], dtype=float, padding='post'),
                                        pad_sequences(training_data['coarse_dev_time_in_feats'], dtype=float, padding='post'),
                                        training_data['dev_time_out_feats'],
-                                       pad_sequences(training_data['attn_dev_time_in_feats'], dtype=float, padding='post'),
+                                       training_data['attn_dev_time_in_feats'],
                                        np.array(training_data['dev_actual_time_in_seq']),
+                                       training_data['devND'],
                                        single_threaded=True,
                                        event_out_seq=training_data['dev_event_out_seq'] if self.ALG_NAME=='rmtpp_decrnn_truemarks' else None)
                 dev_loss, dev_time_loss, dev_mark_loss \
@@ -1570,12 +1572,12 @@ class RMTPP_DECRNN:
                                                    training_data['dev_time_out_feats'],
                                                    dec_len_for_eval,
                                                    training_data['attn_dev_time_in_seq'],
-                                                   pad_sequences(training_data['attn_dev_gaps'], dtype=float, padding='post'),
-                                                   pad_sequences(training_data['attn_dev_gaps_idxes'], dtype=float, padding='post'),
+                                                   training_data['attn_dev_gaps'],
+                                                   training_data['attn_dev_gaps_idxes'],
                                                    pad_sequences(training_data['coarse_dev_gaps_in_seq'], dtype=float, padding='post'),
                                                    pad_sequences(training_data['coarse_dev_time_in_feats'], dtype=float, padding='post'),
                                                    training_data['dev_time_out_feats'],
-                                                   pad_sequences(training_data['attn_dev_time_in_feats'], dtype=float, padding='post'),
+                                                   training_data['attn_dev_time_in_feats'],
                                                    np.array(training_data['dev_actual_time_in_seq']),
                                                    training_data['devND'])
 
@@ -1587,6 +1589,7 @@ class RMTPP_DECRNN:
                 dev_actual_time_in_seq = training_data['dev_actual_time_in_seq']
                 dev_time_out_seq = training_data['dev_actual_time_out_seq']
                 dev_event_out_seq = training_data['dev_event_out_seq']
+                dev_offsets = dev_offsets_normalized * np.squeeze(training_data['devND'], axis=-1)
 
                 out_begin_indices, out_end_indices \
                         = get_output_indices(dev_actual_time_in_seq, dev_time_out_seq, dev_offsets, self.DEC_LEN)
@@ -1598,20 +1601,10 @@ class RMTPP_DECRNN:
                 dev_time_out_seq = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
                                         zip(dev_time_out_seq, out_begin_indices, out_end_indices)]
 
-
-                dev_time_preds_prev = [np.concatenate([in_seq[-1:] + off, seq[:-1]]) for in_seq, seq, off in
-                                        zip(dev_time_in_seq, dev_time_preds, dev_offsets)]
-                #dev_time_preds_prev = np.concatenate([dev_time_in_seq[:, -1:] + dev_offsets, dev_time_preds[:, :-1]], axis=-1)
-                gaps = [curr-prev for curr, prev in zip(dev_time_preds, dev_time_preds_prev)]
+                gaps = dev_gaps_preds
                 unnorm_gaps = [seq * devND for seq, devND in zip(gaps, training_data['devND'])]
-                #TODO In both normalized and un-normalized space, we are using same offset values, 
-                # Use normalized offset values in normalized space and same for un-normalized space.
                 dev_time_preds = [np.cumsum(gap_seq) + seq + off - devIG for gap_seq, seq, off, devIG in
                                     zip(unnorm_gaps, dev_actual_time_in_seq, dev_offsets, training_data['devIG'])]
-                dev_time_out_seq_prev = [np.concatenate([act_seq + off, seq[:-1]]) for act_seq, off, seq in
-                                            zip(dev_actual_time_in_seq, dev_offsets, dev_time_out_seq)]
-                #dev_time_out_seq_prev = np.concatenate([dev_actual_time_in_seq + dev_offsets, dev_time_out_seq[:, :-1]], axis=1)
-                tru_gaps = [curr-prev for curr, prev in zip(dev_time_out_seq, dev_time_out_seq_prev)]
 
                 dev_mae, dev_total_valid, dev_acc, dev_gap_mae, dev_mrr, dev_gap_dtw \
                         = self.eval(dev_time_preds, dev_time_out_seq,
@@ -1624,10 +1617,12 @@ class RMTPP_DECRNN:
 
                 if self.PLOT_PRED_DEV:
                     random_plot_number = 4
-                    true_gaps_plot = tru_gaps[random_plot_number,:]
-                    pred_gaps_plot = unnorm_gaps[random_plot_number,:]
-                    inp_tru_gaps = training_data['dev_time_in_seq'][random_plot_number, 1:] \
-                                   - training_data['dev_time_in_seq'][random_plot_number, :-1]
+                    #true_gaps_plot = tru_gaps[random_plot_number,:]
+                    #true_gaps_plot = [seq - np.concatenate([last+off, seq[:-1]]) for seq, last, off in zip(time_true, time_input_last, offsets)]
+                    true_gaps_plot = dev_time_out_seq[4] - np.concatenate([dev_actual_time_in_seq[4]+dev_offsets[4], dev_time_out_seq[4][:-1]])
+                    pred_gaps_plot = unnorm_gaps[random_plot_number]
+                    inp_tru_gaps = training_data['dev_time_in_seq'][random_plot_number][1:] \
+                                   - training_data['dev_time_in_seq'][random_plot_number][:-1]
                     inp_tru_gaps = inp_tru_gaps * training_data['devND'][random_plot_number]
                     true_gaps_plot = list(inp_tru_gaps) + list(true_gaps_plot)
                     pred_gaps_plot = list(inp_tru_gaps) + list(pred_gaps_plot)
@@ -1653,19 +1648,21 @@ class RMTPP_DECRNN:
                     plt.savefig(name_plot+'.png')
                     plt.close()
     
-                test_time_preds, test_event_preds, test_event_preds_softmax, inference_time, test_offsets \
+                test_time_preds, test_gaps_preds, test_event_preds, \
+                        test_event_preds_softmax, inference_time, test_offsets_normalized \
                         = self.predict(training_data['test_event_in_seq'],
                                        training_data['test_time_in_seq'],
                                        training_data['test_time_in_feats'],
                                        dec_len_for_eval,
                                        training_data['attn_test_time_in_seq'],
-                                       pad_sequences(training_data['attn_test_gaps'], dtype=float, padding='post'),
-                                       pad_sequences(training_data['attn_test_gaps_idxes'], dtype=float, padding='post'),
+                                       training_data['attn_test_gaps'],
+                                       training_data['attn_test_gaps_idxes'],
                                        pad_sequences(training_data['coarse_test_gaps_in_seq'], dtype=float, padding='post'),
                                        pad_sequences(training_data['coarse_test_time_in_feats'], dtype=float, padding='post'),
                                        training_data['test_time_out_feats'],
-                                       pad_sequences(training_data['attn_test_time_in_feats'], dtype=float, padding='post'),
+                                       training_data['attn_test_time_in_feats'],
                                        np.array(training_data['test_actual_time_in_seq']),
+                                       training_data['testND'],
                                        single_threaded=True,
                                        event_out_seq=training_data['test_event_out_seq'] if self.ALG_NAME=='rmtpp_decrnn_truemarks' else None)
                 test_loss, test_time_loss, test_mark_loss \
@@ -1677,12 +1674,12 @@ class RMTPP_DECRNN:
                                                    training_data['test_time_out_feats'],
                                                    dec_len_for_eval,
                                                    training_data['attn_test_time_in_seq'],
-                                                   pad_sequences(training_data['attn_test_gaps'], dtype=float, padding='post'),
-                                                   pad_sequences(training_data['attn_test_gaps_idxes'], dtype=float, padding='post'),
+                                                   training_data['attn_test_gaps'],
+                                                   training_data['attn_test_gaps_idxes'],
                                                    pad_sequences(training_data['coarse_test_gaps_in_seq'], dtype=float, padding='post'),
                                                    pad_sequences(training_data['coarse_test_time_in_feats'], dtype=float, padding='post'),
                                                    training_data['test_time_out_feats'],
-                                                   pad_sequences(training_data['attn_test_time_in_feats'], dtype=float, padding='post'),
+                                                   training_data['attn_test_time_in_feats'],
                                                    np.array(training_data['test_actual_time_in_seq']),
                                                    training_data['testND'])
                 test_loss_list.append(test_loss)
@@ -1693,6 +1690,7 @@ class RMTPP_DECRNN:
                 test_actual_time_in_seq = training_data['test_actual_time_in_seq']
                 test_time_out_seq = training_data['test_actual_time_out_seq']
                 test_event_out_seq = training_data['test_event_out_seq']
+                test_offsets = test_offsets_normalized * np.squeeze(training_data['testND'], axis=-1)
 
                 out_begin_indices, out_end_indices \
                         = get_output_indices(test_actual_time_in_seq, test_time_out_seq, test_offsets, self.DEC_LEN)
@@ -1704,20 +1702,10 @@ class RMTPP_DECRNN:
                 test_time_out_seq = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
                                         zip(test_time_out_seq, out_begin_indices, out_end_indices)]
 
-
-                test_time_preds_prev = [np.concatenate([in_seq[-1:] + off, seq[:-1]]) for in_seq, seq, off in
-                                        zip(test_time_in_seq, test_time_preds, test_offsets)]
-                #test_time_preds_prev = np.concatenate([test_time_in_seq[:, -1:] + test_offsets, test_time_preds[:, :-1]], axis=-1)
-                gaps = [curr-prev for curr, prev in zip(test_time_preds, test_time_preds_prev)]
+                gaps = test_gaps_preds
                 unnorm_gaps = [seq * testND for seq, testND in zip(gaps, training_data['testND'])]
-                #TODO In both normalized and un-normalized space, we are using same offset values, 
-                # Use normalized offset values in normalized space and same for un-normalized space.
                 test_time_preds = [np.cumsum(gap_seq) + seq + off - testIG for gap_seq, seq, off, testIG in
                                     zip(unnorm_gaps, test_actual_time_in_seq, test_offsets, training_data['testIG'])]
-                test_time_out_seq_prev = [np.concatenate([act_seq + off, seq[:-1]]) for act_seq, off, seq in
-                                            zip(test_actual_time_in_seq, test_offsets, test_time_out_seq)]
-                #test_time_out_seq_prev = np.concatenate([test_actual_time_in_seq + test_offsets, test_time_out_seq[:, :-1]], axis=1)
-                tru_gaps = [curr-prev for curr, prev in zip(test_time_out_seq, test_time_out_seq_prev)]
 
                 test_mae, test_total_valid, test_acc, test_gap_mae, test_mrr, test_gap_dtw \
                         = self.eval(test_time_preds, test_time_out_seq,
@@ -1828,19 +1816,21 @@ class RMTPP_DECRNN:
                 train_mae, train_acc, train_mrr, train_time_preds, train_event_preds = None, None, None, np.array([]), np.array([])
 
 
-            dev_time_preds, dev_event_preds, dev_event_preds_softmax, inference_time, dev_offsets \
+            dev_time_preds, dev_gaps_preds, dev_event_preds, \
+                    dev_event_preds_softmax, inference_time, dev_offsets_normalized \
                     = self.predict(training_data['dev_event_in_seq'],
                                    training_data['dev_time_in_seq'],
                                    training_data['dev_time_in_feats'],
                                    dec_len_for_eval,
                                    training_data['attn_dev_time_in_seq'],
-                                   pad_sequences(training_data['attn_dev_gaps'], dtype=float, padding='post'),
-                                   pad_sequences(training_data['attn_dev_gaps_idxes'], dtype=float, padding='post'),
+                                   training_data['attn_dev_gaps'],
+                                   training_data['attn_dev_gaps_idxes'],
                                    pad_sequences(training_data['coarse_dev_gaps_in_seq'], dtype=float, padding='post'),
                                    pad_sequences(training_data['coarse_dev_time_in_feats'], dtype=float, padding='post'),
                                    training_data['dev_time_out_feats'],
-                                   pad_sequences(training_data['attn_dev_time_in_feats'], dtype=float, padding='post'),
+                                   training_data['attn_dev_time_in_feats'],
                                    np.array(training_data['dev_actual_time_in_seq']),
+                                   training_data['devND'],
                                    single_threaded=True,
                                    event_out_seq=training_data['dev_event_out_seq'] if self.ALG_NAME=='rmtpp_decrnn_truemarks' else None)
             dev_loss, dev_time_loss, dev_mark_loss \
@@ -1852,12 +1842,12 @@ class RMTPP_DECRNN:
                                                training_data['dev_time_out_feats'],
                                                dec_len_for_eval,
                                                training_data['attn_dev_time_in_seq'],
-                                               pad_sequences(training_data['attn_dev_gaps'], dtype=float, padding='post'),
-                                               pad_sequences(training_data['attn_dev_gaps_idxes'], dtype=float, padding='post'),
+                                               training_data['attn_dev_gaps'],
+                                               training_data['attn_dev_gaps_idxes'],
                                                pad_sequences(training_data['coarse_dev_gaps_in_seq'], dtype=float, padding='post'),
                                                pad_sequences(training_data['coarse_dev_time_in_feats'], dtype=float, padding='post'),
                                                training_data['dev_time_out_feats'],
-                                               pad_sequences(training_data['attn_dev_time_in_feats'], dtype=float, padding='post'),
+                                               training_data['attn_dev_time_in_feats'],
                                                np.array(training_data['dev_actual_time_in_seq']),
                                                training_data['devND'])
             dev_inference_times.append(inference_time)
@@ -1865,6 +1855,7 @@ class RMTPP_DECRNN:
             dev_actual_time_in_seq = training_data['dev_actual_time_in_seq']
             dev_time_out_seq = training_data['dev_actual_time_out_seq']
             dev_event_out_seq = training_data['dev_event_out_seq']
+            dev_offsets = dev_offsets_normalized * np.squeeze(training_data['devND'], axis=-1)
 
             out_begin_indices, out_end_indices \
                     = get_output_indices(dev_actual_time_in_seq, dev_time_out_seq, dev_offsets, self.DEC_LEN)
@@ -1876,19 +1867,10 @@ class RMTPP_DECRNN:
             dev_time_out_seq = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
                                     zip(dev_time_out_seq, out_begin_indices, out_end_indices)]
 
-            dev_time_preds_prev = [np.concatenate([in_seq[-1:] + off, seq[:-1]]) for in_seq, seq, off in
-                                    zip(dev_time_in_seq, dev_time_preds, dev_offsets)]
-            #dev_time_preds_prev = np.concatenate([dev_time_in_seq[:, -1:] + dev_offsets, dev_time_preds[:, :-1]], axis=-1)
-            gaps = [curr-prev for curr, prev in zip(dev_time_preds, dev_time_preds_prev)]
+            gaps = dev_gaps_preds
             unnorm_gaps = [seq * devND for seq, devND in zip(gaps, training_data['devND'])]
-            #TODO In both normalized and un-normalized space, we are using same offset values, 
-            # Use normalized offset values in normalized space and same for un-normalized space.
             dev_time_preds = [np.cumsum(gap_seq) + seq + off - devIG for gap_seq, seq, off, devIG in
                                 zip(unnorm_gaps, dev_actual_time_in_seq, dev_offsets, training_data['devIG'])]
-            dev_time_out_seq_prev = [np.concatenate([act_seq + off, seq[:-1]]) for act_seq, off, seq in
-                                        zip(dev_actual_time_in_seq, dev_offsets, dev_time_out_seq)]
-            #dev_time_out_seq_prev = np.concatenate([dev_actual_time_in_seq + dev_offsets, dev_time_out_seq[:, :-1]], axis=1)
-            tru_gaps = [curr-prev for curr, prev in zip(dev_time_out_seq, dev_time_out_seq_prev)]
 
             dev_time_out_seq = trim_seq_dec_len(dev_time_out_seq, dec_len_for_eval)
             dev_time_preds = trim_seq_dec_len(dev_time_preds, dec_len_for_eval)
@@ -1904,19 +1886,21 @@ class RMTPP_DECRNN:
             print('DEV: MAE = {:.5f}; valid = {}, ACC = {:.5f}, MAGE = {:.5f}, DTW = {:.5f}'.format(
                 dev_mae, dev_total_valid, dev_acc, dev_gap_mae, dev_gap_dtw))
 
-            test_time_preds, test_event_preds, test_event_preds_softmax, inference_time, test_offsets \
+            test_time_preds, test_gaps_preds, test_event_preds, \
+                    test_event_preds_softmax, inference_time, test_offsets_normalized \
                     = self.predict(training_data['test_event_in_seq'],
                                    training_data['test_time_in_seq'],
                                    training_data['test_time_in_feats'],
                                    dec_len_for_eval,
                                    training_data['attn_test_time_in_seq'],
-                                   pad_sequences(training_data['attn_test_gaps'], dtype=float, padding='post'),
-                                   pad_sequences(training_data['attn_test_gaps_idxes'], dtype=float, padding='post'),
+                                   training_data['attn_test_gaps'],
+                                   training_data['attn_test_gaps_idxes'],
                                    pad_sequences(training_data['coarse_test_gaps_in_seq'], dtype=float, padding='post'),
                                    pad_sequences(training_data['coarse_test_time_in_feats'], dtype=float, padding='post'),
                                    training_data['test_time_out_feats'],
-                                   pad_sequences(training_data['attn_test_time_in_feats'], dtype=float, padding='post'),
+                                   training_data['attn_test_time_in_feats'],
                                    np.array(training_data['test_actual_time_in_seq']),
+                                   training_data['testND'],
                                    single_threaded=True,
                                    event_out_seq=training_data['test_event_out_seq'] if self.ALG_NAME=='rmtpp_decrnn_truemarks' else None)
             test_loss, test_time_loss, test_mark_loss \
@@ -1928,12 +1912,12 @@ class RMTPP_DECRNN:
                                                training_data['test_time_out_feats'],
                                                dec_len_for_eval,
                                                training_data['attn_test_time_in_seq'],
-                                               pad_sequences(training_data['attn_test_gaps'], dtype=float, padding='post'),
-                                               pad_sequences(training_data['attn_test_gaps_idxes'], dtype=float, padding='post'),
+                                               training_data['attn_test_gaps'],
+                                               training_data['attn_test_gaps_idxes'],
                                                pad_sequences(training_data['coarse_test_gaps_in_seq'], dtype=float, padding='post'),
                                                pad_sequences(training_data['coarse_test_time_in_feats'], dtype=float, padding='post'),
                                                training_data['test_time_out_feats'],
-                                               pad_sequences(training_data['attn_test_time_in_feats'], dtype=float, padding='post'),
+                                               training_data['attn_test_time_in_feats'],
                                                np.array(training_data['test_actual_time_in_seq']),
                                                training_data['testND'])
 
@@ -1942,6 +1926,7 @@ class RMTPP_DECRNN:
             test_actual_time_in_seq = training_data['test_actual_time_in_seq']
             test_time_out_seq = training_data['test_actual_time_out_seq']
             test_event_out_seq = training_data['test_event_out_seq']
+            test_offsets = test_offsets_normalized * np.squeeze(training_data['testND'], axis=-1)
 
             out_begin_indices, out_end_indices \
                     = get_output_indices(test_actual_time_in_seq, test_time_out_seq, test_offsets, self.DEC_LEN)
@@ -1953,19 +1938,10 @@ class RMTPP_DECRNN:
             test_time_out_seq = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
                                     zip(test_time_out_seq, out_begin_indices, out_end_indices)]
 
-            test_time_preds_prev = [np.concatenate([in_seq[-1:] + off, seq[:-1]]) for in_seq, seq, off in
-                                    zip(test_time_in_seq, test_time_preds, test_offsets)]
-            #test_time_preds_prev = np.concatenate([test_time_in_seq[:, -1:] + test_offsets, test_time_preds[:, :-1]], axis=-1)
-            gaps = [curr-prev for curr, prev in zip(test_time_preds, test_time_preds_prev)]
+            gaps = test_gaps_preds
             unnorm_gaps = [seq * testND for seq, testND in zip(gaps, training_data['testND'])]
-            #TODO In both normalized and un-normalized space, we are using same offset values, 
-            # Use normalized offset values in normalized space and same for un-normalized space.
             test_time_preds = [np.cumsum(gap_seq) + seq + off - testIG for gap_seq, seq, off, testIG in
                                 zip(unnorm_gaps, test_actual_time_in_seq, test_offsets, training_data['testIG'])]
-            test_time_out_seq_prev = [np.concatenate([act_seq + off, seq[:-1]]) for act_seq, off, seq in
-                                        zip(test_actual_time_in_seq, test_offsets, test_time_out_seq)]
-            #test_time_out_seq_prev = np.concatenate([test_actual_time_in_seq + test_offsets, test_time_out_seq[:, :-1]], axis=1)
-            tru_gaps = [curr-prev for curr, prev in zip(test_time_out_seq, test_time_out_seq_prev)]
 
             test_time_out_seq = trim_seq_dec_len(test_time_out_seq, dec_len_for_eval)
             test_time_preds = trim_seq_dec_len(test_time_preds, dec_len_for_eval)
@@ -2112,7 +2088,7 @@ class RMTPP_DECRNN:
             self.attn_gaps: attn_gaps,
             #self.attn_gaps_idxes: attn_gaps_idxes,
             self.attn_times_in_feats: attn_times_in_feats,
-            self.offset_begin: offsets,
+            self.offset_begin: offsets_normalized,
             self.offset_begin_feats: offset_feats,
             self.mode: 1.0,
         }
@@ -2129,7 +2105,7 @@ class RMTPP_DECRNN:
                 attn_time_in_seq, attn_gaps, attn_gaps_idxes,
                 coarse_gaps_in_seq, coarse_times_in_feats,
                 times_out_feats, attn_times_in_feats, actual_time_in_seq,
-                single_threaded=False, plot_dir=False, event_out_seq=None):
+                ND, single_threaded=False, plot_dir=False, event_out_seq=None):
         """Treats the entire dataset as a single batch and processes it."""
 
         start_time = time.time()
@@ -2137,10 +2113,11 @@ class RMTPP_DECRNN:
         # Default offsets = self.MAX_OFFSET
         #offsets = np.random.uniform(low=0.0, high=self.MAX_OFFSET, size=(self.BATCH_SIZE))
         offsets = np.ones((len(time_in_seq))) * self.MAX_OFFSET
+        offsets_normalized = offsets / np.squeeze(np.array(ND), axis=-1)
         offset_feats = [[getHour(s+offset) for s in seq] for seq, offset in zip(actual_time_in_seq, offsets)]
 
         attn_begin_indices, attn_end_indices = \
-                get_attn_seqs_from_offset(actual_time_in_seq, attn_time_in_seq, offsets, self.BPTT)
+                get_attn_seqs_from_offset(actual_time_in_seq, attn_time_in_seq, offsets_normalized, self.BPTT)
         for beg_ind, end_ind, seq in zip(attn_begin_indices, attn_end_indices, attn_time_in_seq):
             #print(beg_ind, end_ind, len(seq))
             assert end_ind <= len(seq)
@@ -2178,7 +2155,7 @@ class RMTPP_DECRNN:
             self.attn_gaps: attn_gaps,
             #self.attn_gaps_idxes: attn_gaps_idxes,
             self.attn_times_in_feats: attn_times_in_feats,
-            self.offset_begin: offsets,
+            self.offset_begin: offsets_normalized,
             self.offset_begin_feats: offset_feats,
             self.mode: mode #Test Mode
         }
@@ -2187,6 +2164,8 @@ class RMTPP_DECRNN:
             [self.hidden_states, self.decoder_states, self.event_preds, self.final_state, self.D, self.WT],
             feed_dict=feed_dict
         )
+        #for d in D:
+        #    print(d, WT)
 
         if self.ALG_NAME in ['rmtpp_decrnn_attn', 'rmtpp_decrnn_splusintensity_attn',
                              'rmtpp_decrnn_attn_r', 'rmtpp_decrnn_splusintensity_attn_r',
@@ -2244,6 +2223,7 @@ class RMTPP_DECRNN:
         #print('-----------------------------------------------------------------------------')
 
         all_time_preds = np.asarray(all_time_preds).T
+        all_gaps_preds = val
         if not np.isfinite(all_time_preds).sum() == all_time_preds.size:
             print(all_time_preds)
         assert np.isfinite(all_time_preds).sum() == all_time_preds.size
@@ -2256,7 +2236,7 @@ class RMTPP_DECRNN:
         all_event_preds_softmax = all_event_preds_softmax[:, :dec_len_for_eval]
 
 
-        return all_time_preds, all_event_preds, all_event_preds_softmax, inference_time, offsets
+        return all_time_preds, all_gaps_preds, all_event_preds, all_event_preds_softmax, inference_time, offsets_normalized
 
     def eval(self, time_preds, time_true, event_preds, event_true, time_input_last, event_preds_softmax, offsets):
         """Prints evaluation of the model on the given dataset."""
