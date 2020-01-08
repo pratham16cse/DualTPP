@@ -1222,6 +1222,7 @@ class RMTPP_DECRNN:
         inputs = tf.concat([inputs,
                             tf.tile(offset_feats_inputs, [1, self.DEC_LEN, 1]),
                             tf.tile(offset_begin, [1, self.DEC_LEN, 1])], axis=-1)
+        #inputs = tf.Print(inputs, [inputs[:, :, -3:]])
 
         h_1 = tf.layers.dense(inputs, self.HIDDEN_LAYER_SIZE/2, name='offset_nw_1',
                               kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed),
@@ -1440,7 +1441,7 @@ class RMTPP_DECRNN:
                                               zip(batch_time_train_out_feats, out_begin_indices, out_end_indices)]
 
                 batch_train_actual_time_in_seq = [train_actual_time_in_seq[batch_idx] for batch_idx in batch_idxes]
-                offset_feats = [[getHour(s+offset) for s in seq] for seq, offset in zip(batch_train_actual_time_in_seq, offsets)]
+                offset_feats = [[getHour(s+offset)/24.0 for s in seq] for seq, offset in zip(batch_train_actual_time_in_seq, offsets)]
 
                 batch_coarse_train_gaps_in_seq = pad_sequences(np.array(coarse_train_gaps_in_seq)[batch_idxes], dtype=float, padding='post')
                 batch_coarse_train_time_in_feats = pad_sequences(np.array(coarse_train_time_in_feats)[batch_idxes], dtype=float, padding='post')
@@ -2041,7 +2042,7 @@ class RMTPP_DECRNN:
         offsets = np.ones((len(time_in_seq))) * self.MAX_OFFSET
         offsets_normalized = offsets / np.squeeze(np.array(ND), axis=-1)
 
-        offset_feats = [[getHour(s+offset) for s in seq] for seq, offset in zip(actual_time_in_seq, offsets)]
+        offset_feats = [[getHour(s+offset)/24.0 for s in seq] for seq, offset in zip(actual_time_in_seq, offsets)]
 
         out_begin_indices, out_end_indices \
                 = get_output_indices(time_in_seq, time_out_seq, offsets_normalized, self.DEC_LEN)
@@ -2114,7 +2115,7 @@ class RMTPP_DECRNN:
         #offsets = np.random.uniform(low=0.0, high=self.MAX_OFFSET, size=(self.BATCH_SIZE))
         offsets = np.ones((len(time_in_seq))) * self.MAX_OFFSET
         offsets_normalized = offsets / np.squeeze(np.array(ND), axis=-1)
-        offset_feats = [[getHour(s+offset) for s in seq] for seq, offset in zip(actual_time_in_seq, offsets)]
+        offset_feats = [[getHour(s+offset)/24.0 for s in seq] for seq, offset in zip(actual_time_in_seq, offsets)]
 
         attn_begin_indices, attn_end_indices = \
                 get_attn_seqs_from_offset(actual_time_in_seq, attn_time_in_seq, offsets_normalized, self.BPTT)
@@ -2164,8 +2165,8 @@ class RMTPP_DECRNN:
             [self.hidden_states, self.decoder_states, self.event_preds, self.final_state, self.D, self.WT],
             feed_dict=feed_dict
         )
-        #for d in D:
-        #    print(d, WT)
+        for d in D:
+            print(d, WT)
 
         if self.ALG_NAME in ['rmtpp_decrnn_attn', 'rmtpp_decrnn_splusintensity_attn',
                              'rmtpp_decrnn_attn_r', 'rmtpp_decrnn_splusintensity_attn_r',
