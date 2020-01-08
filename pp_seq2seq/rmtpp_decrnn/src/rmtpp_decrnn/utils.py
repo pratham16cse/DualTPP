@@ -37,7 +37,7 @@ def create_dir(dirname):
 def change_zero_label(sequences):
     return [[lbl+1 for lbl in sequence] for sequence in sequences]
 
-def generate_norm_seq(timeTrain, timeDev, timeTest, enc_len, normalization, check=0):
+def generate_norm_seq(timeTrain, timeDev, timeTest, enc_len, normalization, max_offset, check=0):
 
     def _generate_norm_seq(sequences, enc_len, normalization, check=0):
 
@@ -57,7 +57,7 @@ def generate_norm_seq(timeTrain, timeDev, timeTest, enc_len, normalization, chec
             elif normalization == 'max_per_seq':
                 max_gap = np.clip(np.max(gap_seq[:enc_len-1]), 1.0, np.inf)
                 n_d, n_a = [max_gap], [0.0]
-            elif normalization is None or normalization=='average':
+            elif normalization is None or normalization in ['average', 'max_offset']:
                 n_d, n_a = [1.0], [0.0]
             else:
                 print('Normalization not found')
@@ -85,6 +85,10 @@ def generate_norm_seq(timeTrain, timeDev, timeTest, enc_len, normalization, chec
             n_d = n_d / (len(sequences) * (enc_len-1))
             avg_gaps_norm = [gap_seq/n_d for gap_seq in avg_gaps_norm]
             normalizer_d = np.ones((len(sequences), 1)) * n_d
+        elif normalization == 'max_offset':
+            n_d = max_offset
+            avg_gaps_norm = [gap_seq/n_d for gap_seq in avg_gaps_norm]
+            normalizer_d = np.ones((len(sequences), 1)) * n_d
 
         return avg_gaps_norm, normalizer_d, normalizer_a, initial_gaps
 
@@ -96,7 +100,7 @@ def generate_norm_seq(timeTrain, timeDev, timeTest, enc_len, normalization, chec
             timeDev, devND, devNA, devIG, \
             timeTest, testND, testNA, testIG
 
-def read_seq2seq_data(dataset_path, alg_name, normalization=None, offset=0.0, pad=False):
+def read_seq2seq_data(dataset_path, alg_name, normalization=None, max_offset=0.0, offset=0.0, pad=False):
     """Read data from given files and return it as a dictionary."""
 
     with open(dataset_path+'train.event.in', 'r') as in_file:
@@ -189,7 +193,7 @@ def read_seq2seq_data(dataset_path, alg_name, normalization=None, offset=0.0, pa
     timeTrain, trainND, trainNA, trainIG, \
             timeDev, devND, devNA, devIG, \
             timeTest, testND, testNA, testIG \
-            = generate_norm_seq(timeTrain, timeDev, timeTest, enc_len, normalization)
+            = generate_norm_seq(timeTrain, timeDev, timeTest, enc_len, normalization, max_offset)
 
     timeTrainIn = [seq[:enc_len] for seq in timeTrain]
     timeTrainOut = [seq[enc_len:] for seq in timeTrain]
