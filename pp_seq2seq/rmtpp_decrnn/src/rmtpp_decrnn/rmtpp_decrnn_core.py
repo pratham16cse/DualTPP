@@ -1371,6 +1371,7 @@ class RMTPP_DECRNN:
         train_time_in_seq = training_data['train_time_in_seq']
         train_event_out_seq = training_data['train_event_out_seq']
         train_time_out_seq = training_data['train_time_out_seq']
+        train_actual_time_out_seq = training_data['train_actual_time_out_seq']
         train_time_in_feats = training_data['train_time_in_feats']
         train_time_out_feats = training_data['train_time_out_feats']
         train_actual_time_in_seq = np.array(training_data['train_actual_time_in_seq'])
@@ -1428,8 +1429,9 @@ class RMTPP_DECRNN:
                 offsets_normalized = offsets / np.squeeze(np.array(batch_trainND), axis=-1)
                 offsets_feed = offsets * 1.0 / self.MAX_OFFSET
                 #offsets = np.ones((self.BATCH_SIZE)) * self.MAX_OFFSET
+                batch_time_train_actual_out = [train_actual_time_out_seq[batch_idx] for batch_idx in batch_idxes]
                 out_begin_indices, out_end_indices \
-                        = get_output_indices(batch_time_train_in, batch_time_train_out, offsets_normalized, self.DEC_LEN)
+                        = get_output_indices(batch_time_train_in, batch_time_train_actual_out, offsets, self.DEC_LEN)
                 #print(offsets)
                 for beg_ind, end_ind, seq in zip(out_begin_indices, out_end_indices, batch_event_train_out):
                     #print(beg_ind, end_ind, len(seq))
