@@ -1423,6 +1423,7 @@ class RMTPP_DECRNN:
         train_time_in_seq = training_data['train_time_in_seq']
         train_event_out_seq = training_data['train_event_out_seq']
         train_time_out_seq = training_data['train_time_out_seq']
+        train_actual_time_out_seq = training_data['train_actual_time_out_seq']
         train_time_in_feats = training_data['train_time_in_feats']
         train_time_out_feats = training_data['train_time_out_feats']
         train_actual_time_in_seq = np.array(training_data['train_actual_time_in_seq'])
@@ -1478,9 +1479,11 @@ class RMTPP_DECRNN:
                 else:
                     offsets = np.zeros((self.BATCH_SIZE), dtype=float)
                 offsets_normalized = offsets / np.squeeze(np.array(batch_trainND), axis=-1)
+                offsets_feed = offsets * 1.0 / self.MAX_OFFSET
                 #offsets = np.ones((self.BATCH_SIZE)) * self.MAX_OFFSET
+                batch_time_train_actual_out = [train_actual_time_out_seq[batch_idx] for batch_idx in batch_idxes]
                 out_begin_indices, out_end_indices \
-                        = get_output_indices(batch_time_train_in, batch_time_train_out, offsets_normalized, self.DEC_LEN)
+                        = get_output_indices(batch_time_train_in, batch_time_train_actual_out, offsets, self.DEC_LEN)
                 #print(offsets)
                 for beg_ind, end_ind, seq in zip(out_begin_indices, out_end_indices, batch_event_train_out):
                     #print(beg_ind, end_ind, len(seq))
@@ -1543,7 +1546,7 @@ class RMTPP_DECRNN:
                     self.coarse_gaps_in: batch_coarse_train_gaps_in_seq,
                     self.attn_gaps: batch_attn_train_gaps,
                     #self.attn_gaps_idxes: batch_attn_train_gaps_idxes,
-                    self.offset_begin: offsets_normalized,
+                    self.offset_begin: offsets_feed,
                     self.offset_begin_feats: offset_feats,
                     self.mode: 1.0, # Train Mode
                 }
@@ -2093,6 +2096,7 @@ class RMTPP_DECRNN:
 
         offsets = np.ones((len(time_in_seq))) * self.MAX_OFFSET
         offsets_normalized = offsets / np.squeeze(np.array(ND), axis=-1)
+        offsets_feed = offsets * 1.0 / self.MAX_OFFSET
 
         offset_feats = [[getHour(s+offset)/24.0 for s in seq] for seq, offset in zip(actual_time_in_seq, offsets)]
 
@@ -2141,7 +2145,7 @@ class RMTPP_DECRNN:
             self.attn_gaps: attn_gaps,
             #self.attn_gaps_idxes: attn_gaps_idxes,
             self.attn_times_in_feats: attn_times_in_feats,
-            self.offset_begin: offsets_normalized,
+            self.offset_begin: offsets_feed,
             self.offset_begin_feats: offset_feats,
             self.mode: 1.0,
         }
@@ -2167,6 +2171,7 @@ class RMTPP_DECRNN:
         #offsets = np.random.uniform(low=0.0, high=self.MAX_OFFSET, size=(self.BATCH_SIZE))
         offsets = np.ones((len(time_in_seq))) * self.MAX_OFFSET
         offsets_normalized = offsets / np.squeeze(np.array(ND), axis=-1)
+        offsets_feed = offsets * 1.0 / self.MAX_OFFSET
         offset_feats = [[getHour(s+offset)/24.0 for s in seq] for seq, offset in zip(actual_time_in_seq, offsets)]
 
         attn_begin_indices, attn_end_indices = \
@@ -2208,7 +2213,7 @@ class RMTPP_DECRNN:
             self.attn_gaps: attn_gaps,
             #self.attn_gaps_idxes: attn_gaps_idxes,
             self.attn_times_in_feats: attn_times_in_feats,
-            self.offset_begin: offsets_normalized,
+            self.offset_begin: offsets_feed,
             self.offset_begin_feats: offset_feats,
             self.mode: mode #Test Mode
         }
@@ -2266,7 +2271,7 @@ class RMTPP_DECRNN:
         val = self.sess.run(self.val, feed_dict=feed_dict)
         all_time_preds = np.cumsum(val, axis=1) + time_pred_last + self.OFFSET
         if self.MAX_OFFSET > 0.0:
-            all_time_preds = np.cumsum(val, axis=1) + time_pred_last + np.expand_dims(offsets, axis=-1)
+            all_time_preds = np.cumsum(val, axis=1) + time_pred_last + np.expand_dims(offsets_normalized, axis=-1)
         #print('printing val')
         #print(val)
         ##print('printing log_part')
