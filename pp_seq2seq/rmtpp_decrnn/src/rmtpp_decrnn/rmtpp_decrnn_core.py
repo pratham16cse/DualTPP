@@ -10,7 +10,7 @@ import multiprocessing as MP
 import matplotlib
 matplotlib.use('agg')
 import matplotlib.pyplot as plt
-import time
+import time, sys
 from collections import OrderedDict, Counter
 from operator import itemgetter
 
@@ -1153,6 +1153,54 @@ class RMTPP_DECRNN:
     def embedFeatures(self, inputs):
         return tf.nn.embedding_lookup(self.Wem_feats, inputs)
 
+    def time_encoding(self, inputs, num_units, scope='time_kernal', reuse=None, return_weight=False):
+        '''Shift-invariant time encoding kernal
+        
+        Args:
+          inputs: A 2d float32 tensor with shate of [N, max_len]
+          num_units: integer
+
+        Returns:
+          A 3d float tensor which embeds the input or 
+          A tuple with one 3d float tensor (embeddings) and 2d float tensor (attention weight)
+        '''
+        assert(num_units % 2 == 0)
+        effe_numits = num_units // 2
+        
+        with tf.variable_scope(scope, reuse=reuse):        
+            init_freq_base = np.linspace(0, 8, effe_numits)
+            init_freq_base = init_freq_base.astype(np.float32)
+            #init_freq = 1 / 10 ** init_freq_base
+
+
+            cos_freq_var = tf.get_variable('time_cos_freq', dtype=tf.float32, 
+                                                initializer = tf.constant(init_freq_base))
+            cos_freq_var = 1 / 10.0 ** cos_freq_var
+            sin_freq_var = tf.get_variable('time_sin_freq', dtype=tf.float32, 
+                                                initializer = tf.constant(init_freq_base))
+            sin_freq_var = 1 / 10.0 ** sin_freq_var
+            
+            ones = np.ones(num_units).astype(np.float32)
+            beta_var = tf.get_variable('time_beta', dtype=tf.float32, initializer = tf.constant(ones))
+            
+            # print("inputs shape ", inputs)
+            sys.stdout.flush()
+            expand_input = tf.tile(tf.expand_dims(inputs, 2), (1, 1, effe_numits))
+            # print("expand_input shape ", expand_input)
+            
+            cos_feat = tf.sin(tf.multiply(expand_input, tf.reshape(cos_freq_var, [1, 1, effe_numits])))
+            sin_feat = tf.cos(tf.multiply(expand_input, tf.reshape(sin_freq_var, [1, 1, effe_numits])))
+            
+            freq_feat = tf.concat([cos_feat, sin_feat], axis=2) # [N, max_len, num_units]
+            
+            # print("freq_feat shape ", freq_feat)
+            
+            output = tf.multiply(freq_feat, tf.reshape(beta_var, [1, 1, num_units]))
+            
+            if return_weight:
+                return output, tf.concat([cos_freq_var, sin_freq_var], axis=-1)
+            return output
+
     def embedGaps(self, inputs):
         if self.EMBED_GAPS is None:
             out = inputs
@@ -1163,6 +1211,10 @@ class RMTPP_DECRNN:
                                   activation=tf.nn.softmax)
             out = tf.layers.dense(h_1, num_units, name='embed_gaps_linear',
                                   kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed))
+        elif self.EMBED_GAPS=='time_kernal':
+            num_units = self.GAP_EMBED_SIZE
+            out = self.time_encoding(inputs, num_units)
+            out = tf.squeeze(out, axis=1)
 
         return out
 
