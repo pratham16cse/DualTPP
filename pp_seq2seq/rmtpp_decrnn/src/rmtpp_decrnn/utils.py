@@ -140,6 +140,14 @@ def read_seq2seq_data(dataset_path, alg_name, normalization=None, max_offset=0.0
     with open(dataset_path+'attn.test.time.in', 'r') as in_file:
         attn_timeTestIn = [[float(y) for y in x.strip().split()] for x in in_file]
 
+    with open(dataset_path+'train.time.indices', 'r') as in_file:
+        timeTrainIndices = [int(x.strip()) for x in in_file]
+    with open(dataset_path+'dev.time.indices', 'r') as in_file:
+        timeDevIndices = [int(x.strip()) for x in in_file]
+    with open(dataset_path+'test.time.indices', 'r') as in_file:
+        timeTestIndices = [int(x.strip()) for x in in_file]
+
+
     # Compute Hour-of-day features from data
     getHour = lambda t: t // 3600 % 24
     timeTrainInFeats = [[getHour(s) for s in seq] for seq in timeTrainIn]
@@ -266,170 +274,26 @@ def read_seq2seq_data(dataset_path, alg_name, normalization=None, max_offset=0.0
         test_time_in_feats = timeTestInFeats
         test_time_out_feats = timeTestOutFeats
 
-    # ----- Start: Create coarse sequence by grouping nearby events  ----- #
 
-    def create_coarse_seq(attn_time_seq):
-        coarse_gaps_in_seq = list()
-        coarse_time_in_feats = list()
-        attn_gaps_idxes = list()
+    def get_attn_gaps_and_feats(attn_time_seqs):
+        attn_time_seqs = np.array(attn_time_seqs)
         attn_gaps = list()
         attn_time_in_feats = list()
-        for sequence in attn_time_seq:
-            gaps = list()
-            coarse_seq = list()
-            begin_idxes = list()
-            coarse_feats = list()
-            attn_feats = list()
-            cnt, total_gap = 0, 0.0
-            begin_ts = sequence[0]
-            begin_idxes.append(0)
-            hod = list()
-            for i, ts in enumerate(sequence[:-enc_len]):
-                gaps.append((sequence[i] - sequence[i-1]) if i>0 else 0.0)
-                attn_feats.append(getHour(ts))
-                #if ts > begin_ts + DELTA or i==len(sequence)-1:
-                if ts > begin_ts + DELTA or i==len(sequence)-1-enc_len:
-                    #print(ts > begin_ts + DELTA, i==len(sequence)-1)
-                    #print(begin_ts, ts, cnt, total_gap, hod)
-                    if total_gap > 0.0:
-                        begin_ts = ts
-                        coarse_feats.append(max(hod))
-                        avg_gap = total_gap * 1.0/cnt
-                        #coarse_seq.append([cnt, avg_gap])
-                        coarse_seq.append(avg_gap)
-                        cnt, total_gap = 1, 0.0
-                        hod = list()
-                        #if i<len(sequence)-1-enc_len:
-                        begin_idxes.append(i)
-                    elif total_gap == 0.0:
-                        if i<len(sequence)-1-enc_len:
-                            begin_idxes[-1] = i
-                            begin_ts = ts
-                            hod = list()
-                            cnt, total_gap = 1, 0.0
-                        #else:
-                        #    del begin_idxes[-1]
+        for sequence in attn_time_seqs:
+            attn_gaps.append(sequence[1:]-sequence[:-1])
+            attn_time_in_feats.append([getHour(ts) for ts in sequence])
 
-                else:
-                    cnt +=1
-                    total_gap += ((ts - sequence[i-1]) if i>0 else 0.0)
-                    hod.append(getHour(ts))
+        return attn_gaps, attn_time_in_feats
 
-            for i, ts in enumerate(sequence[-enc_len:], start=len(sequence)-enc_len):
-                gaps.append((sequence[i] - sequence[i-1]) if i>0 else 0.0)
-                attn_feats.append(getHour(ts))
-                coarse_seq.append((sequence[i] - sequence[i-1]) if i>0 else 0.0)
-                coarse_feats.append(getHour(ts))
-                if i<len(sequence)-1:
-                    begin_idxes.append(i)
+    attn_train_gaps, attn_train_time_in_feats = get_attn_gaps_and_feats(attn_timeTrainIn)
+    attn_dev_gaps, attn_dev_time_in_feats = get_attn_gaps_and_feats(attn_timeDevIn)
+    attn_test_gaps, attn_test_time_in_feats = get_attn_gaps_and_feats(attn_timeTestIn)
 
-
-            #print(len(begin_idxes), len(coarse_seq))
-            #print(begin_idxes[-enc_len], len(gaps), begin_idxes[-enc_len] + 5 < len(gaps))
-            #assert len(begin_idxes) == len(coarse_seq)
-            attn_gaps.append(gaps)
-            attn_gaps_idxes.append(begin_idxes)
-            coarse_gaps_in_seq.append(coarse_seq)
-            coarse_time_in_feats.append(coarse_feats)
-            attn_time_in_feats.append(attn_feats)
-
-
-        #lens = [len(sequence) for sequence in coarse_gaps_in_seq]
-        #print('---------------------------------')
-        #lens_counts = Counter(lens)
-        #for k in sorted(lens_counts.keys()):
-        #    print(k, lens_counts[k]
-        return attn_gaps, attn_gaps_idxes, coarse_gaps_in_seq, coarse_time_in_feats, attn_time_in_feats
-
-    attn_train_gaps, attn_train_gaps_idxes, coarse_train_gaps_in_seq, coarse_train_time_in_feats, attn_train_time_in_feats = create_coarse_seq(attn_timeTrainIn)
-    attn_dev_gaps, attn_dev_gaps_idxes, coarse_dev_gaps_in_seq, coarse_dev_time_in_feats, attn_dev_time_in_feats = create_coarse_seq(attn_timeDevIn)
-    attn_test_gaps, attn_test_gaps_idxes, coarse_test_gaps_in_seq, coarse_test_time_in_feats, attn_test_time_in_feats = create_coarse_seq(attn_timeTestIn)
-
-    ## Testing whether encoder length is subsumed in the attn sequence
-    #for i, (attn_feats, gaps) in enumerate(zip(attn_train_time_in_feats, attn_train_gaps)):
-    #    print(i)
-    #    k=len(gaps)-1
-    #    for j in range(len(train_time_in_seq[i])-1, 0, -1):
-    #        print(i, j, k, gaps[k], train_time_in_seq[i][j]-train_time_in_seq[i][j-1])
-    #        assert gaps[k] == train_time_in_seq[i][j]-train_time_in_seq[i][j-1]
-    #        k-=1
-
-
-    if alg_name in ['rmtpp_decrnn_pastattn_r', 'rmtpp_decrnn_splusintensity_pastattn_r',
-                    'rmtpp_decrnn_pastattn', 'rmtpp_decrnn_splusintensity_pastattn',
-                    'rmtpp_decrnn_pastattnstate', 'rmtpp_decrnn_splusintensity_pastattnstate',]:
-        def get_past_attn_feats(attn_time_seq, attn_time_in_feats, attn_gaps):
-            attn_feats_past_day = list()
-            attn_gaps_past_day = list()
-            found_cnt = 0
-            for sequence, attn_feats, gaps in zip(attn_time_seq, attn_time_in_feats, attn_gaps):
-                last_dt = timestampTotime(sequence[-1])
-                last_hour = attn_feats[-1]
-                assert last_dt[2] == last_hour
-                last_day = last_dt[1]
-                last_hour = last_dt[2] + last_dt[3]*1.0/60 + last_dt[4]*1.0/3600
-                # Get index of nearest hour in the day before dt.date
-                ind_found = False
-                seq_parsed = [timestampTotime(ts) for ts in sequence]
-                hod = [ts[2] + ts[3]*1.0/60 + ts[4]*1.0/3600 for ts in seq_parsed]
-                dow = [ts[1] for ts in seq_parsed]
-                not_same_day = (np.array(dow) != last_day)
-                if not np.any(not_same_day):
-                    attn_idx = (np.abs(np.array(hod) - last_hour+offset)).argmin()
-                else:
-                    attn_idx = (np.abs(np.array(hod)[not_same_day] - last_hour+offset)).argmin()
-                closest_hod = np.array(hod)[attn_idx]
-                print(attn_idx, closest_hod, last_hour)
-                #for ind, ts in zip(range(len(sequence)-1, -1, -1), reversed(sequence)):
-                #    dt = timestampTotime(ts)
-                #    if dt[1]!= last_dt[1] and dt[2] == last_dt[2]:
-                #        print(ind, 'ind found')
-                #        attn_idx = ind
-                #        ind_found = True
-                #        found_cnt += 1
-                #        break
-                #if not ind_found:
-                #    for ind, ts in zip(range(len(sequence)-1, -1, -1), reversed(sequence)):
-                #        dt = timestampTotime(ts)
-                #        if dt[1]!= last_dt[1] and abs(dt[2] - last_dt[2]) <=2:
-                #            print(ind, 'ind found')
-                #            attn_idx = ind
-                #            ind_found = True
-                #            break
-                #if not ind_found:
-                #    print('NOT FOUND')
-                #    attn_idx = len(sequence) - 11
-
-                if attn_idx-10<0:
-                    begin_idx = 0
-                    end_idx = 20
-                elif attn_idx+10>=len(attn_feats):
-                    begin_idx = max(0, len(attn_feats)-1-20)
-                    end_idx = len(attn_feats)-1
-                else:
-                    begin_idx = attn_idx-10
-                    end_idx = attn_idx+10
-
-                assert begin_idx>=0 and end_idx>=0
-
-                attn_feats_past_day.append(attn_feats[begin_idx:end_idx])
-                attn_gaps_past_day.append(gaps[begin_idx:end_idx])
-
-            print('Fraction of Indices Found:', found_cnt *1.0/len(attn_time_seq))
-
-            return attn_feats_past_day, attn_gaps_past_day
-
-        #attn_train_time_in_feats, attn_train_gaps = get_past_attn_feats(attn_timeTrainIn, attn_train_time_in_feats, attn_train_gaps)
-        #attn_dev_time_in_feats, attn_dev_gaps = get_past_attn_feats(attn_timeDevIn, attn_dev_time_in_feats, attn_dev_gaps)
-        #attn_test_time_in_feats, attn_test_gaps = get_past_attn_feats(attn_timeTestIn, attn_test_time_in_feats, attn_test_gaps)
-
-    #for sequence in coarse_train_gaps_in_seq[:20]:
-    #    for s in sequence:
-    #        print(s, end=' ')
-    #    print('\n', end='')
-
-    # ----- End: Create coarse sequence by grouping nearby events  ----- #
-
+    # ----- Normalize attention gaps ----- #
+    attn_train_gaps = [seq/n_d + n_a for seq, n_d, n_a in zip(attn_train_gaps, trainND, trainNA)]
+    attn_dev_gaps = [seq/n_d + n_a for seq, n_d, n_a in zip(attn_dev_gaps, devND, devNA)]
+    attn_test_gaps = [seq/n_d + n_a for seq, n_d, n_a in zip(attn_test_gaps, testND, testNA)]
+    # ----- #
 
     return {
         'train_event_in_seq': train_event_in_seq,
@@ -468,23 +332,17 @@ def read_seq2seq_data(dataset_path, alg_name, normalization=None, max_offset=0.0
 
         'attn_train_time_in_seq': attn_timeTrainIn,
         'attn_train_gaps': attn_train_gaps,
-        'attn_train_gaps_idxes': attn_train_gaps_idxes,
-        'coarse_train_gaps_in_seq': coarse_train_gaps_in_seq,
-        'coarse_train_time_in_feats': coarse_train_time_in_feats,
         'attn_train_time_in_feats': attn_train_time_in_feats,
         'attn_dev_time_in_seq': attn_timeDevIn,
         'attn_dev_gaps': attn_dev_gaps,
-        'attn_dev_gaps_idxes': attn_dev_gaps_idxes,
-        'coarse_dev_gaps_in_seq': coarse_dev_gaps_in_seq,
-        'coarse_dev_time_in_feats': coarse_dev_time_in_feats,
         'attn_dev_time_in_feats': attn_dev_time_in_feats,
         'attn_test_time_in_seq': attn_timeTestIn,
         'attn_test_gaps': attn_test_gaps,
-        'attn_test_gaps_idxes': attn_test_gaps_idxes,
-        'coarse_test_gaps_in_seq': coarse_test_gaps_in_seq,
-        'coarse_test_time_in_feats': coarse_test_time_in_feats,
         'attn_test_time_in_feats': attn_test_time_in_feats,
 
+        'train_time_indices': timeTrainIndices,
+        'dev_time_indices': timeDevIndices,
+        'test_time_indices': timeTestIndices,
 
         'num_categories': len(unique_samples),
         'encoder_length': len(eventTrainIn[0]),

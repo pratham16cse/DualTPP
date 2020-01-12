@@ -17,15 +17,25 @@ import time
 from bisect import bisect_left, bisect_right
 #from preprocess_rmtpp_data import preprocess
 
-DELTA = 3600.0 * 24 *2
+ONE_DAY_SECS = 3600.0 * 24
 
 def getDatetime(epoch):
     date_string=time.strftime("%d-%m-%Y %H:%M:%S", time.localtime(epoch))
     date= datetime.strptime(date_string, "%d-%m-%Y %H:%M:%S")
     return date
 
+def timestampTotime(ts):
+    t = time.strftime("%Y %m %d %H %M %S", time.localtime(ts)).split(' ')
+    #t = time.strftime("%m %d %H %M %S", time.gmtime(ts)).split(' ')
+    t = [int(i) for i in t]
+    return t
+
 def getHour(epoch):
-    return getDatetime(epoch).hour
+    return timestampTotime(epoch)[3]
+
+def getBeginOfDayTs(ts):
+    dt_obj = timestampTotime(ts)
+    return datetime.timestamp(datetime(dt_obj[0], dt_obj[1], dt_obj[2]))
 
 
 def print_dataset_stats(dataset_name, train_data, dev_data, test_data):
@@ -400,6 +410,10 @@ def preprocess(raw_dataset_name,
                 f.write(str(e) + ' ')
             f.write('\n')
 
+    def write_ts_to_file(fptr, sequence):
+        for s in sequence:
+            f.write(str(s) + '\n')
+
     dataset_name = dataset_name if dataset_name[-1]!='/' else dataset_name[:-1]
     dataset_name = dataset_name + '_chop' if num_coarse_seq>0 else dataset_name
     dataset_name = dataset_name + '_off'+str(offset) if offset>0.0 else dataset_name
@@ -436,6 +450,12 @@ def preprocess(raw_dataset_name,
         write_to_file(f, pp_test_time_in_seq)
     with open(os.path.join(dataset_name, 'test.time.out'), 'w') as f:
         write_to_file(f, pp_test_time_out_seq)
+    with open(os.path.join(dataset_name, 'train.time.indices'), 'w') as f:
+        write_ts_to_file(f, train_tsIndices)
+    with open(os.path.join(dataset_name, 'dev.time.indices'), 'w') as f:
+        write_ts_to_file(f, dev_tsIndices)
+    with open(os.path.join(dataset_name, 'test.time.indices'), 'w') as f:
+        write_ts_to_file(f, test_tsIndices)
 
     with open(os.path.join(dataset_name, 'labels.in'), 'w') as f:
         for lbl in unique_labels:
@@ -444,35 +464,40 @@ def preprocess(raw_dataset_name,
     # ----- Start: Create sequence of previous-day timestamps for attention ----- #
 
     def get_attn_time_in_seq(pp_time_in_seq):
-        attn_time_in_seq = [[] for _ in pp_time_in_seq]
+        attn_time_in_seq = list()
         last_input_ts_list = [seq[-1] for seq in pp_time_in_seq]
-        for ind, ts in enumerate(all_timestamps):
-            #print(ts)
-            #print(dataset_name, ind)
-            for i, l_ts in enumerate(last_input_ts_list):
-                if ts <= l_ts and ts + DELTA > l_ts:
-                    attn_time_in_seq[i].append(ts)
+        attn_len = encoder_length
+        for i, l_ts in enumerate(last_input_ts_list):
+            search_ts = l_ts - ONE_DAY_SECS
+            match_idx = bisect_right(all_timestamps, search_ts)
 
-        #for a,b in [(len(i), len(j)) for i,j in zip(attn_time_in_seq, pp_time_in_seq)]:
-        #    print(a, b)
-        for attn_seq, time_seq in zip(attn_time_in_seq, pp_time_in_seq):
-            #print(time_seq)
-            #print(attn_seq[-len(time_seq):])
-            #print('-----------------------')
-            for a, b in zip(time_seq, attn_seq[-len(time_seq):]):
-                #print(getHour(a), getHour(b))
-                assert a==b
+            end_ts = getBeginOfDayTs(l_ts)
+            begin_ts = end_ts - ONE_DAY_SECS
 
+            begin_idx = bisect_right(all_timestamps, begin_ts)
+            end_idx = bisect_right(all_timestamps, end_ts)
+
+            if begin_idx==0 and end_idx==0:
+                end_idx = encoder_length
+            print(begin_idx, end_idx)
+
+            assert begin_idx>=0 and end_idx>=0
+
+            attn_time_in_seq.append(all_timestamps[begin_idx:end_idx])
 
         return attn_time_in_seq
 
-    attn_train_time_in_seq = get_attn_time_in_seq(pp_train_time_in_seq)
-    attn_dev_time_in_seq = get_attn_time_in_seq(pp_dev_time_in_seq)
-    attn_test_time_in_seq = get_attn_time_in_seq(pp_test_time_in_seq)
+    #attn_train_time_in_seq = get_attn_time_in_seq(pp_train_time_in_seq)
+    #attn_dev_time_in_seq = get_attn_time_in_seq(pp_dev_time_in_seq)
+    #attn_test_time_in_seq = get_attn_time_in_seq(pp_test_time_in_seq)
 
-    assert len(attn_train_time_in_seq) == len(pp_train_time_in_seq)
-    assert len(attn_dev_time_in_seq) == len(pp_dev_time_in_seq)
-    assert len(attn_test_time_in_seq) == len(pp_test_time_in_seq)
+    attn_train_time_in_seq = [all_timestamps for _ in train_time_seq]
+    attn_dev_time_in_seq = [all_timestamps for _ in dev_time_seq]
+    attn_test_time_in_seq = [all_timestamps for _ in test_time_seq]
+
+    #assert len(attn_train_time_in_seq) == len(pp_train_time_in_seq)
+    #assert len(attn_dev_time_in_seq) == len(pp_dev_time_in_seq)
+    #assert len(attn_test_time_in_seq) == len(pp_test_time_in_seq)
 
     with open(os.path.join(dataset_name, 'attn.train.time.in'), 'w') as f:
         write_to_file(f, attn_train_time_in_seq)
@@ -525,7 +550,7 @@ def preprocess(raw_dataset_name,
             f.write('{}, {}\n'.format(value, freq))
     for value, freq in train_gaps_freq.items():
         train_gaps_freq[value] = freq*1.0/len(all_train_gaps)
-    plt.loglog(train_gaps_freq.keys(), train_gaps_freq.values(), 'ro')
+    plt.loglog(list(train_gaps_freq.keys()), list(train_gaps_freq.values()), 'ro')
     plt.title(raw_dataset_name+'__train')
     plt.savefig(os.path.join(dataset_name, 'train_gaps_freq.png'))
     plt.close()
@@ -560,7 +585,7 @@ def preprocess(raw_dataset_name,
     dev_gaps_freq = Counter(all_dev_gaps)
     for value, freq in dev_gaps_freq.items():
         dev_gaps_freq[value] = freq*1.0/len(all_dev_gaps)
-    plt.loglog(dev_gaps_freq.keys(), dev_gaps_freq.values(), 'ro')
+    plt.loglog(list(dev_gaps_freq.keys()), list(dev_gaps_freq.values()), 'ro')
     plt.title(raw_dataset_name+'__dev')
     plt.savefig(os.path.join(dataset_name, 'dev_gaps_freq.png'))
     plt.close()
@@ -584,7 +609,7 @@ def preprocess(raw_dataset_name,
     test_gaps_freq = Counter(all_test_gaps)
     for value, freq in test_gaps_freq.items():
         test_gaps_freq[value] = freq*1.0/len(all_test_gaps)
-    plt.loglog(test_gaps_freq.keys(), test_gaps_freq.values(), 'ro')
+    plt.loglog(list(test_gaps_freq.keys()), list(test_gaps_freq.values()), 'ro')
     plt.title(raw_dataset_name+'__test')
     plt.savefig(os.path.join(dataset_name, 'test_gaps_freq.png'))
     plt.close()
@@ -741,8 +766,10 @@ def main():
     print(np.shape(event_test))
     print(np.shape(event_dev))
 
-    all_timestamps = arr
-    all_events = arr_eve
+    #all_timestamps = arr
+    #all_events = arr_eve
+    all_timestamps = [s for seq in time_train for s in seq]
+    all_events = [s for seq in event_train for s in seq]
     preprocess(dataset,
                os.path.join(output_path, dataset),
                all_timestamps,
