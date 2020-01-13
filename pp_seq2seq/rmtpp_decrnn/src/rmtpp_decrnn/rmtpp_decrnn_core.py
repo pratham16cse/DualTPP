@@ -1,4 +1,5 @@
 from tensorflow.contrib.keras import preprocessing
+import tensorflow_probability as tfp
 import tensorflow as tf
 import numpy as np
 import os
@@ -1201,6 +1202,162 @@ class RMTPP_DECRNN:
                 return output, tf.concat([cos_freq_var, sin_freq_var], axis=-1)
             return output
 
+    def rand_time_encode(self, inputs, num_units, scope='rand_time_kernal', reuse=None, min_w=0, max_w=8):
+        '''Bochner time encoding with uniformly random sampled frequencies
+
+        Args:
+          inputs: A 2d float32 tensor with shate of [N, max_len]
+          num_units: An integer for the number of dimensions
+          scope: string, scope for tensorflow variables
+          reuse: bool, if true the layer could be reused
+          min_w: float, min(log10(period))
+          max_w: float, max(log10(period))
+        
+        Returns:
+          A 3d float tensor which embeds the input
+        '''
+        assert(num_units % 2 == 0)
+        effe_numits = num_units // 2
+        with tf.variable_scope(scope, reuse=reuse):
+            sampled_freq = tf.random_uniform(
+                                            [effe_numits],
+                                            minval=10 ** min_w,
+                                            maxval=10 ** max_w,
+                                            dtype=tf.float32,
+                                            seed=None,
+                                            name=None
+                                        )
+            sampled_freq = tf.ones_like(sampled_freq) / sampled_freq
+            sampled_freq = tf.contrib.framework.sort(sampled_freq)
+            expand_input = tf.tile(tf.expand_dims(inputs, 2), (1, 1, effe_numits))
+            cos_feat = tf.sin(tf.multiply(expand_input, tf.reshape(sampled_freq, [1, 1, effe_numits])))
+            sin_feat = tf.cos(tf.multiply(expand_input, tf.reshape(sampled_freq, [1, 1, effe_numits])))
+            
+            output = tf.concat([cos_feat, sin_feat], axis=2) # [N, max_len, num_units]
+            return output
+        
+    def gaussian_time_encode(self, inputs, num_units, scope='gaussian_time_kernal', reuse=None):
+        '''Bochner time encoding with frequencies sampled from Gaussian family
+
+        Args:
+          inputs: A 2d float32 tensor with shate of [N, max_len]
+          num_units: An integer for the number of dimensions
+          scope: string, scope for tensorflow variables
+          reuse: bool, if true the layer could be reused
+        
+        Returns:
+          A 3d float tensor which embeds the input
+        '''
+        assert(num_units % 2 == 0)
+        effe_numits = num_units // 2
+        with tf.variable_scope(scope, reuse=reuse):
+            sampled_freq = tf.random_normal(
+                                            [effe_numits],
+                                            dtype=tf.float32,
+                                            seed=None,
+                                            name=None
+                                        )
+            
+            expand_input = tf.tile(tf.expand_dims(inputs, 2), (1, 1, effe_numits))
+            #sampled_freq = tf.ones_like(sampled_freq) / 10 ** sampled_freq
+            
+            init_freq_base = np.linspace(0, 8, effe_numits) / np.pi / 2
+            init_freq_base = init_freq_base.astype(np.float32)
+            init_freq = 1 / 10 ** init_freq_base
+            mean_vec = tf.get_variable('mean_vec', dtype=tf.float32, initializer=tf.constant(init_freq))
+            std_vec = tf.ones_like(mean_vec)
+            sampled_freq = std_vec * sampled_freq + mean_vec
+            
+            #sampled_freq = tf.contrib.framework.sort(sampled_freq)
+            #print('no sort')
+                            
+            #print(expand_input.shape)
+            
+            cos_feat = tf.sin(tf.multiply(expand_input, tf.reshape(sampled_freq, [1, 1, effe_numits])))
+            sin_feat = tf.cos(tf.multiply(expand_input, tf.reshape(sampled_freq, [1, 1, effe_numits])))
+            
+            output = tf.concat([cos_feat, sin_feat], axis=2) # [N, max_len, num_units]
+            return output
+        
+        
+    def inverse_cdf_time_encode(self, inputs, num_units, method='maf', scope='inverse_cdf_time_kernal', reuse=None):
+        '''Bochner time encoding with different inverse CDF methods
+
+        Args:
+          inputs: A 2d float32 tensor with shate of [N, max_len]
+          num_units: An integer for the number of dimensions
+          method: str, method for the inverse CDF
+          scope: string, scope for tensorflow variables
+          reuse: bool, if true the layer could be reused
+        
+        Returns:
+          A 3d float tensor which embeds the input
+        '''
+        assert(num_units % 2 == 0)
+        effe_numits = num_units // 2
+
+        tfd = tfp.distributions
+        tfb = tfp.bijectors
+        with tf.variable_scope(scope, reuse=reuse):
+            
+            expand_input = tf.tile(tf.expand_dims(inputs, 2), (1, 1, effe_numits))
+
+            if method == 'mlp_res':
+                print('inv cdf method: mlp_res')
+                sampled_freq = tf.random_uniform(
+                                            [1, effe_numits],
+                                            minval=0.0,
+                                            maxval=1.0,
+                                            dtype=tf.float32,
+                                            seed=None,
+                                            name=None
+                                        )
+                sampled_freq = tf.ones_like(sampled_freq) / 10 ** sampled_freq
+                sampled_freq1 = tf.keras.layers.Dense(units=effe_numits, activation=tf.nn.relu, use_bias=True, bias_initializer='zeros')(sampled_freq)
+                sampled_freq2 = tf.keras.layers.Dense(units=effe_numits, activation=None, use_bias=True, bias_initializer='zeros')(sampled_freq1)
+                sampled_freq = tf.keras.layers.Dense(units=effe_numits, activation=None, use_bias=True, bias_initializer='zeros')(tf.add(sampled_freq2, sampled_freq))
+
+            elif method == 'maf':
+                print('inv cdf method: maf')
+                maf = tfd.TransformedDistribution(
+                    distribution=tfd.Normal(loc=0., scale=1.),
+                    bijector=tfb.MaskedAutoregressiveFlow(
+                        shift_and_log_scale_fn=tfb.masked_autoregressive_default_template(
+                            hidden_layers=[256, 256])),
+                            event_shape=[1])
+                sampled_freq = maf.sample([1,effe_numits])
+
+            elif method == 'iaf':
+                print('inv cdf method: iaf')
+                iaf = tfd.TransformedDistribution(
+                    distribution=tfd.Normal(loc=0., scale=1.),
+                    bijector=tfb.Invert(tfb.MaskedAutoregressiveFlow(
+                        shift_and_log_scale_fn=tfb.masked_autoregressive_default_template(
+                            hidden_layers=[256, 256]))),
+                    event_shape=[1])
+                sampled_freq = iaf.sample([1,effe_numits])
+
+            elif method == 'NVP':
+                print('inv cdf method: NVP')
+                nvp = tfd.TransformedDistribution(
+                    distribution=tfd.Normal(loc=0., scale=1.),
+                    bijector=tfb.RealNVP(
+                        num_masked=2,
+                        shift_and_log_scale_fn=tfb.real_nvp_default_template(
+                            hidden_layers=[256, 256])))
+                sampled_freq = nvp.sample([1,effe_numits])
+                
+            else:
+                raise ValueError('method not found')
+
+            sampled_freq = tf.exp(sampled_freq)
+            
+            cos_feat = tf.sin(tf.multiply(expand_input, tf.reshape(sampled_freq, [1, 1, effe_numits])))
+            sin_feat = tf.cos(tf.multiply(expand_input, tf.reshape(sampled_freq, [1, 1, effe_numits])))
+            
+            output = tf.concat([cos_feat, sin_feat], axis=2) # [N, max_len, num_units]
+            return output
+
     def embedGaps(self, inputs):
         if self.EMBED_GAPS is None:
             out = inputs
@@ -1215,6 +1372,20 @@ class RMTPP_DECRNN:
             num_units = self.GAP_EMBED_SIZE
             out = self.time_encoding(inputs, num_units)
             out = tf.squeeze(out, axis=1)
+        elif self.EMBED_GAPS=='rand_time_kernal':
+            num_units = self.GAP_EMBED_SIZE
+            out = self.rand_time_encode(inputs, num_units)
+            out = tf.squeeze(out, axis=1)
+        elif self.EMBED_GAPS=='gaussian_time_kernal':
+            num_units = self.GAP_EMBED_SIZE
+            out = self.gaussian_time_encode(inputs, num_units)
+            out = tf.squeeze(out, axis=1)
+        elif self.EMBED_GAPS=='inverse_cdf_time_kernal':
+            num_units = self.GAP_EMBED_SIZE
+            out = self.inverse_cdf_time_encode(inputs, num_units)
+            out = tf.squeeze(out, axis=1)
+        else:
+            raise ValueError('encoding type not found')
 
         return out
 
