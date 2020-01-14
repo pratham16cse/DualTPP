@@ -293,15 +293,17 @@ class RMTPP_DECRNN:
                 self.times_out_feats = tf.placeholder(tf.int32, [None, self.DEC_LEN], name='times_out_feats')
 
                 self.last_input_timestamps = tf.placeholder(self.FLOAT_TYPE, [None, 1], name='last_input_timestamps')
-                self.attn_timestamps = tf.placeholder(self.FLOAT_TYPE, [None, None], name='attn_timestamps')
-                self.attn_gaps = tf.placeholder(self.FLOAT_TYPE, [None, None], name='attn_gaps')
-                self.attn_times_in_feats = tf.placeholder(tf.int32, [None, None], name='attn_times_in_feats')
                 self.ts_indices = tf.placeholder(tf.int32, [None], name='ts_indices')
                 self.seq_lens = tf.placeholder(tf.int32, [None], name='seq_lens')
 
                 self.offset_begin_max_norm = tf.placeholder(self.FLOAT_TYPE, [None], name='offset_begin_max_norm')
                 self.offset_begin = tf.placeholder(self.FLOAT_TYPE, [None], name='offset_begin')
                 self.offset_begin_feats = tf.placeholder(self.FLOAT_TYPE, [None, 1], name='offset_begin_feats')
+
+                if 'pastattn' in self.ALG_NAME:
+                    self.attn_timestamps = tf.placeholder(self.FLOAT_TYPE, [None, None], name='attn_timestamps')
+                    self.attn_gaps = tf.placeholder(self.FLOAT_TYPE, [None, None], name='attn_gaps')
+                    self.attn_times_in_feats = tf.placeholder(tf.int32, [None, None], name='attn_times_in_feats')
 
                 self.mode = tf.placeholder(tf.float32, name='mode')
 
@@ -427,26 +429,27 @@ class RMTPP_DECRNN:
                 # RNNcell = RNN_CELL_TYPE(HIDDEN_LAYER_SIZE)
 
                 # ----- Start: Create input for pastattn_rnn ----- #
-                batch_attn_timestamps = self.attn_timestamps
-                batch_attn_gaps_in = self.attn_gaps
-                batch_attn_times_in_feats = self.attn_times_in_feats
-                match_idxes = tf.searchsorted(batch_attn_timestamps,
-                                              self.last_input_timestamps - ONE_DAY_SECS,
-                                              side='left')
-                begin_idxes = match_idxes - self.BPTT//2
-                seq_lens = tf.expand_dims(self.seq_lens, axis=-1)
-                begin_idxes = tf.where(begin_idxes < 0,
-                                       tf.zeros_like(begin_idxes),
-                                       begin_idxes)
-                begin_idxes = tf.where(begin_idxes+self.BPTT >= seq_lens,
-                                       tf.ones_like(begin_idxes) * seq_lens-self.BPTT-1,
-                                       begin_idxes)
-                end_idxes = begin_idxes + self.BPTT
-                attn_idxes = begin_idxes + tf.cumsum(tf.ones((1, self.BPTT), dtype=tf.int32), axis=-1)
-                attn_idxes = tf.expand_dims(attn_idxes, axis=-1)
+                if 'pastattn' in self.ALG_NAME:
+                    batch_attn_timestamps = self.attn_timestamps
+                    batch_attn_gaps_in = self.attn_gaps
+                    batch_attn_times_in_feats = self.attn_times_in_feats
+                    match_idxes = tf.searchsorted(batch_attn_timestamps,
+                                                  self.last_input_timestamps - ONE_DAY_SECS,
+                                                  side='left')
+                    begin_idxes = match_idxes - self.BPTT//2
+                    seq_lens = tf.expand_dims(self.seq_lens, axis=-1)
+                    begin_idxes = tf.where(begin_idxes < 0,
+                                           tf.zeros_like(begin_idxes),
+                                           begin_idxes)
+                    begin_idxes = tf.where(begin_idxes+self.BPTT >= seq_lens,
+                                           tf.ones_like(begin_idxes) * seq_lens-self.BPTT-1,
+                                           begin_idxes)
+                    end_idxes = begin_idxes + self.BPTT
+                    attn_idxes = begin_idxes + tf.cumsum(tf.ones((1, self.BPTT), dtype=tf.int32), axis=-1)
+                    attn_idxes = tf.expand_dims(attn_idxes, axis=-1)
 
-                input_batch_attn_gaps_in = tf.gather_nd(batch_attn_gaps_in, attn_idxes, batch_dims=1)
-                input_batch_attn_times_in_feats = tf.gather_nd(batch_attn_times_in_feats, attn_idxes, batch_dims=1)
+                    input_batch_attn_gaps_in = tf.gather_nd(batch_attn_gaps_in, attn_idxes, batch_dims=1)
+                    input_batch_attn_times_in_feats = tf.gather_nd(batch_attn_times_in_feats, attn_idxes, batch_dims=1)
                 # ----- End: Create input for pastattn_rnn ----- #
 
                 if self.ENC_CELL_TYPE == 'lstm':
@@ -1703,16 +1706,17 @@ class RMTPP_DECRNN:
                     self.times_out_feats: batch_time_train_out_feats,
                     self.batch_num_events: batch_num_events,
                     self.last_input_timestamps: batch_train_actual_time_in_seq,
-                    self.attn_timestamps: batch_attn_train_time_in_seq,
                     self.ts_indices: batch_train_time_indices,
                     self.seq_lens: batch_train_seq_lens,
-                    self.attn_times_in_feats: batch_attn_train_time_in_feats,
-                    self.attn_gaps: batch_attn_train_gaps,
                     self.offset_begin_max_norm: offsets_feed,
                     self.offset_begin: offsets_normalized,
                     self.offset_begin_feats: offset_feats,
                     self.mode: 1.0, # Train Mode
                 }
+                if 'pastattn' in self.ALG_NAME:
+                    feed_dict[self.attn_timestamps] = batch_attn_train_time_in_seq
+                    feed_dict[self.attn_times_in_feats] = batch_attn_train_time_in_feats
+                    feed_dict[self.attn_gaps] = batch_attn_train_gaps
 
                 if with_summaries:
                     _, summaries, cur_state, loss_, step = \
@@ -2262,10 +2266,7 @@ class RMTPP_DECRNN:
             self.times_in_feats: time_in_feats,
             self.times_out_feats: time_out_feats,
             self.batch_num_events: num_events,
-            self.attn_gaps: attn_gaps,
-            self.attn_times_in_feats: attn_times_in_feats,
             self.last_input_timestamps: actual_time_in_seq,
-            self.attn_timestamps: attn_timestamps,
             self.ts_indices: ts_indices,
             self.seq_lens: seq_lens,
             self.offset_begin_max_norm: offsets_feed,
@@ -2273,6 +2274,10 @@ class RMTPP_DECRNN:
             self.offset_begin_feats: offset_feats,
             self.mode: 1.0,
         }
+        if 'pastattn' in self.ALG_NAME:
+            feed_dict[self.attn_timestamps] = attn_timestamps
+            feed_dict[self.attn_times_in_feats] = attn_times_in_feats
+            feed_dict[self.attn_gaps] = attn_gaps
 
         loss_, time_loss_, mark_loss_ = self.sess.run([self.loss,
                                                        self.time_loss, self.mark_loss],
@@ -2326,16 +2331,18 @@ class RMTPP_DECRNN:
             self.times_out: time_out_seq,
             self.times_in_feats: time_in_feats,
             self.last_input_timestamps: actual_time_in_seq,
-            self.attn_timestamps: attn_timestamps,
             self.ts_indices: ts_indices,
             self.seq_lens: seq_lens,
-            self.attn_gaps: attn_gaps,
-            self.attn_times_in_feats: attn_times_in_feats,
             self.offset_begin_max_norm: offsets_feed,
             self.offset_begin: offsets_normalized,
             self.offset_begin_feats: offset_feats,
             self.mode: mode #Test Mode
         }
+        if 'pastattn' in self.ALG_NAME:
+            feed_dict[self.attn_timestamps] = attn_timestamps
+            feed_dict[self.attn_times_in_feats] = attn_times_in_feats
+            feed_dict[self.attn_gaps] = attn_gaps
+
 
         all_encoder_states, all_decoder_states, all_event_preds, cur_state, D, WT = self.sess.run(
             [self.hidden_states, self.decoder_states, self.event_preds, self.offset_state, self.D, self.WT],

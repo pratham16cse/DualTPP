@@ -13,6 +13,7 @@ import time
 from collections import OrderedDict, Counter
 from operator import itemgetter
 
+trim_seq_dec_len = lambda sequences, dec_len: [seq[:dec_len] for seq in sequences]
 ETH = 10.0
 clip = lambda D: tf.clip_by_value(D, -10.0, 10.0)
 __EMBED_SIZE = 4
