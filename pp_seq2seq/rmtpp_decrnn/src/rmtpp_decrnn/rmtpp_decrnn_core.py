@@ -1438,11 +1438,11 @@ class RMTPP_DECRNN:
 
         h_1 = tf.layers.dense(inputs, self.HIDDEN_LAYER_SIZE, name='offset_nw_1',
                               kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed),
-                              activation=tf.nn.sigmoid)
-        offset_state = tf.layers.dense(h_1, self.HIDDEN_LAYER_SIZE, name='offset_nw_2',
-                                       kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed),
-                                       activation=tf.nn.sigmoid)
-        return offset_state
+                              activation=None)
+        #offset_state = tf.layers.dense(h_1, self.HIDDEN_LAYER_SIZE, name='offset_nw_2',
+        #                               kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed),
+        #                               activation=tf.nn.sigmoid)
+        return h_1
 
     #def offset_network(self, inputs):
     #    offset_begin_feats_discrete = tf.cast(self.offset_begin_feats, tf.int32)
@@ -1632,6 +1632,7 @@ class RMTPP_DECRNN:
 
         idxes = list(range(len(train_event_in_seq)))
         n_batches = len(idxes) // self.BATCH_SIZE
+        num_sample_offsets = 5
 
         print('Training with ', self.STOP_CRITERIA, 'stop_criteria and ', num_epochs, 'num_epochs')
         for epoch in range(self.last_epoch, self.last_epoch + num_epochs):
@@ -1650,98 +1651,99 @@ class RMTPP_DECRNN:
                 batch_time_train_in = [train_time_in_seq[batch_idx] for batch_idx in batch_idxes]
                 batch_time_train_feats = [train_time_in_feats[batch_idx] for batch_idx in batch_idxes]
 
-                batch_time_train_out = [train_time_out_seq[batch_idx] for batch_idx in batch_idxes]
-                batch_event_train_out = [train_event_out_seq[batch_idx] for batch_idx in batch_idxes]
+                batch_time_train_out_full = [train_time_out_seq[batch_idx] for batch_idx in batch_idxes]
+                batch_event_train_out_full = [train_event_out_seq[batch_idx] for batch_idx in batch_idxes]
                 batch_trainND = [trainND[batch_idx] for batch_idx in batch_idxes]
-                batch_time_train_out_feats = [train_time_out_feats[batch_idx] for batch_idx in batch_idxes]
-                if self.SAMPLE_TRN_OFFSETS:
-                    offsets = np.random.uniform(low=0.0, high=self.MAX_OFFSET, size=(self.BATCH_SIZE))
-                else:
-                    offsets = np.zeros((self.BATCH_SIZE), dtype=float)
-                offsets_normalized = offsets / np.squeeze(np.array(batch_trainND), axis=-1)
-                offsets_feed = offsets * 1.0 / self.MAX_OFFSET
-                batch_train_actual_time_in_seq = [train_actual_time_in_seq[batch_idx] for batch_idx in batch_idxes]
-                batch_time_train_actual_out = [train_actual_time_out_seq[batch_idx] for batch_idx in batch_idxes]
-                out_begin_indices, out_end_indices \
-                        = get_output_indices(batch_train_actual_time_in_seq, batch_time_train_actual_out, offsets, self.DEC_LEN)
-                #print(offsets)
-                for beg_ind, end_ind, seq in zip(out_begin_indices, out_end_indices, batch_event_train_out):
-                    #print(beg_ind, end_ind, len(seq))
-                    assert end_ind < len(seq)
-                batch_event_train_out = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
-                                         zip(batch_event_train_out, out_begin_indices, out_end_indices)]
-                batch_time_train_out = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
-                                        zip(batch_time_train_out, out_begin_indices, out_end_indices)]
-                batch_time_train_out_feats = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
-                                              zip(batch_time_train_out_feats, out_begin_indices, out_end_indices)]
+                batch_time_train_out_feats_full = [train_time_out_feats[batch_idx] for batch_idx in batch_idxes]
+                for _ in range(num_sample_offsets):
+                    if self.SAMPLE_TRN_OFFSETS:
+                        offsets = np.random.uniform(low=0.0, high=self.MAX_OFFSET, size=(self.BATCH_SIZE))
+                    else:
+                        offsets = np.zeros((self.BATCH_SIZE), dtype=float)
+                    offsets_normalized = offsets / np.squeeze(np.array(batch_trainND), axis=-1)
+                    offsets_feed = offsets * 1.0 / self.MAX_OFFSET
+                    batch_train_actual_time_in_seq = [train_actual_time_in_seq[batch_idx] for batch_idx in batch_idxes]
+                    batch_time_train_actual_out = [train_actual_time_out_seq[batch_idx] for batch_idx in batch_idxes]
+                    out_begin_indices, out_end_indices \
+                            = get_output_indices(batch_train_actual_time_in_seq, batch_time_train_actual_out, offsets, self.DEC_LEN)
+                    #print(offsets)
+                    for beg_ind, end_ind, seq in zip(out_begin_indices, out_end_indices, batch_event_train_out_full):
+                        #print(beg_ind, end_ind, len(seq))
+                        assert end_ind < len(seq)
+                    batch_event_train_out = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
+                                             zip(batch_event_train_out_full, out_begin_indices, out_end_indices)]
+                    batch_time_train_out = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
+                                            zip(batch_time_train_out_full, out_begin_indices, out_end_indices)]
+                    batch_time_train_out_feats = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
+                                                  zip(batch_time_train_out_feats_full, out_begin_indices, out_end_indices)]
 
-                offset_feats = [[getHour(s+offset)/24.0 for s in seq] for seq, offset in zip(batch_train_actual_time_in_seq, offsets)]
+                    offset_feats = [[getHour(s+offset)/24.0 for s in seq] for seq, offset in zip(batch_train_actual_time_in_seq, offsets)]
 
-                batch_train_time_indices = [train_time_indices[batch_idx] for batch_idx in batch_idxes]
-                batch_attn_train_time_in_seq = [attn_train_time_in_seq[idx] for idx in batch_train_time_indices]
-                batch_attn_train_gaps = [attn_train_gaps[idx] for idx in batch_train_time_indices]
-                batch_attn_train_time_in_feats = [attn_train_time_in_feats[idx] for idx in batch_train_time_indices]
-                batch_train_seq_lens = [len(attn_gaps_seq) for attn_gaps_seq in batch_attn_train_gaps]
+                    batch_train_time_indices = [train_time_indices[batch_idx] for batch_idx in batch_idxes]
+                    batch_attn_train_time_in_seq = [attn_train_time_in_seq[idx] for idx in batch_train_time_indices]
+                    batch_attn_train_gaps = [attn_train_gaps[idx] for idx in batch_train_time_indices]
+                    batch_attn_train_time_in_feats = [attn_train_time_in_feats[idx] for idx in batch_train_time_indices]
+                    batch_train_seq_lens = [len(attn_gaps_seq) for attn_gaps_seq in batch_attn_train_gaps]
 
-                num_elems = np.sum(np.ones_like(batch_time_train_feats))
+                    num_elems = np.sum(np.ones_like(batch_time_train_feats))
 
-                num_elems = np.sum(np.ones_like(batch_time_train_in))
+                    num_elems = np.sum(np.ones_like(batch_time_train_in))
 
-                cur_state = np.zeros((self.BATCH_SIZE, self.HIDDEN_LAYER_SIZE))
-                batch_loss = 0.0
+                    cur_state = np.zeros((self.BATCH_SIZE, self.HIDDEN_LAYER_SIZE))
+                    batch_loss = 0.0
 
-                batch_num_events = np.sum(np.array(batch_event_train_in) > 0)
+                    batch_num_events = np.sum(np.array(batch_event_train_in) > 0)
 
-                initial_time = np.zeros(len(batch_time_train_in))
+                    initial_time = np.zeros(len(batch_time_train_in))
 
 
-                feed_dict = {
-                    self.initial_state: cur_state,
-                    self.initial_time: initial_time,
-                    self.events_in: batch_event_train_in,
-                    self.events_out: batch_event_train_out,
-                    self.times_in: batch_time_train_in,
-                    self.times_out: batch_time_train_out,
-                    self.times_in_feats: batch_time_train_feats,
-                    self.times_out_feats: batch_time_train_out_feats,
-                    self.batch_num_events: batch_num_events,
-                    self.last_input_timestamps: batch_train_actual_time_in_seq,
-                    self.ts_indices: batch_train_time_indices,
-                    self.seq_lens: batch_train_seq_lens,
-                    self.offset_begin_max_norm: offsets_feed,
-                    self.offset_begin: offsets_normalized,
-                    self.offset_begin_feats: offset_feats,
-                    self.mode: 1.0, # Train Mode
-                }
-                if 'pastattn' in self.ALG_NAME:
-                    feed_dict[self.attn_timestamps] = batch_attn_train_time_in_seq
-                    feed_dict[self.attn_times_in_feats] = batch_attn_train_time_in_feats
-                    feed_dict[self.attn_gaps] = batch_attn_train_gaps
+                    feed_dict = {
+                        self.initial_state: cur_state,
+                        self.initial_time: initial_time,
+                        self.events_in: batch_event_train_in,
+                        self.events_out: batch_event_train_out,
+                        self.times_in: batch_time_train_in,
+                        self.times_out: batch_time_train_out,
+                        self.times_in_feats: batch_time_train_feats,
+                        self.times_out_feats: batch_time_train_out_feats,
+                        self.batch_num_events: batch_num_events,
+                        self.last_input_timestamps: batch_train_actual_time_in_seq,
+                        self.ts_indices: batch_train_time_indices,
+                        self.seq_lens: batch_train_seq_lens,
+                        self.offset_begin_max_norm: offsets_feed,
+                        self.offset_begin: offsets_normalized,
+                        self.offset_begin_feats: offset_feats,
+                        self.mode: 1.0, # Train Mode
+                    }
+                    if 'pastattn' in self.ALG_NAME:
+                        feed_dict[self.attn_timestamps] = batch_attn_train_time_in_seq
+                        feed_dict[self.attn_times_in_feats] = batch_attn_train_time_in_feats
+                        feed_dict[self.attn_gaps] = batch_attn_train_gaps
 
-                if with_summaries:
-                    _, summaries, cur_state, loss_, step = \
-                        self.sess.run([self.update,
-                                       self.tf_merged_summaries,
-                                       self.final_state,
-                                       self.loss,
-                                       self.global_step],
-                                      feed_dict=feed_dict)
-                    train_writer.add_summary(summaries, step)
-                else:
-                    _, cur_state, loss_, time_loss_, mark_loss_, attn_loss_ = \
-                        self.sess.run([self.update,
-                                       self.final_state, self.loss,
-                                       self.time_loss, self.mark_loss, self.attn_loss],
-                                      feed_dict=feed_dict)
+                    if with_summaries:
+                        _, summaries, cur_state, loss_, step = \
+                            self.sess.run([self.update,
+                                           self.tf_merged_summaries,
+                                           self.final_state,
+                                           self.loss,
+                                           self.global_step],
+                                          feed_dict=feed_dict)
+                        train_writer.add_summary(summaries, step)
+                    else:
+                        _, cur_state, loss_, time_loss_, mark_loss_, attn_loss_ = \
+                            self.sess.run([self.update,
+                                           self.final_state, self.loss,
+                                           self.time_loss, self.mark_loss, self.attn_loss],
+                                          feed_dict=feed_dict)
 
-                batch_loss = loss_
-                total_loss += batch_loss
-                time_loss += time_loss_
-                mark_loss += mark_loss_
-                attn_loss += attn_loss_
-                if batch_idx % 10 == 0:
-                    print('Loss during batch {} last BPTT = {:.3f}, lr = {:.5f}'
-                          .format(batch_idx, batch_loss, self.sess.run(self.learning_rate)))
+                    batch_loss = loss_
+                    total_loss += batch_loss
+                    time_loss += time_loss_
+                    mark_loss += mark_loss_
+                    attn_loss += attn_loss_
+                    if batch_idx % 10 == 0:
+                        print('Loss during batch {} last BPTT = {:.3f}, lr = {:.5f}'
+                              .format(batch_idx, batch_loss, self.sess.run(self.learning_rate)))
             epoch_end_time = time.time()
             train_epoch_times.append(epoch_end_time - epoch_start_time)
 
