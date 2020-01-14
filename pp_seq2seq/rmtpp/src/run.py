@@ -194,6 +194,7 @@ def cmd(dataset_name, alg_name, dataset_path,
 
             if not os.path.exists(save_dir):
                 os.makedirs(save_dir)
+                os.makedirs(os.path.join(save_dir, 'dev_plots'))
 
             if parallel_hparam:
                 global hparam_loop

@@ -20,9 +20,10 @@ def getHour(t):
     return ts[2] + ts[3]*1.0/60 + ts[4]*1.0/3600
 
 trim_seq_dec_len = lambda sequences, dec_len: [seq[:dec_len] for seq in sequences]
-
-ONE_DAY_SECS = 3600.0*24.0
 ETH = 10.0
+clip = lambda D: tf.clip_by_value(D, -10.0, 10.0)
+ONE_DAY_SECS = 3600.0*24.0
+
 __EMBED_SIZE = 4
 __HIDDEN_LAYER_SIZE = 16  # 64, 128, 256, 512, 1024
 epsilon = 0.1
@@ -245,6 +246,7 @@ class RMTPP_DECRNN:
         def get_wt_constraint():
             if self.CONSTRAINTS == 'default':
                 return lambda x: tf.clip_by_value(x, 1e-5, 20.0)
+                #return lambda x: tf.clip_by_value(x, 1e-5, np.inf)
             elif self.CONSTRAINTS == 'c1':
                 return lambda x: tf.clip_by_value(x, 1.0, np.inf)
             elif self.CONSTRAINTS == 'c2':
@@ -296,6 +298,7 @@ class RMTPP_DECRNN:
                 self.ts_indices = tf.placeholder(tf.int32, [None], name='ts_indices')
                 self.seq_lens = tf.placeholder(tf.int32, [None], name='seq_lens')
 
+                self.offset_begin_max_norm = tf.placeholder(self.FLOAT_TYPE, [None], name='offset_begin_max_norm')
                 self.offset_begin = tf.placeholder(self.FLOAT_TYPE, [None], name='offset_begin')
                 self.offset_begin_feats = tf.placeholder(self.FLOAT_TYPE, [None, 1], name='offset_begin_feats')
 
@@ -551,7 +554,7 @@ class RMTPP_DECRNN:
                                     name='h_t'
                                 )
                             elif self.ENC_CELL_TYPE == 'lstm':
-                                inputs = tf.concat([state, events_embedded, delta_t_prev], axis=-1)
+                                inputs = tf.concat([events_embedded, delta_t_prev], axis=-1)
                                 if self.USE_TIME_FEATS:
                                     inputs = tf.concat([inputs, time_feat_embd], axis=-1)
                                 new_state, enc_internal_state = self.enc_cell(inputs,  enc_internal_state)
@@ -617,13 +620,18 @@ class RMTPP_DECRNN:
                         self.z = tf.nn.softmax(self.z)
                 #----------- Encoder End ----------#
 
+                with tf.variable_scope('offset', reuse=tf.AUTO_REUSE):
+                    if self.MAX_OFFSET > 0.0:
+                        self.offset_state = self.offset_network(self.final_state)
+                    else:
+                        self.offset_state = self.final_state
 
                 #----------- Decoder Begin ----------#
                 # TODO Does affine transformations (Wy) need to be different? Wt is not \
                   # required in the decoder
 
                 if not self.INIT_ZERO_DEC_STATE:
-                    s_state = self.final_state
+                    s_state = self.offset_state
                 #s_state = tf.Print(s_state, [self.mode, tf.equal(self.mode, 1.0)], message='mode ')
                 average_gaps = tf.reduce_mean(self.times_in - tf.concat([tf.zeros_like(self.times_in[:, 0:1]), self.times_in[:, :-1]], axis=1), axis=1, keep_dims=True)
                 self.decoder_states = []
@@ -693,7 +701,7 @@ class RMTPP_DECRNN:
                                 new_state, dec_internal_state = self.dec_cell(inputs,  dec_internal_state)
 
                             if self.CONCAT_BEFORE_DEC_UPDATE:
-                                new_state = tf.concat([new_state, self.final_state], axis=-1)
+                                new_state = tf.concat([new_state, self.offset_state], axis=-1)
                             if self.NUM_EXTRA_DEC_LAYER:
                                 names = ['hidden_layer_'+str(hl_id) for hl_id in range(1, self.NUM_EXTRA_DEC_LAYER+1)]
                                 for name in names:
@@ -716,14 +724,14 @@ class RMTPP_DECRNN:
 
                     self.event_preds = tf.stack(self.event_preds, axis=1)
 
-                    # ------ Begin time-prediction ------ #
+
                     self.decoder_states = tf.stack(self.decoder_states, axis=1)
 
                     if self.ALG_NAME in ['rmtpp_decrnn_latentz']:
                         self.z_list = tf.stack(self.z_list, axis=1)
                     if self.CONCAT_FINAL_ENC_STATE:
                         decoder_states_concat = tf.concat([self.decoder_states,
-                                                           tf.tile(tf.expand_dims(self.final_state, axis=1),
+                                                           tf.tile(tf.expand_dims(self.offset_state, axis=1),
                                                                    [1, self.DEC_LEN, 1])],
                                                            axis=-1)
                     else:
@@ -742,7 +750,7 @@ class RMTPP_DECRNN:
                     newVt = tf.tile(tf.expand_dims(self.Vt, axis=0), [tf.shape(self.decoder_states)[0], 1, 1]) 
                     newVw = tf.tile(tf.expand_dims(self.Vw, axis=0), [tf.shape(self.decoder_states)[0], 1, 1]) 
 
-                    self.D = tf.reduce_sum(decoder_states_concat * newVt, axis=2) + base_intensity_bt
+                    #self.D = tf.reduce_sum(decoder_states_concat * newVt, axis=2) + base_intensity_bt
                     if self.ALG_NAME in ['rmtpp_decrnn_latentz']:
                         self.D += tf.squeeze(tf.layers.dense(self.z_list, 1, name='z_to_lambda_layer',
                                                              kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed)),
@@ -750,19 +758,21 @@ class RMTPP_DECRNN:
                     if self.MAX_OFFSET > 0.0:
                         #self.D += self.offset_feats_network()
                         #self.D += self.offset_diff_network()
-                        self.D = self.offset_network(decoder_states_concat)
+                        self.D, WT = self.DW_network(decoder_states_concat)
 
                     # self.D = tf.squeeze(tf.tensordot(self.decoder_states, self.Vt, axes=[[2],[0]]), axis=-1) + base_intensity_bt
                     self.D = get_D_constraint()(self.D)
                     if self.ALG_NAME in ['rmtpp_decrnn_splusintensity']:
                         self.D = tf.nn.softplus(self.D)
 
-                    if self.ALG_NAME in ['rmtpp_decrnn_wcmpt', 'rmtpp_decrnn_mode_wcmpt']:
-                        self.WT = tf.reduce_sum(decoder_states_concat * newVw, axis=2) + base_intensity_bw
+                    if self.ALG_NAME in ['rmtpp_decrnn_wcmpt']:
+                        #self.WT = tf.reduce_sum(decoder_states_concat * newVw, axis=2) + base_intensity_bw
                         # self.WT = tf.squeeze(tf.tensordot(self.decoder_states, self.Vw, axes=[[2],[0]]), axis=-1) + base_intensity_bw
+                        if self.MAX_OFFSET > 0.0:
+                            self.WT = WT
                         self.WT = get_WT_constraint()(self.WT)
-                        self.WT = tf.clip_by_value(self.WT, 0.0, 10.0)
-                    elif self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_inv', 'rmtpp_decrnn_mode', 'rmtpp_decrnn_splusintensity',
+                        #self.WT = tf.clip_by_value(self.WT, 0.0, 10.0)
+                    elif self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_inv', 'rmtpp_decrnn_splusintensity',
                                            'rmtpp_decrnn_latentz',
                                            'rmtpp_decrnn_attn', 'rmtpp_decrnn_splusintensity_attn', 'rmtpp_decrnn_truemarks',
                                            'rmtpp_decrnn_attn_r', 'rmtpp_decrnn_splusintensity_attn_r',
@@ -773,7 +783,7 @@ class RMTPP_DECRNN:
                         self.WT = self.wt
                     elif self.ALG_NAME in ['rmtpp_decrnn_negw', 'rmtpp_decrnn_attn_negw', 'rmtpp_decrnn_attnstate_negw']:
                         self.WT = -1.0 * self.wt
-                    elif self.ALG_NAME in ['rmtpp_decrnn_whparam', 'rmtpp_decrnn_mode_whparam']:
+                    elif self.ALG_NAME in ['rmtpp_decrnn_whparam']:
                         self.WT = self.wt_hparam
 
                     if self.ALG_NAME in ['rmtpp_decrnn_splusintensity']:
@@ -814,7 +824,7 @@ class RMTPP_DECRNN:
                             self.z_topk = tf.nn.softmax(self.z_topk)
 
                             #gap_append_indices = tf.expand_dims(z_indices_topk, axis=1) + tf.expand_dims(tf.expand_dims(tf.range(0, self.DEC_LEN), axis=0), axis=-1)
-                            offset_unnormalized = tf.expand_dims(tf.expand_dims(self.offset_begin * self.MAX_OFFSET * 1.0, axis=-1), axis=-1)
+                            offset_unnormalized = tf.expand_dims(tf.expand_dims(self.offset_begin_max_norm * self.MAX_OFFSET * 1.0, axis=-1), axis=-1)
                             #lookup_indices = begin_idxes + self.z_indices_topk
                             lookup_indices = tf.expand_dims(begin_idxes, axis=-1) + tf.expand_dims(z_indices_topk, axis=1) + tf.expand_dims(tf.expand_dims(tf.range(0, self.DEC_LEN), axis=0), axis=-1)
                             lookup_indices = tf.expand_dims(lookup_indices, axis=-1)
@@ -1026,7 +1036,7 @@ class RMTPP_DECRNN:
                 # ----- Prediction using Inverse Transform Sampling ----- #
                 #u = tf.random.uniform((self.inf_batch_size, self.DEC_LEN, 5000), minval=0.0, maxval=0.1, seed=self.seed)
                 if self.ALG_NAME in ['rmtpp_decrnn_negw']:
-                    lim = 1 - tf.exp((tf.exp(tf.clip_by_value(self.D, -50.0, 50.0)))/self.WT)
+                    lim = 1 - tf.exp((tf.exp(clip(self.D)))/self.WT)
                     lim = tf.clip_by_value(lim, 0.0, 1.0)
                     u = tf.ones((self.inf_batch_size, self.DEC_LEN, 1)) * tf.range(0.0, 0.99, 0.99/5000)
                     u  = u * tf.expand_dims(lim, axis=-1)
@@ -1035,7 +1045,7 @@ class RMTPP_DECRNN:
                                        'rmtpp_decrnn_attnstate', 'rmtpp_decrnn_pastattnstate']:
                     u = tf.ones((self.inf_batch_size, self.DEC_LEN, self.NUM_DISCRETE_STATES, 1)) * tf.range(0.0, 1.0, 1.0/5000)
                 elif self.ALG_NAME in ['rmtpp_decrnn_attn_negw', 'rmtpp_decrnn_attnstate_negw']:
-                    lim = 1 - tf.exp(tf.clip_by_value((tf.exp(tf.clip_by_value(self.D, -50.0, 50.0)))/self.WT, -50.0, 50.0))
+                    lim = 1 - tf.exp(clip((tf.exp(clip(self.D)))/self.WT))
                     self.lim = lim
                     u = tf.ones((self.inf_batch_size, self.DEC_LEN, self.NUM_DISCRETE_STATES, 1)) * tf.range(0.0, 0.99, 0.99/5000)
                     u  = u * tf.expand_dims(lim, axis=-1)
@@ -1044,7 +1054,7 @@ class RMTPP_DECRNN:
 
                 if self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_negw']:
                     if self.USE_INTENSITY:
-                        c = -tf.exp(tf.clip_by_value(self.D, -50.0, 50.0))
+                        c = -tf.exp(clip(self.D))
                         c = tf.expand_dims(c, axis=-1)
                         self.val = (1.0/self.WT) * tf.log((self.WT/c) * tf.log(1.0 - u) + 1)
                     else:
@@ -1055,12 +1065,20 @@ class RMTPP_DECRNN:
                         self.val = (1.0/self.WT) * (-D + tf.sqrt(tf.square(D) - 2*self.WT*tf.log(1.0-u)))
                     else:
                         self.val = self.D
+                elif self.ALG_NAME in ['rmtpp_decrnn_wcmpt']:
+                    if self.USE_INTENSITY:
+                        c = -tf.exp(clip(self.D))
+                        c = tf.expand_dims(c, axis=-1)
+                        WT = tf.expand_dims(self.WT, axis=-1)
+                        self.val = (1.0/WT) * tf.log((WT/c) * tf.log(1.0 - u) + 1)
+                    else:
+                        self.val = self.D
                 elif self.ALG_NAME in ['rmtpp_decrnn_attn', 'rmtpp_decrnn_attn_r',
                                        'rmtpp_decrnn_pastattn', 'rmtpp_decrnn_pastattn_r',
                                        'rmtpp_decrnn_attnstate', 'rmtpp_decrnn_pastattnstate',
                                        'rmtpp_decrnn_attn_negw', 'rmtpp_decrnn_attnstate_negw']:
                     if self.USE_INTENSITY:
-                        c = -tf.exp(tf.clip_by_value(self.D, -50.0, 50.0))
+                        c = -tf.exp(clip(self.D))
                         c = tf.expand_dims(c, axis=-1)
                         self.val = (1.0/self.WT) * tf.log(tf.maximum((self.WT/c) * tf.log(1.0 - u) + 1, 1e-10))
                         self.val = tf.clip_by_value(self.val, 0.0, np.inf)
@@ -1218,30 +1236,65 @@ class RMTPP_DECRNN:
 
         return out
 
+    def DW_network(self, inputs):
+        h_1 = tf.layers.dense(inputs, 2, name='dw_nw_1',
+                              kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed),
+                              activation=None)
+        #h_2 = tf.layers.dense(h_1, self.HIDDEN_LAYER_SIZE, name='offset_nw_1',
+        #                      kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed),
+        #                      activation=tf.nn.sigmoid)
+
+        out = h_1
+        D, WT = out[:, :, 0], out[:, :, 1]
+        return D, WT
+
     def offset_network(self, inputs):
         offset_begin_feats_discrete = tf.cast(self.offset_begin_feats, tf.int32)
         self.offset_begin_feats_embd = self.embedFeatures(offset_begin_feats_discrete)
         if self.DISCRETE_OFFSET_FEATS:
             offset_feats_inputs = self.offset_begin_feats_embd
         else:
-            offset_feats_inputs = tf.expand_dims(self.offset_begin_feats, axis=-1)
-        offset_begin = tf.expand_dims(tf.expand_dims(self.offset_begin, axis=-1), axis=-1)
+            offset_feats_inputs = self.offset_begin_feats
+        offset_begin_max_norm = tf.expand_dims(self.offset_begin_max_norm, axis=-1)
         inputs = tf.concat([inputs,
-                            tf.tile(offset_feats_inputs, [1, self.DEC_LEN, 1]),
-                            tf.tile(offset_begin, [1, self.DEC_LEN, 1])], axis=-1)
+                            offset_feats_inputs,
+                            offset_begin_max_norm],
+                           axis=-1)
         #inputs = tf.Print(inputs, [inputs[:, :, -3:]])
 
-        h_1 = tf.layers.dense(inputs, self.HIDDEN_LAYER_SIZE/2, name='offset_nw_1',
+        h_1 = tf.layers.dense(inputs, self.HIDDEN_LAYER_SIZE, name='offset_nw_1',
                               kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed),
                               activation=tf.nn.sigmoid)
-        h_2 = tf.layers.dense(h_1, self.HIDDEN_LAYER_SIZE/2, name='offset_nw_2',
-                              kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed),
-                              activation=tf.nn.sigmoid)
-        out = tf.layers.dense(h_2, 1, name='offset_nw_out',
-                              kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed))
-        out = tf.squeeze(out, axis=-1)
+        offset_state = tf.layers.dense(h_1, self.HIDDEN_LAYER_SIZE, name='offset_nw_2',
+                                       kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed),
+                                       activation=tf.nn.sigmoid)
+        return offset_state
 
-        return out
+    #def offset_network(self, inputs):
+    #    offset_begin_feats_discrete = tf.cast(self.offset_begin_feats, tf.int32)
+    #    self.offset_begin_feats_embd = self.embedFeatures(offset_begin_feats_discrete)
+    #    if self.DISCRETE_OFFSET_FEATS:
+    #        offset_feats_inputs = self.offset_begin_feats_embd
+    #    else:
+    #        offset_feats_inputs = tf.expand_dims(self.offset_begin_feats, axis=-1)
+    #    offset_begin_max_norm = tf.expand_dims(tf.expand_dims(self.offset_begin_max_norm, axis=-1), axis=-1)
+    #    inputs = tf.concat([inputs,
+    #                        tf.tile(offset_feats_inputs, [1, self.DEC_LEN, 1]),
+    #                        tf.tile(offset_begin_max_norm, [1, self.DEC_LEN, 1])], axis=-1)
+    #    #inputs = tf.Print(inputs, [inputs[:, :, -3:]])
+
+    #    h_1 = tf.layers.dense(inputs, self.HIDDEN_LAYER_SIZE/2, name='offset_nw_1',
+    #                          kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed),
+    #                          activation=tf.nn.sigmoid)
+    #    h_2 = tf.layers.dense(h_1, self.HIDDEN_LAYER_SIZE/2, name='offset_nw_2',
+    #                          kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed),
+    #                          activation=tf.nn.sigmoid)
+    #    out = tf.layers.dense(h_2, 2, name='offset_nw_out',
+    #                          kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed))
+    #    #out = tf.squeeze(out, axis=-1)
+    #    D, WT = out[:, :, 0], out[:, :, 1]
+
+    #    return D, WT
 
     def offset_feats_network(self):
         offset_begin_feats_discrete = tf.cast(self.offset_begin_feats, tf.int32)
@@ -1265,7 +1318,7 @@ class RMTPP_DECRNN:
         return out
 
     def offset_diff_network(self):
-        inputs = tf.expand_dims(self.offset_begin, axis=-1)
+        inputs = tf.expand_dims(self.offset_begin_max_norm, axis=-1)
         h_1 = tf.layers.dense(inputs, self.HIDDEN_LAYER_SIZE/2, name='offset_diff_nw_1',
                               kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed),
                               activation=tf.nn.relu)
@@ -1433,9 +1486,10 @@ class RMTPP_DECRNN:
                     offsets = np.zeros((self.BATCH_SIZE), dtype=float)
                 offsets_normalized = offsets / np.squeeze(np.array(batch_trainND), axis=-1)
                 offsets_feed = offsets * 1.0 / self.MAX_OFFSET
+                batch_train_actual_time_in_seq = [train_actual_time_in_seq[batch_idx] for batch_idx in batch_idxes]
                 batch_time_train_actual_out = [train_actual_time_out_seq[batch_idx] for batch_idx in batch_idxes]
                 out_begin_indices, out_end_indices \
-                        = get_output_indices(batch_time_train_in, batch_time_train_actual_out, offsets, self.DEC_LEN)
+                        = get_output_indices(batch_train_actual_time_in_seq, batch_time_train_actual_out, offsets, self.DEC_LEN)
                 #print(offsets)
                 for beg_ind, end_ind, seq in zip(out_begin_indices, out_end_indices, batch_event_train_out):
                     #print(beg_ind, end_ind, len(seq))
@@ -1447,7 +1501,6 @@ class RMTPP_DECRNN:
                 batch_time_train_out_feats = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
                                               zip(batch_time_train_out_feats, out_begin_indices, out_end_indices)]
 
-                batch_train_actual_time_in_seq = [train_actual_time_in_seq[batch_idx] for batch_idx in batch_idxes]
                 offset_feats = [[getHour(s+offset)/24.0 for s in seq] for seq, offset in zip(batch_train_actual_time_in_seq, offsets)]
 
                 batch_train_time_indices = [train_time_indices[batch_idx] for batch_idx in batch_idxes]
@@ -1467,6 +1520,7 @@ class RMTPP_DECRNN:
 
                 initial_time = np.zeros(len(batch_time_train_in))
 
+
                 feed_dict = {
                     self.initial_state: cur_state,
                     self.initial_time: initial_time,
@@ -1483,7 +1537,8 @@ class RMTPP_DECRNN:
                     self.seq_lens: batch_train_seq_lens,
                     self.attn_times_in_feats: batch_attn_train_time_in_feats,
                     self.attn_gaps: batch_attn_train_gaps,
-                    self.offset_begin: offsets_feed,
+                    self.offset_begin_max_norm: offsets_feed,
+                    self.offset_begin: offsets_normalized,
                     self.offset_begin_feats: offset_feats,
                     self.mode: 1.0, # Train Mode
                 }
@@ -1605,7 +1660,7 @@ class RMTPP_DECRNN:
                     pred_gaps_plot = list(inp_tru_gaps) + list(pred_gaps_plot)
 
                     plot_dir = os.path.join(self.SAVE_DIR,'dev_plots')
-                    if not os.path.isdir(plot_dir): os.mkdir(plot_dir)
+                    #if not os.path.isdir(plot_dir): os.mkdir(plot_dir)
                     plot_hparam_dir = 'pred_plot_'
                     for name, val in self.PARAMS_ALIAS_NAMED:
                         plot_hparam_dir += str(name) + '_' + str(val) + '_'
@@ -2042,7 +2097,8 @@ class RMTPP_DECRNN:
             self.attn_timestamps: attn_timestamps,
             self.ts_indices: ts_indices,
             self.seq_lens: seq_lens,
-            self.offset_begin: offsets_feed,
+            self.offset_begin_max_norm: offsets_feed,
+            self.offset_begin: offsets_normalized,
             self.offset_begin_feats: offset_feats,
             self.mode: 1.0,
         }
@@ -2104,13 +2160,14 @@ class RMTPP_DECRNN:
             self.seq_lens: seq_lens,
             self.attn_gaps: attn_gaps,
             self.attn_times_in_feats: attn_times_in_feats,
-            self.offset_begin: offsets_feed,
+            self.offset_begin_max_norm: offsets_feed,
+            self.offset_begin: offsets_normalized,
             self.offset_begin_feats: offset_feats,
             self.mode: mode #Test Mode
         }
 
         all_encoder_states, all_decoder_states, all_event_preds, cur_state, D, WT = self.sess.run(
-            [self.hidden_states, self.decoder_states, self.event_preds, self.final_state, self.D, self.WT],
+            [self.hidden_states, self.decoder_states, self.event_preds, self.offset_state, self.D, self.WT],
             feed_dict=feed_dict
         )
         #for d in D:
@@ -2130,7 +2187,7 @@ class RMTPP_DECRNN:
         else:
             z_topk = np.zeros_like(event_out_seq)
 
-        if self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_inv', 'rmtpp_decrnn_mode', 'rmtpp_decrnn_splusintensity', 'rmtpp_decrnn_latentz',
+        if self.ALG_NAME in ['rmtpp_decrnn', 'rmtpp_decrnn_inv', 'rmtpp_decrnn_splusintensity', 'rmtpp_decrnn_latentz',
                              'rmtpp_decrnn_attn', 'rmtpp_decrnn_splusintensity_attn', 'rmtpp_decrnn_truemarks',
                              'rmtpp_decrnn_attn_r', 'rmtpp_decrnn_splusintensity_attn_r',
                              'rmtpp_decrnn_pastattn', 'rmtpp_decrnn_splusintensity_pastattn',
@@ -2139,7 +2196,7 @@ class RMTPP_DECRNN:
                              'rmtpp_decrnn_pastattnstate', 'rmtpp_decrnn_splusintensity_pastattnstate', 
                              'rmtpp_decrnn_negw', 'rmtpp_decrnn_attn_negw', 'rmtpp_decrnn_attnstate_negw']:
             WT = np.ones((len(event_in_seq), self.DEC_LEN, 1)) * WT
-        elif self.ALG_NAME in ['rmtpp_decrnn_whparam', 'rmtpp_decrnn_mode_whparam']:
+        elif self.ALG_NAME in ['rmtpp_decrnn_whparam']:
             raise NotImplemented('For whparam methods')
             WT = self.wt_hparam
 
