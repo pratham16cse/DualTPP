@@ -1395,6 +1395,7 @@ class RMTPP:
                 [self.hidden_states, self.event_preds, self.final_state, self.D, self.WT],
                 feed_dict=feed_dict
             )
+            #print(D, WT)
             if self.ALG_NAME in ['rmtpp', 'rmtpp_mode', 'rmtpp_splusintensity', 'rmtpp_negw', 'rmtpp_splusintensity_negw']:
                 WT = np.ones((len(event_in_seq), 1)) * WT
             elif self.ALG_NAME in ['rmtpp_whparam', 'rmtpp_mode_whparam']:

@@ -1412,8 +1412,11 @@ class RMTPP_DECRNN:
 
     def DW_network(self, inputs):
         h_1 = tf.layers.dense(inputs, 2, name='dw_nw_1',
-                              kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed),
-                              activation=None)
+                              kernel_initializer=tf.random_normal_initializer(),
+                              bias_initializer=tf.random_normal_initializer(),
+                              activation=None,
+                              kernel_regularizer=self.EXTLYR_REGULARIZER,
+                              bias_regularizer=self.EXTLYR_REGULARIZER)
         #h_2 = tf.layers.dense(h_1, self.HIDDEN_LAYER_SIZE, name='offset_nw_1',
         #                      kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed),
         #                      activation=tf.nn.sigmoid)
@@ -1437,8 +1440,11 @@ class RMTPP_DECRNN:
         #inputs = tf.Print(inputs, [inputs[:, :, -3:]])
 
         h_1 = tf.layers.dense(inputs, self.HIDDEN_LAYER_SIZE, name='offset_nw_1',
-                              kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed),
-                              activation=None)
+                              kernel_initializer=tf.random_normal_initializer(seed=self.seed),
+                              bias_initializer=tf.random_normal_initializer(seed=self.seed),
+                              activation=None,
+                              kernel_regularizer=self.EXTLYR_REGULARIZER,
+                              bias_regularizer=self.EXTLYR_REGULARIZER)
         #offset_state = tf.layers.dense(h_1, self.HIDDEN_LAYER_SIZE, name='offset_nw_2',
         #                               kernel_initializer=tf.glorot_uniform_initializer(seed=self.seed),
         #                               activation=tf.nn.sigmoid)

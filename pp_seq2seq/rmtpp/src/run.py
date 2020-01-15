@@ -77,6 +77,7 @@ def cmd(dataset_name, alg_name, dataset_path,
         alg_name=alg_name,
         dec_len=decoder_length,
         normalization=normalization,
+        max_offset=max_offset,
         offset=offset,
     )
 

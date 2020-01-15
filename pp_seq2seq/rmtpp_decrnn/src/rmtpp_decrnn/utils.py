@@ -100,7 +100,8 @@ def generate_norm_seq(timeTrain, timeDev, timeTest, enc_len, normalization, max_
             timeDev, devND, devNA, devIG, \
             timeTest, testND, testNA, testIG
 
-def read_seq2seq_data(dataset_path, alg_name, normalization=None, max_offset=0.0, offset=0.0, pad=False):
+def read_seq2seq_data(dataset_path, alg_name,
+                      normalization=None, max_offset=0.0, offset=0.0, pad=False):
     """Read data from given files and return it as a dictionary."""
 
     with open(dataset_path+'train.event.in', 'r') as in_file:
