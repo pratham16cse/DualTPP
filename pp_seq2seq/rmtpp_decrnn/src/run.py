@@ -307,15 +307,15 @@ def cmd(dataset_name, alg_name, dataset_path,
 
             if save_dir:
                 #TODO Rewrite below functions to save correct ground-truth and predicted values according to offset
-                #np.savetxt(os.path.join(save_dir)+'/test.pred.events.out.csv', best_result['best_test_event_preds'], delimiter=',')
-                #np.savetxt(os.path.join(save_dir)+'/test.pred.times.out.csv', best_result['best_test_time_preds'], delimiter=',')
-                #np.savetxt(os.path.join(save_dir)+'/test.gt.events.out.csv', data['test_event_out_seq'][:,:dec_len], delimiter=',')
-                #np.savetxt(os.path.join(save_dir)+'/test.gt.times.out.csv', np.array(data['test_actual_time_out_seq'])[:,:dec_len], delimiter=',')
+                np.savetxt(os.path.join(save_dir)+'/test.pred.events.out.csv', best_result['best_test_event_preds'], delimiter=',')
+                np.savetxt(os.path.join(save_dir)+'/test.pred.times.out.csv', best_result['best_test_time_preds'], delimiter=',')
+                np.savetxt(os.path.join(save_dir)+'/test.gt.events.out.csv', best_result['test_event_out_seq'], delimiter=',')
+                np.savetxt(os.path.join(save_dir)+'/test.gt.times.out.csv', best_result['test_time_out_seq'], delimiter=',')
 
-                #np.savetxt(os.path.join(save_dir)+'/dev.pred.events.out.csv', best_result['best_dev_event_preds'], delimiter=',')
-                #np.savetxt(os.path.join(save_dir)+'/dev.pred.times.out.csv', best_result['best_dev_time_preds'], delimiter=',')
-                #np.savetxt(os.path.join(save_dir)+'/dev.gt.events.out.csv', data['dev_event_out_seq'][:,:dec_len], delimiter=',')
-                #np.savetxt(os.path.join(save_dir)+'/dev.gt.times.out.csv', np.array(data['dev_actual_time_out_seq'])[:,:dec_len], delimiter=',')
+                np.savetxt(os.path.join(save_dir)+'/dev.pred.events.out.csv', best_result['best_dev_event_preds'], delimiter=',')
+                np.savetxt(os.path.join(save_dir)+'/dev.pred.times.out.csv', best_result['best_dev_time_preds'], delimiter=',')
+                np.savetxt(os.path.join(save_dir)+'/dev.gt.events.out.csv', best_result['dev_event_out_seq'], delimiter=',')
+                np.savetxt(os.path.join(save_dir)+'/dev.gt.times.out.csv', best_result['dev_time_out_seq'], delimiter=',')
 
                 for result in results:
                     del result['best_train_event_preds'], result['best_train_time_preds'], \
