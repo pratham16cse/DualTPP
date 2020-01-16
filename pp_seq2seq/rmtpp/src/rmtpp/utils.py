@@ -491,7 +491,7 @@ def MAE(time_preds, time_true, events_out):
 
     is_finite = np.isfinite(time_preds) & (clipped_events_out > 0)
 
-    return np.mean(np.abs(time_preds - clipped_time_true)[is_finite]), np.sum(is_finite)
+    return np.sum(np.abs(time_preds - clipped_time_true), axis=0), np.sum(is_finite, axis=0)
 
 def DTW(time_preds, time_true, events_out):
 
@@ -538,24 +538,26 @@ def ACC(event_preds, event_true):
     #print(clipped_event_true)
     #print(highest_prob_ev)
 
-    return np.sum((highest_prob_ev == clipped_event_true)[is_valid]) / np.sum(is_valid)
+    return np.sum((highest_prob_ev == clipped_event_true), axis=0), np.sum(is_valid, axis=0)
 
 
 def MRR(event_preds_softmax, event_true):
     "Computes Mean Reciprocal Rank of events"
 
     num_unique_events = event_preds_softmax.shape[-1]
+    dec_len = event_preds_softmax.shape[1]
     event_true_flatten = np.reshape(event_true, [-1, 1])
     num_events = event_true_flatten.shape[0]
     event_preds_softmax_flatten = np.reshape(event_preds_softmax, [-1, num_unique_events])
 
     ranks = np.where(event_true_flatten-1 == (np.argsort(-event_preds_softmax_flatten)))[1] + 1
+    ranks = np.reshape(ranks, [-1, dec_len])
     #print((np.argsort(-event_preds_softmax_flatten)).shape)
     #for event_tr, softmax, softmax_ranked in zip(event_true_flatten, event_preds_softmax_flatten.tolist(), np.where(event_true_flatten-1 == (np.argsort(-event_preds_softmax_flatten)))[1]):
     #    print(event_tr, softmax, softmax_ranked)
     #print(ranks)
 
-    return np.mean(1.0/ranks)
+    return np.sum(1.0/ranks, axis=0)
 
 def PERCENT_ERROR(event_preds, event_true):
     return (1.0 - ACC(event_preds, event_true)) * 100

@@ -198,7 +198,8 @@ def cmd(dataset_name, alg_name, dataset_path,
         return result
 
     #decoder_length_run = [0, 1, 2, 3]
-    decoder_length_run = np.arange(decoder_length+1).tolist()
+    #decoder_length_run = np.arange(decoder_length+1).tolist()
+    decoder_length_run = [0]
 
     old_save_dir = save_dir
     th_loop_cnt = 0
@@ -290,7 +291,7 @@ def cmd(dataset_name, alg_name, dataset_path,
                     results.append(result)
                     # print(result['best_test_mae'], result['best_test_acc'])
 
-            best_result_idx, _ = min(enumerate([result['best_dev_mae'] for result in results]), key=itemgetter(1))
+            best_result_idx, _ = min(enumerate([result['best_cum_dev_gap_mae'][-1] for result in results]), key=itemgetter(1))
             best_result = results[best_result_idx]
             for param in hparams[alg_name].keys(): assert param in best_result.keys() # Check whether all hyperparameters are stored
             
