@@ -827,14 +827,18 @@ class RMTPP:
                 else:
                     train_mae, train_acc, train_mrr, train_time_preds, train_event_preds = None, None, None, np.array([]), np.array([])
 
+                dev_offsets = np.zeros((len(training_data['dev_time_in_seq']))) * self.MAX_OFFSET
+                dev_offsets_normalized = dev_offsets / np.squeeze(np.array(training_data['devND']), axis=-1)
                 dev_time_preds, dev_gaps_preds, dev_event_preds, \
-                        dev_event_preds_softmax, inference_time, dev_offsets_normalized \
+                        dev_event_preds_softmax, inference_time, _ \
                         = self.predict(training_data['dev_event_in_seq'],
                                        training_data['dev_time_in_seq'],
                                        training_data['dev_time_in_feats'],
                                        dec_len_for_eval,
                                        training_data['train_time_in_seq'],
                                        training_data['devND'],
+                                       dev_offsets,
+                                       dev_offsets_normalized,
                                        single_threaded=True)
                 dev_loss, dev_time_loss, dev_mark_loss \
                         = self.evaluate_likelihood(training_data['dev_event_in_seq'],
@@ -915,14 +919,18 @@ class RMTPP:
                     plt.savefig(name_plot+'.png')
                     plt.close()
     
+                test_offsets = np.zeros((len(training_data['test_time_in_seq']))) * self.MAX_OFFSET
+                test_offsets_normalized = test_offsets / np.squeeze(np.array(training_data['testND']), axis=-1)
                 test_time_preds, test_gaps_preds, test_event_preds, \
-                        test_event_preds_softmax, inference_time, test_offsets_normalized \
+                        test_event_preds_softmax, inference_time, _ \
                         = self.predict(training_data['test_event_in_seq'],
                                        training_data['test_time_in_seq'],
                                        training_data['test_time_in_feats'],
                                        dec_len_for_eval,
                                        training_data['train_time_in_seq'],
                                        training_data['testND'],
+                                       test_offsets,
+                                       test_offsets_normalized,
                                        single_threaded=True)
                 test_loss, test_time_loss, test_mark_loss \
                         = self.evaluate_likelihood(training_data['test_event_in_seq'],
@@ -1056,14 +1064,18 @@ class RMTPP:
             else:
                 train_mae, train_acc, train_mrr, train_time_preds, train_event_preds = None, None, None, np.array([]), np.array([])
 
+            dev_offsets = np.ones((len(training_data['dev_time_in_seq']))) * self.MAX_OFFSET
+            dev_offsets_normalized = dev_offsets / np.squeeze(np.array(training_data['devND']), axis=-1)
             dev_time_preds, dev_gaps_preds, dev_event_preds, \
-                    dev_event_preds_softmax, inference_time, dev_offsets_normalized \
+                    dev_event_preds_softmax, inference_time, _ \
                     = self.predict(training_data['dev_event_in_seq'],
                                    training_data['dev_time_in_seq'],
                                    training_data['dev_time_in_feats'],
                                    dec_len_for_eval,
                                    training_data['train_time_in_seq'],
                                    training_data['devND'],
+                                   dev_offsets,
+                                   dev_offsets_normalized,
                                    single_threaded=True)
             dev_loss, dev_time_loss, dev_mark_loss \
                     = self.evaluate_likelihood(training_data['dev_event_in_seq'],
@@ -1114,14 +1126,18 @@ class RMTPP:
             #    dev_mae, dev_total_valid, dev_acc, dev_gap_mae, dev_gap_dtw))
             print('DEV: MAE =', dev_mae, '; valid =', dev_total_valid, 'ACC =', dev_acc, 'MAGE =', dev_gap_mae, 'DTW =', dev_gap_dtw)
 
+            test_offsets = np.ones((len(training_data['test_time_in_seq']))) * self.MAX_OFFSET
+            test_offsets_normalized = test_offsets / np.squeeze(np.array(training_data['testND']), axis=-1)
             test_time_preds, test_gaps_preds, test_event_preds, \
-                    test_event_preds_softmax, inference_time, test_offsets_normalized \
+                    test_event_preds_softmax, inference_time, _ \
                     = self.predict(training_data['test_event_in_seq'],
                                    training_data['test_time_in_seq'],
                                    training_data['test_time_in_feats'],
                                    dec_len_for_eval,
                                    training_data['train_time_in_seq'],
                                    training_data['testND'],
+                                   test_offsets,
+                                   test_offsets_normalized,
                                    single_threaded=True)
             test_loss, test_time_loss, test_mark_loss \
                     = self.evaluate_likelihood(training_data['test_event_in_seq'],
@@ -1227,6 +1243,10 @@ class RMTPP:
                 'best_dev_time_preds': best_dev_time_preds,
                 'best_test_event_preds': best_test_event_preds,
                 'best_test_time_preds': best_test_time_preds,
+                'dev_event_out_seq': dev_event_out_seq,
+                'dev_time_out_seq': dev_time_out_seq,
+                'test_event_out_seq': test_event_out_seq,
+                'test_time_out_seq': test_time_out_seq,
                 'best_w': best_w,
                 'wt_hparam': self.wt_hparam,
                 'checkpoint_dir': checkpoint_dir,
@@ -1290,7 +1310,7 @@ class RMTPP:
 
 
     def predict(self, event_in_seq, time_in_seq, time_in_feats, dec_len_for_eval,
-                train_in_seq, ND, single_threaded=False, plot_dir=False):
+                train_in_seq, ND, offsets, offsets_normalized, single_threaded=False, plot_dir=False):
         """Treats the entire dataset as a single batch and processes it."""
 
 
@@ -1352,8 +1372,8 @@ class RMTPP:
 
         # Default offsets = self.MAX_OFFSET
         #offsets = np.random.uniform(low=0.0, high=self.MAX_OFFSET, size=(self.BATCH_SIZE))
-        offsets = np.ones((N)) * self.MAX_OFFSET
-        offsets_normalized = offsets / np.squeeze(np.array(ND), axis=-1)
+        #offsets = np.ones((N)) * self.MAX_OFFSET
+        #offsets_normalized = offsets / np.squeeze(np.array(ND), axis=-1)
 
         all_hidden_states = []
         simul_event_preds_softmax = []

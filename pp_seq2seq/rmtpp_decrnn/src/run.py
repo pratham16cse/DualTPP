@@ -199,7 +199,7 @@ def cmd(dataset_name, alg_name, dataset_path,
 
     #decoder_length_run = [0, 1, 2, 3]
     #decoder_length_run = np.arange(decoder_length+1).tolist()
-    decoder_length_run = [0]
+    decoder_length_run = [0, decoder_length]
 
     old_save_dir = save_dir
     th_loop_cnt = 0
@@ -306,7 +306,6 @@ def cmd(dataset_name, alg_name, dataset_path,
                 f.close()
 
             if save_dir:
-                #TODO Rewrite below functions to save correct ground-truth and predicted values according to offset
                 np.savetxt(os.path.join(save_dir)+'/test.pred.events.out.csv', best_result['best_test_event_preds'], delimiter=',')
                 np.savetxt(os.path.join(save_dir)+'/test.pred.times.out.csv', best_result['best_test_time_preds'], delimiter=',')
                 np.savetxt(os.path.join(save_dir)+'/test.gt.events.out.csv', best_result['test_event_out_seq'], delimiter=',')

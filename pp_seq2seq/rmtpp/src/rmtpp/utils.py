@@ -52,7 +52,8 @@ def generate_norm_seq(timeTrain, timeDev, timeTest, enc_len, normalization, max_
                 min_gap = np.clip(np.min(gap_seq[:enc_len-1]), 1.0, np.inf)
                 n_d, n_a = [(max_gap - min_gap)], [(-min_gap/(max_gap - min_gap))]
             elif normalization == 'average_per_seq':
-                avg_gap = np.clip(np.mean(gap_seq[:enc_len-1]), 1.0, np.inf)
+                avg_gap = np.clip(np.mean(gap_seq[:enc_len-1]), enc_len, np.inf)
+                #avg_gap = np.mean(gap_seq[:enc_len-1])
                 n_d, n_a = [avg_gap], [0.0]
             elif normalization == 'max_per_seq':
                 max_gap = np.clip(np.max(gap_seq[:enc_len-1]), 1.0, np.inf)
