@@ -37,6 +37,143 @@ def getBeginOfDayTs(ts):
     dt_obj = timestampTotime(ts)
     return datetime.timestamp(datetime(dt_obj[0], dt_obj[1], dt_obj[2]))
 
+def plotter(sequence, enc_len, dec_len, dataset_name):
+    sequence = sequence[0]
+    print(len(sequence))
+    idxes = np.random.choice(range(len(sequence)), size=100, replace=False)
+    for idx in idxes:
+        print(idx)
+        times_in = np.array(sequence[idx:idx+enc_len])
+        print(times_in)
+        gaps_in = times_in[1:] - times_in[:-1]
+        times_out = np.array(sequence[idx+enc_len:idx+enc_len+dec_len])
+        gaps_out = np.concatenate([[times_out[0]-times_in[-1]],
+                                    times_out[1:] - times_out[:-1]],
+                                  axis=-1)
+        plt_gap_seq = np.concatenate([gaps_in, gaps_out], axis=-1)
+        plt_time_seq = np.concatenate([times_in, times_out], axis=-1)
+
+        # ----- Plotting gaps with discrete index ----- #
+        plt.plot(range(1, len(gaps_in)+1), gaps_in, 'ko-')
+        plt.plot(range(enc_len, enc_len+len(gaps_out)), gaps_out, 'bo-')
+        #plt.plot(range(enc_len, enc_len+len(gaps_pred)), gaps_pred, 'r*-')
+        plt.plot([enc_len-0.5, enc_len-0.5], [0, max(plt_gap_seq)], 'g')
+        plt.savefig(os.path.join('plots', dataset_name, str(idx)))
+        plt.close()
+
+
+        # ----- Plotting gaps with time axis ----- #
+        #cum_gaps_in = np.cumsum(gaps_in)
+        #cum_gaps_out = np.cumsum(gaps_out)
+        #cum_gaps_pred = np.cumsum(gaps_pred)
+        #c = cum_gaps_in[-1]
+        #for g in cum_gaps_in:
+        #    plt.plot([g, g], [0, 1], 'ko-')
+        #for g in cum_gaps_out:
+        #    plt.plot([c+g, c+g], [0, 1], 'bo-')
+        #for g in cum_gaps_pred:
+        #    plt.plot([c+g, c+g], [0, 1], 'r*-')
+        #plt.plot([c,c],[0,2], 'g-')
+
+def parse_single_seq_datasets(dataset_path, keep_classes, num_coarse_seq):
+    data = pd.read_csv(dataset_path, usecols= [0, 1], delimiter=' ', header=None, names=['ID', 'Time'])
+    data['Time'] = data['Time'].astype(float)
+    data = data.sort_values(['Time'], ascending=True)
+
+    lst = []
+    eve = []
+
+    lst=data['Time'].values.tolist()
+    eve=data['ID'].values.tolist()
+
+    eve2id = dict()
+    crnt_id = 1
+    for e in eve:
+        if eve2id.get(e, -1) == -1:
+            eve2id[e] = crnt_id
+            crnt_id += 1
+
+    eve = [eve2id[e] for e in eve]
+
+    eve = group_less_active_classes(eve, keep_classes=keep_classes)
+    #print(eve)
+
+    total = len(lst)
+
+    print(total, 'total')
+
+    if num_coarse_seq==0:
+        time_seqs = [lst]
+        event_seqs = [eve]
+    else:
+        time_seqs = np.array_split(np.array(lst), num_coarse_seq)
+        event_seqs = np.array_split(np.array(eve), num_coarse_seq)
+
+    return time_seqs, event_seqs, lst, eve
+
+def parse_neural_hawkes_datasets(dataset_path, keep_classes):
+    raise NotImplementedError
+
+def parse_taxi_dataset(data_path, keep_classes, sequence_length):
+
+    data = pd.read_csv(data_path)
+
+    # 06/19/2018 08:13:00 AM
+    # data['tpep_pickup_datetime'] = pd.to_datetime(data['tpep_pickup_datetime'], format = '%m/%d/%Y %I:%M:%S %p')
+    data['tpep_pickup_datetime'] = pd.to_datetime(data['tpep_pickup_datetime'], format = '%Y-%m-%d %H:%M:%S')
+    data = data[(data['tpep_pickup_datetime'].dt.year == 2019)]
+    data['tpep_dropoff_datetime'] = pd.to_datetime(data['tpep_dropoff_datetime'], format = '%Y-%m-%d %H:%M:%S')
+    data = data[(data['tpep_dropoff_datetime'].dt.year == 2019)]
+    data['pickup'] = data.tpep_pickup_datetime.values.astype(np.int64) // 10 ** 9
+    data['dropoff'] = data.tpep_dropoff_datetime.values.astype(np.int64) // 10 ** 9
+
+    data['Time'] = data['pickup']
+    data['loc'] = data['PULocationID']
+    data['ID1'] = '1'
+    data['ID2'] = '2'
+
+    data1 = pd.DataFrame()
+    data1['Time'] = data['Time'].append(data['dropoff'], ignore_index=True)
+    data1['loc'] = data['loc'].append(data['DOLocationID'], ignore_index=True)
+    data1['ID'] = data['ID1'].append(data['ID2'], ignore_index=True)
+
+
+    # data['Time'] = data['pickup']
+    # data['ID'] = data['PULocationID']
+    data = data1
+
+    df = data['Time'].groupby(data['loc'])
+    data = data.sort_values(['Time'], ascending=True)
+
+    # print(data)
+    from collections import defaultdict
+    dlst = defaultdict(list)
+    deve = defaultdict(list)
+
+
+    lst1=data['Time'].values.tolist()
+    eve1=data['ID'].values.tolist()
+    loc=data['loc'].values.tolist()
+
+    for x in range(len(lst1)):
+        dlst[loc[x]].append(lst1[x])
+        deve[loc[x]].append(eve1[x])
+
+    # print(dlst)
+    # print(deve)
+
+    lst = list()
+    eve = list()
+
+    for x in dlst:
+        if len(dlst[x]) > sequence_length:
+            lst.append(dlst[x])
+
+    for x in deve:
+        if len(deve[x]) > sequence_length:
+            eve.append(deve[x])
+
+    return lst, eve
 
 def print_dataset_stats(dataset_name, train_data, dev_data, test_data):
     print('\n#----- Dataset_name:{} -----#'.format(dataset_name))
@@ -164,7 +301,7 @@ def group_less_active_classes(events, keep_classes=0):
 
 # def generate_norm_seq(sequences, check=0):
 #     gap_seqs = sequences[:,1:]-sequences[:,:-1]
-#     avg_gaps = np.average(gap_seqs, axis=1) 
+#     avg_gaps = np.average(gap_seqs, axis=1)
 #     avg_gaps = np.expand_dims(avg_gaps, axis=1)
 
 #     avg_gaps_norm = gap_seqs/avg_gaps
@@ -181,7 +318,7 @@ def group_less_active_classes(events, keep_classes=0):
 
 def generate_norm_seq(sequences, encoder_length, check=0):
     gap_seqs = sequences[:,1:]-sequences[:,:-1]
-    avg_gaps = np.average(gap_seqs[:,:encoder_length-1], axis=1) 
+    avg_gaps = np.average(gap_seqs[:,:encoder_length-1], axis=1)
     avg_gaps = np.expand_dims(avg_gaps, axis=1)
     avg_gaps = np.clip(avg_gaps, 1.0, np.inf)
 
@@ -197,6 +334,25 @@ def generate_norm_seq(sequences, encoder_length, check=0):
         print(sequences[:,:1])
 
     return gap_norm_seq, avg_gaps
+
+def prune_seqs(time_batch_in, event_batch_in,
+               time_batch_out, event_batch_out,
+               tsIndices, enc_len):
+    tm_b_in, eve_b_in, tm_b_out, eve_b_out, ts = list(), list(), list(), list(), list()
+    for i in range(len(time_batch_in)):
+        seq = np.array(time_batch_in[i][:enc_len-1])
+        gaps_sum = seq[1:]-seq[:-1]
+        if sum(gaps_sum==0.0)<0.25*enc_len:# and sum(gaps_sum)>enc_len:
+            tm_b_in.append(time_batch_in[i])
+            eve_b_in.append(event_batch_in[i])
+            tm_b_out.append(time_batch_out[i])
+            eve_b_out.append(event_batch_out[i])
+            ts.append(tsIndices[i])
+        else:
+            print('pruned ', tsIndices[i], gaps_sum)
+
+    return tm_b_in, eve_b_in, tm_b_out, eve_b_out, ts
+
 
 def get_input_output_seqs(time_input_seqs, event_input_seqs, time_seqs, event_seqs,
                           ts_indices, max_offset, decoder_length):
@@ -287,11 +443,22 @@ def preprocess(raw_dataset_name,
         #if ctr == 1: print(train_event_batch.shape)
 
         if max_offset:
+            if num_coarse_seq > 0:
+                lookup_time_seq = [all_timestamps] * len(train_time_seq)
+                lookup_event_seq = [all_events] * len(train_event_seq)
+            else:
+                lookup_time_seq = train_time_seq
+                lookup_event_seq = train_event_seq
             train_time_batch_in, train_event_batch_in, \
             train_time_batch_out, train_event_batch_out, tsIndices \
                     = get_input_output_seqs(train_time_batch[:, :encoder_length].tolist(),
                                             train_event_batch[:, :encoder_length].tolist(),
-                                            train_time_seq, train_event_seq, tsIndices, max_offset, decoder_length)
+                                            lookup_time_seq, lookup_event_seq, tsIndices, max_offset, decoder_length)
+            train_time_batch_in, train_event_batch_in, \
+            train_time_batch_out, train_event_batch_out, tsIndices \
+                    = prune_seqs(train_time_batch_in, train_event_batch_in,
+                                 train_time_batch_out, train_event_batch_out,
+                                 tsIndices, encoder_length)
             pp_train_event_in_seq.extend(train_event_batch_in)
             pp_train_time_in_seq.extend(train_time_batch_in)
             pp_train_event_out_seq.extend(train_event_batch_out)
@@ -318,11 +485,22 @@ def preprocess(raw_dataset_name,
         #if ctr == 1: print(dev_event_batch.shape)
 
         if max_offset:
+            if num_coarse_seq > 0:
+                lookup_time_seq = [all_timestamps for _ in dev_time_seq]
+                lookup_event_seq = [all_events for _ in dev_event_seq]
+            else:
+                lookup_time_seq = dev_time_seq
+                lookup_event_seq = dev_event_seq
             dev_time_batch_in, dev_event_batch_in, \
             dev_time_batch_out, dev_event_batch_out, tsIndices \
                     = get_input_output_seqs(dev_time_batch[:, :encoder_length].tolist(),
                                             dev_event_batch[:, :encoder_length].tolist(),
-                                            dev_time_seq, dev_event_seq, tsIndices, max_offset, decoder_length)
+                                            lookup_time_seq, lookup_event_seq, tsIndices, max_offset, decoder_length)
+            dev_time_batch_in, dev_event_batch_in, \
+            dev_time_batch_out, dev_event_batch_out, tsIndices \
+                    = prune_seqs(dev_time_batch_in, dev_event_batch_in,
+                                 dev_time_batch_out, dev_event_batch_out,
+                                 tsIndices, encoder_length)
             pp_dev_event_in_seq.extend(dev_event_batch_in)
             pp_dev_time_in_seq.extend(dev_time_batch_in)
             pp_dev_event_out_seq.extend(dev_event_batch_out)
@@ -350,11 +528,22 @@ def preprocess(raw_dataset_name,
         #if ctr == 1: print(test_event_batch.shape)
 
         if max_offset:
+            if num_coarse_seq > 0:
+                lookup_time_seq = [all_timestamps for _ in test_time_seq]
+                lookup_event_seq = [all_events for _ in test_event_seq]
+            else:
+                lookup_time_seq = test_time_seq
+                lookup_event_seq = test_event_seq
             test_time_batch_in, test_event_batch_in, \
             test_time_batch_out, test_event_batch_out, tsIndices \
                     = get_input_output_seqs(test_time_batch[:, :encoder_length].tolist(),
                                             test_event_batch[:, :encoder_length].tolist(),
-                                            test_time_seq, test_event_seq, tsIndices, max_offset, decoder_length)
+                                            lookup_time_seq, lookup_event_seq, tsIndices, max_offset, decoder_length)
+            test_time_batch_in, test_event_batch_in, \
+            test_time_batch_out, test_event_batch_out, tsIndices \
+                    = prune_seqs(test_time_batch_in, test_event_batch_in,
+                                 test_time_batch_out, test_event_batch_out,
+                                 tsIndices, encoder_length)
             pp_test_event_in_seq.extend(test_event_batch_in)
             pp_test_time_in_seq.extend(test_time_batch_in)
             pp_test_event_out_seq.extend(test_event_batch_out)
@@ -491,9 +680,14 @@ def preprocess(raw_dataset_name,
     #attn_dev_time_in_seq = get_attn_time_in_seq(pp_dev_time_in_seq)
     #attn_test_time_in_seq = get_attn_time_in_seq(pp_test_time_in_seq)
 
-    attn_train_time_in_seq = [all_timestamps for _ in train_time_seq]
-    attn_dev_time_in_seq = [all_timestamps for _ in dev_time_seq]
-    attn_test_time_in_seq = [all_timestamps for _ in test_time_seq]
+    if num_coarse_seq>0:
+        attn_train_time_in_seq = [all_timestamps for _ in train_time_seq]
+        attn_dev_time_in_seq = [all_timestamps for _ in dev_time_seq]
+        attn_test_time_in_seq = [all_timestamps for _ in test_time_seq]
+    else:
+        attn_train_time_in_seq = train_time_seq
+        attn_dev_time_in_seq = train_time_seq
+        attn_test_time_in_seq = train_time_seq
 
     #assert len(attn_train_time_in_seq) == len(pp_train_time_in_seq)
     #assert len(attn_dev_time_in_seq) == len(pp_dev_time_in_seq)
@@ -619,18 +813,29 @@ def preprocess(raw_dataset_name,
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("dataset", type=str, help="Dataset Name")
-    parser.add_argument("dataset_path", type=str, help="Path of raw dataset file")
+    parser.add_argument("dataset_path", type=str,
+                        help="Path of raw dataset file")
     parser.add_argument("encoder_length", type=int, help="Encoder Length")
     parser.add_argument("decoder_length", type=int, help="Decoder Length")
-    parser.add_argument("train_step_length", type=int, help="Step length for train-sequence window")
-    parser.add_argument("dev_step_length", type=int, help="Step length for dev-sequence window")
-    parser.add_argument("test_step_length", type=int, help="Step length for test-sequence window")
-    parser.add_argument("--keep_classes", type=int, default=0, help="Number of top-K classes to retain \
-                                                                     from the data, retains all classes when set to zero")
-    parser.add_argument("--num_coarse_seq", type=int, default=0, help="Chop a single-large-seqeunce data into C sequences \
-                                                                       of approx equal size, no chopping when set to zero")
-    parser.add_argument("--offset", type=float, default=0.0, help="Output Sequence offset by 'offset'-hours")
-    parser.add_argument("--max_offset", type=float, default=0.0, help="Output Sequence contains all future timestamps between [0, max_offset] hours")
+    parser.add_argument("train_step_length", type=int,
+                        help="Step length for train-sequence window")
+    parser.add_argument("dev_step_length", type=int,
+                        help="Step length for dev-sequence window")
+    parser.add_argument("test_step_length", type=int,
+                        help="Step length for test-sequence window")
+    parser.add_argument("--keep_classes", type=int, default=0,
+                        help="Number of top-K classes to retain \
+                              from the data, retains all classes \
+                              when set to zero")
+    parser.add_argument("--num_coarse_seq", type=int, default=0,
+                        help="Chop a single-large-seqeunce data into C \
+                              sequences of approx equal size, no chopping \
+                              when set to zero")
+    parser.add_argument("--offset", type=float, default=0.0,
+                        help="Output Sequence offset by 'offset'-hours")
+    parser.add_argument("--max_offset", type=float, default=0.0,
+                        help="Output Sequence contains all future timestamps \
+                              between [0, max_offset] hours")
     args = parser.parse_args()
 
     dataset = args.dataset
@@ -646,118 +851,43 @@ def main():
     max_offset = args.max_offset
     sequence_length = encoder_length + decoder_length
     output_path = 'NewDataParsed'
-    
 
-    data_path = dataset_path
-
-    data = pd.read_csv(data_path, usecols= [0, 1], delimiter=' ', header=None, names=['ID', 'Time']) 
-    data['Time'] = data['Time'].astype(float)
-    data = data.sort_values(['Time'], ascending=True)
-
-    lst = []
-    eve = []
-
-    lst=data['Time'].values.tolist()
-    eve=data['ID'].values.tolist()
-
-    eve2id = dict()
-    crnt_id = 1
-    for e in eve:
-        if eve2id.get(e, -1) == -1:
-            eve2id[e] = crnt_id
-            crnt_id += 1
-
-    eve = [eve2id[e] for e in eve]
-
-    eve = group_less_active_classes(eve, keep_classes=keep_classes)
-    #print(eve)
-
-    total = len(lst)
-
-    print(total, 'total')
-
-    arr = np.array(lst)
-    arr_eve = np.array(eve)
+    if dataset in ['barca', 'Delhi', 'jaya', 'Fight',
+                   'Movie', 'Verdict',
+                   'Trump', 'synthpastattntimefeats']:
+        time_seqs, event_seqs, all_timestamps, all_events \
+                = parse_single_seq_datasets(dataset_path,
+                                            keep_classes,
+                                            num_coarse_seq)
+    elif dataset in ['data_bookorder', 'data_so', 'data_retweet']:
+        time_seqs, event_seqs = parse_neural_hawkes_datasets(dataset_path, keep_classes)
+    elif dataset in ['Taxi']:
+        time_seqs, event_seqs = parse_taxi_dataset(dataset_path, keep_classes, sequence_length)
+    else:
+        print('Dataset Parser Not Found')
+        assert False
 
     tr_per = 0.7
     de_per = 0.1
     te_per = 0.2
 
-    if num_coarse_seq == 0:
-        time_train = []
-        time_dev = []
-        time_test = []
-        event_train = []
-        event_dev = []
-        event_test = []
+    time_train = []
+    time_dev = []
+    time_test = []
+    event_train = []
+    event_dev = []
+    event_test = []
 
-        for x in range(0,int(tr_per*total)):
-            time_train.append(arr[x])
-            event_train.append(arr_eve[x])
+    for time_seq, event_seq in zip(time_seqs, event_seqs):
+        total_ = len(time_seq)
+        time_train.append(time_seq[:int(tr_per*total_)])
+        event_train.append(event_seq[:int(tr_per*total_)])
 
-        for x in range(int(tr_per*total),int((tr_per+de_per)*total)):
-            time_dev.append(arr[x])
-            event_dev.append(arr_eve[x])
+        time_dev.append(time_seq[int(tr_per*total_):int((tr_per+de_per)*total_)])
+        event_dev.append(event_seq[int(tr_per*total_):int((tr_per+de_per)*total_)])
 
-        for x in range(int((tr_per+de_per)*total), total):
-            time_test.append(arr[x])
-            event_test.append(arr_eve[x])
-
-        time_train = [time_train]
-        event_train = [event_train]
-        time_dev = [time_dev]
-        event_dev = [event_dev]
-        time_test = [time_test]
-        event_test = [event_test]
-    else:
-        print('num_coarse_seq:', num_coarse_seq)
-        arr_chopped = np.array_split(arr, num_coarse_seq)
-        arr_eve_chopped = np.array_split(arr_eve, num_coarse_seq)
-
-        time_train = []
-        time_dev = []
-        time_test = []
-        event_train = []
-        event_dev = []
-        event_test = []
-
-        for arr_, arr_eve_ in zip(arr_chopped, arr_eve_chopped):
-            total_ = len(arr_)
-            time_train.append(arr_[:int(tr_per*total_)])
-            event_train.append(arr_eve_[:int(tr_per*total_)])
-
-            time_dev.append(arr_[int(tr_per*total_):int((tr_per+de_per)*total_)])
-            event_dev.append(arr_eve_[int(tr_per*total_):int((tr_per+de_per)*total_)])
-
-            time_test.append(arr_[int((tr_per+de_per)*total_):])
-            event_test.append(arr_eve_[int((tr_per+de_per)*total_):])
-
-    # seq_len = 25
-
-    # pad_tr = len(time_train)%seq_len
-    # pad_te = len(time_test)%seq_len
-    # pad_de = len(time_dev)%seq_len
-
-    # time_train = time_train[:len(time_train)-pad_tr]
-    # time_test = time_test[:len(time_test)-pad_te]
-    # time_dev = time_dev[:len(time_dev)-pad_de]
-    # event_train = event_train[:len(event_train)-pad_tr]
-    # event_test = event_test[:len(event_test)-pad_te]
-    # event_dev = event_dev[:len(event_dev)-pad_de]
-
-    # time_train = np.reshape(np.array(time_train), (-1, seq_len))
-    # time_test = np.reshape(np.array(time_test), (-1, seq_len))
-    # time_dev = np.reshape(np.array(time_dev), (-1, seq_len))
-    # event_train = np.reshape(np.array(event_train), (-1, seq_len))
-    # event_test = np.reshape(np.array(event_test), (-1, seq_len))
-    # event_dev = np.reshape(np.array(event_dev), (-1, seq_len))
-
-    # time_train = list(time_train.tolist())
-    # time_test = list(time_test.tolist())
-    # time_dev = list(time_dev.tolist())
-    # event_train = list(event_train.tolist())
-    # event_test = list(event_test.tolist())
-    # event_dev = list(event_dev.tolist())
+        time_test.append(time_seq[int((tr_per+de_per)*total_):])
+        event_test.append(event_seq[int((tr_per+de_per)*total_):])
 
     print(np.shape(time_train))
     print(np.shape(time_test))
@@ -766,10 +896,13 @@ def main():
     print(np.shape(event_test))
     print(np.shape(event_dev))
 
-    #all_timestamps = arr
-    #all_events = arr_eve
-    all_timestamps = [s for seq in time_train for s in seq]
-    all_events = [s for seq in event_train for s in seq]
+    #all_timestamps = time_seqs
+    #all_events = time_seqs
+    #all_timestamps = [s for seq in time_train for s in seq]
+    #all_events = [s for seq in event_train for s in seq]
+
+    #plotter(time_train, encoder_length, decoder_length, dataset)
+
     preprocess(dataset,
                os.path.join(output_path, dataset),
                all_timestamps,
