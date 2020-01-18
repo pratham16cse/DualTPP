@@ -166,14 +166,15 @@ def parse_taxi_dataset(data_path, keep_classes, sequence_length):
     eve = list()
 
     for x in dlst:
-        if len(dlst[x]) > sequence_length:
+        if len(dlst[x]) > 10*sequence_length:# Need at least one train, dev,
+                                            # and test chunk from each chunk
             lst.append(dlst[x])
 
     for x in deve:
-        if len(deve[x]) > sequence_length:
+        if len(deve[x]) > 10*sequence_length:
             eve.append(deve[x])
 
-    return lst, eve
+    return lst, eve, lst, eve
 
 def print_dataset_stats(dataset_name, train_data, dev_data, test_data):
     print('\n#----- Dataset_name:{} -----#'.format(dataset_name))
@@ -381,9 +382,9 @@ def preprocess(raw_dataset_name,
                dataset_name,
                all_timestamps,
                all_events,
-               event_train, time_train,
-               event_dev, time_dev,
-               event_test, time_test,
+               train_event_seq, train_time_seq,
+               dev_event_seq, dev_time_seq,
+               test_event_seq, test_time_seq,
                encoder_length, decoder_length,
                train_step_length=None, dev_step_length=None, test_step_length=None,
                keep_classes=0, num_coarse_seq=0, offset=0.0, max_offset=0.0):
@@ -399,16 +400,6 @@ def preprocess(raw_dataset_name,
     if test_step_length is None:
         test_step_length = decoder_length
 
-    batch_size = 1
-
-    train_event_seq = event_train
-    train_time_seq = time_train
-
-    dev_event_seq = event_dev
-    dev_time_seq = time_dev
-
-    test_event_seq = event_test
-    test_time_seq = time_test
 
     unique_labels = set([lbl for lbl in chain(*(train_event_seq + test_event_seq))])
     #print('Unique Labels:', np.array(sorted(unique_labels)))
@@ -432,13 +423,14 @@ def preprocess(raw_dataset_name,
     train_tsIndices, dev_tsIndices, test_tsIndices = list(), list(), list()
 
     print('Creating training data . . .')
+    batch_size = len(train_time_seq)
     currItr = train_time_itr.iterFinished
     ctr = 0
     while currItr == train_time_itr.iterFinished:
         ctr += 1
-        #print(ctr)
         train_event_batch, _, _, _, _ = train_event_itr.nextBatch(batchSize=batch_size, stepLen=train_step_length)
         train_time_batch, tsIndices, _, _, _ = train_time_itr.nextBatch(batchSize=batch_size, stepLen=train_step_length)
+        print(ctr)
 
         #if ctr == 1: print(train_event_batch.shape)
 
@@ -472,15 +464,17 @@ def preprocess(raw_dataset_name,
         train_tsIndices += tsIndices
 
     assert len(train_tsIndices) == len(pp_train_time_in_seq)
+    print('Created training data . . .')
 
     print('Creating dev data . . .')
+    batch_size = len(dev_time_seq)
     currItr = dev_time_itr.iterFinished
     ctr = 0
     while currItr == dev_time_itr.iterFinished:
         ctr += 1
-        #print(ctr)
         dev_event_batch, _, _, _, _ = dev_event_itr.nextBatch(batchSize=batch_size, stepLen=dev_step_length)
         dev_time_batch, tsIndices, _, _, _ = dev_time_itr.nextBatch(batchSize=batch_size, stepLen=dev_step_length)
+        print(ctr)
 
         #if ctr == 1: print(dev_event_batch.shape)
 
@@ -514,16 +508,17 @@ def preprocess(raw_dataset_name,
         dev_tsIndices += tsIndices
 
     assert len(dev_tsIndices) == len(pp_dev_time_in_seq)
+    print('Created dev data . . .')
 
     print('Creating test data . . .')
+    batch_size = len(test_time_seq)
     currItr = test_time_itr.iterFinished
     ctr = 0
     while currItr == test_time_itr.iterFinished:
         ctr += 1
-        #print(ctr)
-
         test_event_batch, _, _, _, _ = test_event_itr.nextBatch(batchSize=batch_size, stepLen=test_step_length)
         test_time_batch, tsIndices, _, _, _ = test_time_itr.nextBatch(batchSize=batch_size, stepLen=test_step_length)
+        print(ctr)
 
         #if ctr == 1: print(test_event_batch.shape)
 
@@ -555,38 +550,39 @@ def preprocess(raw_dataset_name,
             pp_test_time_out_seq.extend(test_time_batch[:, encoder_length:].tolist())
 
         test_tsIndices += tsIndices
+    print('Created test data . . .')
 
 
     # ----- Start: Create Input-Output sequences using offset ----- #
-    all_timestamps_dict = dict()
-    for ind, ts in enumerate(all_timestamps):
-        all_timestamps_dict[ts] = ind
+    #all_timestamps_dict = dict()
+    #for ind, ts in enumerate(all_timestamps):
+    #    all_timestamps_dict[ts] = ind
 
-    if offset > 0.0:
-        offset_sec = offset * 3600.0
-        def get_offset_time_in_seq(pp_time_in_seq, pp_time_out_seq):
-            offset_time_in_seq, offset_event_in_seq = list(), list()
-            last_input_ts_list = [seq[-1] for seq in pp_time_in_seq]
-            for i, l_ts in enumerate(last_input_ts_list):
-                print('In offset', i)
-                closest_ts = take_closest(all_timestamps, max(l_ts-offset_sec, all_timestamps[0]))
-                closest_ts_ind = all_timestamps_dict[closest_ts]
-                if closest_ts_ind<encoder_length:
-                    end_ind = encoder_length
-                else:
-                    end_ind = closest_ts_ind + 1
-                offset_time_in_seq.append(all_timestamps[end_ind-encoder_length:end_ind])
-                offset_event_in_seq.append(all_events[end_ind-encoder_length:end_ind])
+    #if offset > 0.0:
+    #    offset_sec = offset * 3600.0
+    #    def get_offset_time_in_seq(pp_time_in_seq, pp_time_out_seq):
+    #        offset_time_in_seq, offset_event_in_seq = list(), list()
+    #        last_input_ts_list = [seq[-1] for seq in pp_time_in_seq]
+    #        for i, l_ts in enumerate(last_input_ts_list):
+    #            print('In offset', i)
+    #            closest_ts = take_closest(all_timestamps, max(l_ts-offset_sec, all_timestamps[0]))
+    #            closest_ts_ind = all_timestamps_dict[closest_ts]
+    #            if closest_ts_ind<encoder_length:
+    #                end_ind = encoder_length
+    #            else:
+    #                end_ind = closest_ts_ind + 1
+    #            offset_time_in_seq.append(all_timestamps[end_ind-encoder_length:end_ind])
+    #            offset_event_in_seq.append(all_events[end_ind-encoder_length:end_ind])
 
-            return offset_time_in_seq, offset_event_in_seq
+    #        return offset_time_in_seq, offset_event_in_seq
 
-        pp_train_time_in_seq, pp_train_event_in_seq = get_offset_time_in_seq(pp_train_time_in_seq, pp_train_time_out_seq)
-        pp_dev_time_in_seq, pp_dev_event_in_seq = get_offset_time_in_seq(pp_dev_time_in_seq, pp_dev_time_out_seq)
-        pp_test_time_in_seq, pp_test_event_in_seq = get_offset_time_in_seq(pp_test_time_in_seq, pp_test_time_out_seq)
+    #    pp_train_time_in_seq, pp_train_event_in_seq = get_offset_time_in_seq(pp_train_time_in_seq, pp_train_time_out_seq)
+    #    pp_dev_time_in_seq, pp_dev_event_in_seq = get_offset_time_in_seq(pp_dev_time_in_seq, pp_dev_time_out_seq)
+    #    pp_test_time_in_seq, pp_test_event_in_seq = get_offset_time_in_seq(pp_test_time_in_seq, pp_test_time_out_seq)
 
-        assert len(pp_train_time_out_seq) == len(pp_train_time_in_seq)
-        assert len(pp_dev_time_out_seq) == len(pp_dev_time_in_seq)
-        assert len(pp_test_time_out_seq) == len(pp_test_time_in_seq)
+    #    assert len(pp_train_time_out_seq) == len(pp_train_time_in_seq)
+    #    assert len(pp_dev_time_out_seq) == len(pp_dev_time_in_seq)
+    #    assert len(pp_test_time_out_seq) == len(pp_test_time_in_seq)
 
     # ----- End: Create Input-Output sequences using offset ----- #
 
@@ -862,7 +858,7 @@ def main():
     elif dataset in ['data_bookorder', 'data_so', 'data_retweet']:
         time_seqs, event_seqs = parse_neural_hawkes_datasets(dataset_path, keep_classes)
     elif dataset in ['Taxi']:
-        time_seqs, event_seqs = parse_taxi_dataset(dataset_path, keep_classes, sequence_length)
+        time_seqs, event_seqs, all_timestamps, all_events = parse_taxi_dataset(dataset_path, keep_classes, sequence_length)
     else:
         print('Dataset Parser Not Found')
         assert False
@@ -871,45 +867,45 @@ def main():
     de_per = 0.1
     te_per = 0.2
 
-    time_train = []
-    time_dev = []
-    time_test = []
-    event_train = []
-    event_dev = []
-    event_test = []
+    train_time_seq = []
+    dev_time_seq = []
+    test_time_seq = []
+    train_event_seq = []
+    dev_event_seq = []
+    test_event_seq = []
 
     for time_seq, event_seq in zip(time_seqs, event_seqs):
         total_ = len(time_seq)
-        time_train.append(time_seq[:int(tr_per*total_)])
-        event_train.append(event_seq[:int(tr_per*total_)])
+        train_time_seq.append(time_seq[:int(tr_per*total_)])
+        train_event_seq.append(event_seq[:int(tr_per*total_)])
 
-        time_dev.append(time_seq[int(tr_per*total_):int((tr_per+de_per)*total_)])
-        event_dev.append(event_seq[int(tr_per*total_):int((tr_per+de_per)*total_)])
+        dev_time_seq.append(time_seq[int(tr_per*total_):int((tr_per+de_per)*total_)])
+        dev_event_seq.append(event_seq[int(tr_per*total_):int((tr_per+de_per)*total_)])
 
-        time_test.append(time_seq[int((tr_per+de_per)*total_):])
-        event_test.append(event_seq[int((tr_per+de_per)*total_):])
+        test_time_seq.append(time_seq[int((tr_per+de_per)*total_):])
+        test_event_seq.append(event_seq[int((tr_per+de_per)*total_):])
 
-    print(np.shape(time_train))
-    print(np.shape(time_test))
-    print(np.shape(time_dev))
-    print(np.shape(event_train))
-    print(np.shape(event_test))
-    print(np.shape(event_dev))
+    print(np.shape(train_time_seq))
+    print(np.shape(test_time_seq))
+    print(np.shape(dev_time_seq))
+    print(np.shape(train_event_seq))
+    print(np.shape(test_event_seq))
+    print(np.shape(dev_event_seq))
 
     #all_timestamps = time_seqs
     #all_events = time_seqs
-    #all_timestamps = [s for seq in time_train for s in seq]
-    #all_events = [s for seq in event_train for s in seq]
+    #all_timestamps = [s for seq in train_time_seq for s in seq]
+    #all_events = [s for seq in train_event_seq for s in seq]
 
-    #plotter(time_train, encoder_length, decoder_length, dataset)
+    #plotter(train_time_seq, encoder_length, decoder_length, dataset)
 
     preprocess(dataset,
                os.path.join(output_path, dataset),
                all_timestamps,
                all_events,
-               event_train, time_train,
-               event_dev, time_dev,
-               event_test, time_test,
+               train_event_seq, train_time_seq,
+               dev_event_seq, dev_time_seq,
+               test_event_seq, test_time_seq,
                encoder_length, decoder_length,
                train_step_length, dev_step_length, test_step_length,
                keep_classes, num_coarse_seq, offset, max_offset)
