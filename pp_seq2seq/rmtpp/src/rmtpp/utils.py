@@ -140,6 +140,13 @@ def read_seq2seq_data(dataset_path, alg_name, dec_len,
     with open(dataset_path+'attn.test.time.in', 'r') as in_file:
         attn_timeTestIn = [[float(y) for y in x.strip().split()] for x in in_file]
 
+    with open(dataset_path+'train.offsets', 'r') as in_file:
+        train_offsets = [float(x.strip()) for x in in_file]
+    with open(dataset_path+'dev.offsets', 'r') as in_file:
+        dev_offsets = [float(x.strip()) for x in in_file]
+    with open(dataset_path+'test.offsets', 'r') as in_file:
+        test_offsets = [float(x.strip()) for x in in_file]
+
     enc_len = len(timeTrainIn[0])
 
     def prepend_init_time(sequence):
@@ -334,6 +341,10 @@ def read_seq2seq_data(dataset_path, alg_name, dec_len,
         'train_time_out_feats': train_time_out_feats,
         'dev_time_out_feats': dev_time_out_feats,
         'test_time_out_feats': test_time_out_feats,
+
+        'train_offsets': train_offsets,
+        'dev_offsets': dev_offsets,
+        'test_offsets': test_offsets,
 
         'attn_train_time_in_seq': attn_timeTrainIn,
         'attn_dev_time_in_seq': attn_timeDevIn,

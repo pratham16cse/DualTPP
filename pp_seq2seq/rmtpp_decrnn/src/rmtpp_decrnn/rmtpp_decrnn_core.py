@@ -1620,6 +1620,7 @@ class RMTPP_DECRNN:
         attn_train_time_in_seq = training_data['attn_train_time_in_seq']
         trainND = training_data['trainND']
         train_time_indices = training_data['train_time_indices']
+        train_offsets = training_data['train_offsets']
 
         best_dev_mae, best_test_mae = np.inf, np.inf
         best_dev_gap_mae, best_test_gap_mae = np.inf, np.inf
@@ -1638,7 +1639,7 @@ class RMTPP_DECRNN:
 
         idxes = list(range(len(train_event_in_seq)))
         n_batches = len(idxes) // self.BATCH_SIZE
-        num_sample_offsets = 5
+        num_sample_offsets = 1
 
         print('Training with ', self.STOP_CRITERIA, 'stop_criteria and ', num_epochs, 'num_epochs')
         for epoch in range(self.last_epoch, self.last_epoch + num_epochs):
@@ -1657,33 +1658,34 @@ class RMTPP_DECRNN:
                 batch_time_train_in = [train_time_in_seq[batch_idx] for batch_idx in batch_idxes]
                 batch_time_train_feats = [train_time_in_feats[batch_idx] for batch_idx in batch_idxes]
 
-                batch_time_train_out_full = [train_time_out_seq[batch_idx] for batch_idx in batch_idxes]
-                batch_event_train_out_full = [train_event_out_seq[batch_idx] for batch_idx in batch_idxes]
+                batch_time_train_out = [train_time_out_seq[batch_idx] for batch_idx in batch_idxes]
+                batch_event_train_out = [train_event_out_seq[batch_idx] for batch_idx in batch_idxes]
                 batch_trainND = [trainND[batch_idx] for batch_idx in batch_idxes]
-                batch_time_train_out_feats_full = [train_time_out_feats[batch_idx] for batch_idx in batch_idxes]
+                batch_time_train_out_feats = [train_time_out_feats[batch_idx] for batch_idx in batch_idxes]
+                batch_train_offsets = np.array([train_offsets[batch_idx] for idx in batch_idxes])
                 for _ in range(num_sample_offsets):
-                    if self.SAMPLE_TRN_OFFSETS:
-                        offsets = np.random.uniform(low=0.0, high=self.MAX_OFFSET, size=(self.BATCH_SIZE))
-                    else:
-                        offsets = np.zeros((self.BATCH_SIZE), dtype=float)
-                    offsets_normalized = offsets / np.squeeze(np.array(batch_trainND), axis=-1)
-                    offsets_feed = offsets * 1.0 / self.MAX_OFFSET
+                    #if self.SAMPLE_TRN_OFFSETS:
+                    #    offsets = np.random.uniform(low=0.0, high=self.MAX_OFFSET, size=(self.BATCH_SIZE))
+                    #else:
+                    #    offsets = np.zeros((self.BATCH_SIZE), dtype=float)
+                    batch_train_offsets_normalized = batch_train_offsets / np.squeeze(np.array(batch_trainND), axis=-1)
+                    batch_train_offsets_feed = batch_train_offsets * 1.0 / self.MAX_OFFSET
                     batch_train_actual_time_in_seq = [train_actual_time_in_seq[batch_idx] for batch_idx in batch_idxes]
                     batch_time_train_actual_out = [train_actual_time_out_seq[batch_idx] for batch_idx in batch_idxes]
-                    out_begin_indices, out_end_indices \
-                            = get_output_indices(batch_train_actual_time_in_seq, batch_time_train_actual_out, offsets, self.DEC_LEN)
-                    #print(offsets)
-                    for beg_ind, end_ind, seq in zip(out_begin_indices, out_end_indices, batch_event_train_out_full):
-                        #print(beg_ind, end_ind, len(seq))
-                        assert end_ind < len(seq)
-                    batch_event_train_out = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
-                                             zip(batch_event_train_out_full, out_begin_indices, out_end_indices)]
-                    batch_time_train_out = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
-                                            zip(batch_time_train_out_full, out_begin_indices, out_end_indices)]
-                    batch_time_train_out_feats = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
-                                                  zip(batch_time_train_out_feats_full, out_begin_indices, out_end_indices)]
+                    #out_begin_indices, out_end_indices \
+                    #        = get_output_indices(batch_train_actual_time_in_seq, batch_time_train_actual_out, offsets, self.DEC_LEN)
+                    ##print(offsets)
+                    #for beg_ind, end_ind, seq in zip(out_begin_indices, out_end_indices, batch_event_train_out_full):
+                    #    #print(beg_ind, end_ind, len(seq))
+                    #    assert end_ind < len(seq)
+                    #batch_event_train_out = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
+                    #                         zip(batch_event_train_out_full, out_begin_indices, out_end_indices)]
+                    #batch_time_train_out = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
+                    #                        zip(batch_time_train_out_full, out_begin_indices, out_end_indices)]
+                    #batch_time_train_out_feats = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
+                    #                              zip(batch_time_train_out_feats_full, out_begin_indices, out_end_indices)]
 
-                    offset_feats = [[getHour(s+offset)/24.0 for s in seq] for seq, offset in zip(batch_train_actual_time_in_seq, offsets)]
+                    batch_train_offset_feats = [[getHour(s+offset)/24.0 for s in seq] for seq, offset in zip(batch_train_actual_time_in_seq, batch_train_offsets)]
 
                     batch_train_time_indices = [train_time_indices[batch_idx] for batch_idx in batch_idxes]
                     batch_attn_train_time_in_seq = [attn_train_time_in_seq[idx] for idx in batch_train_time_indices]
@@ -1716,9 +1718,9 @@ class RMTPP_DECRNN:
                         self.last_input_timestamps: batch_train_actual_time_in_seq,
                         self.ts_indices: batch_train_time_indices,
                         self.seq_lens: batch_train_seq_lens,
-                        self.offset_begin_max_norm: offsets_feed,
-                        self.offset_begin: offsets_normalized,
-                        self.offset_begin_feats: offset_feats,
+                        self.offset_begin_max_norm: batch_train_offsets_feed,
+                        self.offset_begin: batch_train_offsets_normalized,
+                        self.offset_begin_feats: batch_train_offset_feats,
                         self.mode: 1.0, # Train Mode
                     }
                     if 'pastattn' in self.ALG_NAME:
@@ -1779,6 +1781,7 @@ class RMTPP_DECRNN:
                                        training_data['attn_dev_time_in_seq'],
                                        training_data['dev_time_indices'],
                                        training_data['devND'],
+                                       training_data['dev_offsets'],
                                        single_threaded=True,
                                        event_out_seq=training_data['dev_event_out_seq'] if self.ALG_NAME=='rmtpp_decrnn_truemarks' else None)
                 dev_loss, dev_time_loss, dev_mark_loss \
@@ -1796,7 +1799,8 @@ class RMTPP_DECRNN:
                                                    np.array(training_data['dev_actual_time_in_seq']),
                                                    training_data['attn_dev_time_in_seq'],
                                                    training_data['dev_time_indices'],
-                                                   training_data['devND'])
+                                                   training_data['devND'],
+                                                   training_data['dev_offsets'])
 
                 dev_loss_list.append(dev_loss)
                 dev_time_loss_list.append(dev_time_loss)
@@ -1808,15 +1812,15 @@ class RMTPP_DECRNN:
                 dev_event_out_seq = training_data['dev_event_out_seq']
                 dev_offsets = dev_offsets_normalized * np.squeeze(training_data['devND'], axis=-1)
 
-                out_begin_indices, out_end_indices \
-                        = get_output_indices(dev_actual_time_in_seq, dev_time_out_seq, dev_offsets, self.DEC_LEN)
-                for beg_ind, end_ind, seq in zip(out_begin_indices, out_end_indices, dev_event_out_seq):
-                    #print(beg_ind, end_ind, len(seq))
-                    assert end_ind < len(seq)
-                dev_event_out_seq = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
-                                        zip(dev_event_out_seq, out_begin_indices, out_end_indices)]
-                dev_time_out_seq = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
-                                        zip(dev_time_out_seq, out_begin_indices, out_end_indices)]
+                #out_begin_indices, out_end_indices \
+                #        = get_output_indices(dev_actual_time_in_seq, dev_time_out_seq, dev_offsets, self.DEC_LEN)
+                #for beg_ind, end_ind, seq in zip(out_begin_indices, out_end_indices, dev_event_out_seq):
+                #    #print(beg_ind, end_ind, len(seq))
+                #    assert end_ind < len(seq)
+                #dev_event_out_seq = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
+                #                        zip(dev_event_out_seq, out_begin_indices, out_end_indices)]
+                #dev_time_out_seq = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
+                #                        zip(dev_time_out_seq, out_begin_indices, out_end_indices)]
 
                 gaps = dev_gaps_preds
                 unnorm_gaps = [seq * devND for seq, devND in zip(gaps, training_data['devND'])]
@@ -1883,6 +1887,7 @@ class RMTPP_DECRNN:
                                        training_data['attn_test_time_in_seq'],
                                        training_data['test_time_indices'],
                                        training_data['testND'],
+                                       training_data['test_offsets'],
                                        single_threaded=True,
                                        event_out_seq=training_data['test_event_out_seq'] if self.ALG_NAME=='rmtpp_decrnn_truemarks' else None)
                 test_loss, test_time_loss, test_mark_loss \
@@ -1900,7 +1905,8 @@ class RMTPP_DECRNN:
                                                    np.array(training_data['test_actual_time_in_seq']),
                                                    training_data['attn_test_time_in_seq'],
                                                    training_data['test_time_indices'],
-                                                   training_data['testND'])
+                                                   training_data['testND'],
+                                                   training_data['test_offsets'])
                 test_loss_list.append(test_loss)
                 test_time_loss_list.append(test_time_loss)
                 test_mark_loss_list.append(test_mark_loss)
@@ -1911,15 +1917,15 @@ class RMTPP_DECRNN:
                 test_event_out_seq = training_data['test_event_out_seq']
                 test_offsets = test_offsets_normalized * np.squeeze(training_data['testND'], axis=-1)
 
-                out_begin_indices, out_end_indices \
-                        = get_output_indices(test_actual_time_in_seq, test_time_out_seq, test_offsets, self.DEC_LEN)
-                for beg_ind, end_ind, seq in zip(out_begin_indices, out_end_indices, test_event_out_seq):
-                    #print(beg_ind, end_ind, len(seq))
-                    assert end_ind < len(seq)
-                test_event_out_seq = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
-                                        zip(test_event_out_seq, out_begin_indices, out_end_indices)]
-                test_time_out_seq = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
-                                        zip(test_time_out_seq, out_begin_indices, out_end_indices)]
+                #out_begin_indices, out_end_indices \
+                #        = get_output_indices(test_actual_time_in_seq, test_time_out_seq, test_offsets, self.DEC_LEN)
+                #for beg_ind, end_ind, seq in zip(out_begin_indices, out_end_indices, test_event_out_seq):
+                #    #print(beg_ind, end_ind, len(seq))
+                #    assert end_ind < len(seq)
+                #test_event_out_seq = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
+                #                        zip(test_event_out_seq, out_begin_indices, out_end_indices)]
+                #test_time_out_seq = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
+                #                        zip(test_time_out_seq, out_begin_indices, out_end_indices)]
 
                 gaps = test_gaps_preds
                 unnorm_gaps = [seq * testND for seq, testND in zip(gaps, training_data['testND'])]
@@ -2039,6 +2045,7 @@ class RMTPP_DECRNN:
                                    training_data['attn_dev_time_in_seq'],
                                    training_data['dev_time_indices'],
                                    training_data['devND'],
+                                   training_data['dev_offsets'],
                                    single_threaded=True,
                                    event_out_seq=training_data['dev_event_out_seq'] if self.ALG_NAME=='rmtpp_decrnn_truemarks' else None)
             dev_loss, dev_time_loss, dev_mark_loss \
@@ -2056,7 +2063,8 @@ class RMTPP_DECRNN:
                                                np.array(training_data['dev_actual_time_in_seq']),
                                                training_data['attn_dev_time_in_seq'],
                                                training_data['dev_time_indices'],
-                                               training_data['devND'])
+                                               training_data['devND'],
+                                               training_data['dev_offsets'])
             dev_inference_times.append(inference_time)
             dev_time_in_seq = training_data['dev_time_in_seq']
             dev_actual_time_in_seq = training_data['dev_actual_time_in_seq']
@@ -2064,15 +2072,15 @@ class RMTPP_DECRNN:
             dev_event_out_seq = training_data['dev_event_out_seq']
             dev_offsets = dev_offsets_normalized * np.squeeze(training_data['devND'], axis=-1)
 
-            out_begin_indices, out_end_indices \
-                    = get_output_indices(dev_actual_time_in_seq, dev_time_out_seq, dev_offsets, self.DEC_LEN)
-            for beg_ind, end_ind, seq in zip(out_begin_indices, out_end_indices, dev_event_out_seq):
-                #print(beg_ind, end_ind, len(seq))
-                assert end_ind < len(seq)
-            dev_event_out_seq = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
-                                    zip(dev_event_out_seq, out_begin_indices, out_end_indices)]
-            dev_time_out_seq = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
-                                    zip(dev_time_out_seq, out_begin_indices, out_end_indices)]
+            #out_begin_indices, out_end_indices \
+            #        = get_output_indices(dev_actual_time_in_seq, dev_time_out_seq, dev_offsets, self.DEC_LEN)
+            #for beg_ind, end_ind, seq in zip(out_begin_indices, out_end_indices, dev_event_out_seq):
+            #    #print(beg_ind, end_ind, len(seq))
+            #    assert end_ind < len(seq)
+            #dev_event_out_seq = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
+            #                        zip(dev_event_out_seq, out_begin_indices, out_end_indices)]
+            #dev_time_out_seq = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
+            #                        zip(dev_time_out_seq, out_begin_indices, out_end_indices)]
 
             gaps = dev_gaps_preds
             unnorm_gaps = [seq * devND for seq, devND in zip(gaps, training_data['devND'])]
@@ -2109,6 +2117,7 @@ class RMTPP_DECRNN:
                                    training_data['attn_test_time_in_seq'],
                                    training_data['test_time_indices'],
                                    training_data['testND'],
+                                   training_data['test_offsets'],
                                    single_threaded=True,
                                    event_out_seq=training_data['test_event_out_seq'] if self.ALG_NAME=='rmtpp_decrnn_truemarks' else None)
             test_loss, test_time_loss, test_mark_loss \
@@ -2126,7 +2135,8 @@ class RMTPP_DECRNN:
                                                np.array(training_data['test_actual_time_in_seq']),
                                                training_data['attn_test_time_in_seq'],
                                                training_data['test_time_indices'],
-                                               training_data['testND'])
+                                               training_data['testND'],
+                                               training_data['test_offsets'])
 
             test_inference_times.append(inference_time)
             test_time_in_seq = training_data['test_time_in_seq']
@@ -2135,15 +2145,15 @@ class RMTPP_DECRNN:
             test_event_out_seq = training_data['test_event_out_seq']
             test_offsets = test_offsets_normalized * np.squeeze(training_data['testND'], axis=-1)
 
-            out_begin_indices, out_end_indices \
-                    = get_output_indices(test_actual_time_in_seq, test_time_out_seq, test_offsets, self.DEC_LEN)
-            for beg_ind, end_ind, seq in zip(out_begin_indices, out_end_indices, test_event_out_seq):
-                #print(beg_ind, end_ind, len(seq))
-                assert end_ind < len(seq)
-            test_event_out_seq = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
-                                    zip(test_event_out_seq, out_begin_indices, out_end_indices)]
-            test_time_out_seq = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
-                                    zip(test_time_out_seq, out_begin_indices, out_end_indices)]
+            #out_begin_indices, out_end_indices \
+            #        = get_output_indices(test_actual_time_in_seq, test_time_out_seq, test_offsets, self.DEC_LEN)
+            #for beg_ind, end_ind, seq in zip(out_begin_indices, out_end_indices, test_event_out_seq):
+            #    #print(beg_ind, end_ind, len(seq))
+            #    assert end_ind < len(seq)
+            #test_event_out_seq = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
+            #                        zip(test_event_out_seq, out_begin_indices, out_end_indices)]
+            #test_time_out_seq = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
+            #                        zip(test_time_out_seq, out_begin_indices, out_end_indices)]
 
             gaps = test_gaps_preds
             unnorm_gaps = [seq * testND for seq, testND in zip(gaps, training_data['testND'])]
@@ -2256,26 +2266,27 @@ class RMTPP_DECRNN:
                             time_in_feats, time_out_feats, decoder_length,
                             attn_time_in_seq, attn_gaps,
                             times_out_feats, attn_times_in_feats, actual_time_in_seq,
-                            attn_timestamps, ts_indices, ND):
+                            attn_timestamps, ts_indices, ND, offsets):
 
-        offsets = np.ones((len(time_in_seq))) * self.MAX_OFFSET
+        #offsets = np.ones((len(time_in_seq))) * self.MAX_OFFSET
+        offsets = np.array(offsets)
         offsets_normalized = offsets / np.squeeze(np.array(ND), axis=-1)
         offsets_feed = offsets * 1.0 / self.MAX_OFFSET
 
         offset_feats = [[getHour(s+offset)/24.0 for s in seq] for seq, offset in zip(actual_time_in_seq, offsets)]
 
-        out_begin_indices, out_end_indices \
-                = get_output_indices(time_in_seq, time_out_seq, offsets_normalized, self.DEC_LEN)
-        #print(offsets)
-        for beg_ind, end_ind, seq in zip(out_begin_indices, out_end_indices, event_out_seq):
-            #print(beg_ind, end_ind, len(seq))
-            assert end_ind < len(seq)
-        event_out_seq = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
-                            zip(event_out_seq, out_begin_indices, out_end_indices)]
-        time_out_seq = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
-                            zip(time_out_seq, out_begin_indices, out_end_indices)]
-        time_out_feats = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
-                            zip(time_out_feats, out_begin_indices, out_end_indices)]
+        #out_begin_indices, out_end_indices \
+        #        = get_output_indices(time_in_seq, time_out_seq, offsets_normalized, self.DEC_LEN)
+        ##print(offsets)
+        #for beg_ind, end_ind, seq in zip(out_begin_indices, out_end_indices, event_out_seq):
+        #    #print(beg_ind, end_ind, len(seq))
+        #    assert end_ind < len(seq)
+        #event_out_seq = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
+        #                    zip(event_out_seq, out_begin_indices, out_end_indices)]
+        #time_out_seq = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
+        #                    zip(time_out_seq, out_begin_indices, out_end_indices)]
+        #time_out_feats = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
+        #                    zip(time_out_feats, out_begin_indices, out_end_indices)]
 
         attn_timestamps = [attn_timestamps[idx] for idx in ts_indices]
         attn_gaps = [attn_gaps[idx] for idx in ts_indices]
@@ -2321,14 +2332,15 @@ class RMTPP_DECRNN:
                 attn_time_in_seq, attn_gaps,
                 times_out_feats, attn_times_in_feats, actual_time_in_seq,
                 attn_timestamps, ts_indices,
-                ND, single_threaded=False, plot_dir=False, event_out_seq=None):
+                ND, offsets, single_threaded=False, plot_dir=False, event_out_seq=None):
         """Treats the entire dataset as a single batch and processes it."""
 
         start_time = time.time()
 
         # Default offsets = self.MAX_OFFSET
         #offsets = np.random.uniform(low=0.0, high=self.MAX_OFFSET, size=(self.BATCH_SIZE))
-        offsets = np.ones((len(time_in_seq))) * self.MAX_OFFSET
+        #offsets = np.ones((len(time_in_seq))) * self.MAX_OFFSET
+        offsets = np.array(offsets)
         offsets_normalized = offsets / np.squeeze(np.array(ND), axis=-1)
         offsets_feed = offsets * 1.0 / self.MAX_OFFSET
         offset_feats = [[getHour(s+offset)/24.0 for s in seq] for seq, offset in zip(actual_time_in_seq, offsets)]

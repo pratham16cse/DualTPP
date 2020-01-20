@@ -149,6 +149,12 @@ def read_seq2seq_data(dataset_path, alg_name,
     with open(dataset_path+'test.time.indices', 'r') as in_file:
         timeTestIndices = [int(x.strip()) for x in in_file]
 
+    with open(dataset_path+'train.offsets', 'r') as in_file:
+        train_offsets = [float(x.strip()) for x in in_file]
+    with open(dataset_path+'dev.offsets', 'r') as in_file:
+        dev_offsets = [float(x.strip()) for x in in_file]
+    with open(dataset_path+'test.offsets', 'r') as in_file:
+        test_offsets = [float(x.strip()) for x in in_file]
 
     # Compute Hour-of-day features from data
     getHour = lambda t: t // 3600 % 24
@@ -331,6 +337,10 @@ def read_seq2seq_data(dataset_path, alg_name,
         'train_time_out_feats': train_time_out_feats,
         'dev_time_out_feats': dev_time_out_feats,
         'test_time_out_feats': test_time_out_feats,
+
+        'train_offsets': train_offsets,
+        'dev_offsets': dev_offsets,
+        'test_offsets': test_offsets,
 
         'attn_train_time_in_seq': attn_timeTrainIn,
         'attn_train_gaps': attn_train_gaps,

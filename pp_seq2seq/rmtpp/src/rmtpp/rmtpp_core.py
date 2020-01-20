@@ -832,7 +832,8 @@ class RMTPP:
                 else:
                     train_mae, train_acc, train_mrr, train_time_preds, train_event_preds = None, None, None, np.array([]), np.array([])
 
-                dev_offsets = np.zeros((len(training_data['dev_time_in_seq']))) * self.MAX_OFFSET
+                #dev_offsets = np.zeros((len(training_data['dev_time_in_seq']))) * self.MAX_OFFSET
+                dev_offsets = training_data['dev_offsets']
                 dev_offsets_normalized = dev_offsets / np.squeeze(np.array(training_data['devND']), axis=-1)
                 dev_time_preds, dev_gaps_preds, dev_event_preds, \
                         dev_event_preds_softmax, inference_time, _ \
@@ -932,7 +933,8 @@ class RMTPP:
                     plt.savefig(name_plot+'.png')
                     plt.close()
     
-                test_offsets = np.zeros((len(training_data['test_time_in_seq']))) * self.MAX_OFFSET
+                #test_offsets = np.zeros((len(training_data['test_time_in_seq']))) * self.MAX_OFFSET
+                test_offsets = training_data['test_offsets']
                 test_offsets_normalized = test_offsets / np.squeeze(np.array(training_data['testND']), axis=-1)
                 test_time_preds, test_gaps_preds, test_event_preds, \
                         test_event_preds_softmax, inference_time, _ \
@@ -1115,15 +1117,15 @@ class RMTPP:
             dev_event_out_seq = training_data['dev_event_out_seq']
             dev_offsets = dev_offsets_normalized * np.squeeze(training_data['devND'], axis=-1)
 
-            out_begin_indices, out_end_indices \
-                    = get_output_indices(dev_actual_time_in_seq, dev_time_out_seq, dev_offsets, self.DEC_LEN)
-            for beg_ind, end_ind, seq in zip(out_begin_indices, out_end_indices, dev_event_out_seq):
-                #print(beg_ind, end_ind, len(seq))
-                assert end_ind < len(seq)
-            dev_event_out_seq = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
-                                    zip(dev_event_out_seq, out_begin_indices, out_end_indices)]
-            dev_time_out_seq = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
-                                    zip(dev_time_out_seq, out_begin_indices, out_end_indices)]
+            #out_begin_indices, out_end_indices \
+            #        = get_output_indices(dev_actual_time_in_seq, dev_time_out_seq, dev_offsets, self.DEC_LEN)
+            #for beg_ind, end_ind, seq in zip(out_begin_indices, out_end_indices, dev_event_out_seq):
+            #    #print(beg_ind, end_ind, len(seq))
+            #    assert end_ind < len(seq)
+            #dev_event_out_seq = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
+            #                        zip(dev_event_out_seq, out_begin_indices, out_end_indices)]
+            #dev_time_out_seq = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
+            #                        zip(dev_time_out_seq, out_begin_indices, out_end_indices)]
 
             gaps = dev_gaps_preds
             unnorm_gaps = [seq * devND for seq, devND in zip(gaps, training_data['devND'])]
@@ -1177,15 +1179,15 @@ class RMTPP:
             test_event_out_seq = training_data['test_event_out_seq']
             test_offsets = test_offsets_normalized * np.squeeze(training_data['testND'], axis=-1)
 
-            out_begin_indices, out_end_indices \
-                    = get_output_indices(test_actual_time_in_seq, test_time_out_seq, test_offsets, self.DEC_LEN)
-            for beg_ind, end_ind, seq in zip(out_begin_indices, out_end_indices, test_event_out_seq):
-                #print(beg_ind, end_ind, len(seq))
-                assert end_ind < len(seq)
-            test_event_out_seq = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
-                                    zip(test_event_out_seq, out_begin_indices, out_end_indices)]
-            test_time_out_seq = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
-                                    zip(test_time_out_seq, out_begin_indices, out_end_indices)]
+            #out_begin_indices, out_end_indices \
+            #        = get_output_indices(test_actual_time_in_seq, test_time_out_seq, test_offsets, self.DEC_LEN)
+            #for beg_ind, end_ind, seq in zip(out_begin_indices, out_end_indices, test_event_out_seq):
+            #    #print(beg_ind, end_ind, len(seq))
+            #    assert end_ind < len(seq)
+            #test_event_out_seq = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
+            #                        zip(test_event_out_seq, out_begin_indices, out_end_indices)]
+            #test_time_out_seq = [seq[beg_ind:end_ind] for seq, beg_ind, end_ind in
+            #                        zip(test_time_out_seq, out_begin_indices, out_end_indices)]
 
             gaps = test_gaps_preds
             unnorm_gaps = [seq * testND for seq, testND in zip(gaps, training_data['testND'])]
@@ -1302,7 +1304,7 @@ class RMTPP:
 
         event_seq = [(in_seq + out_seq)[:self.BPTT+1] for in_seq, out_seq in zip(event_in_seq, event_out_seq)]
         time_seq = [(in_seq.tolist() + out_seq.tolist())[:self.BPTT+1] for in_seq, out_seq in zip(time_in_seq, time_out_seq)]
-        time_feats = [(in_seq + out_seq)[:self.BPTT+1] for in_seq, out_seq in zip(time_in_feats, time_out_feats)]
+        time_feats = [(in_seq.tolist() + out_seq.tolist())[:self.BPTT+1] for in_seq, out_seq in zip(time_in_feats, time_out_feats)]
 
         events_in = [seq[:-1] for seq in event_seq]
         events_out = [seq[1:] for seq in event_seq]
