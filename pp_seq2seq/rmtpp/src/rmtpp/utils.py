@@ -140,6 +140,23 @@ def read_seq2seq_data(dataset_path, alg_name, dec_len,
     with open(dataset_path+'attn.test.time.in', 'r') as in_file:
         attn_timeTestIn = [[float(y) for y in x.strip().split()] for x in in_file]
 
+    enc_len = len(timeTrainIn[0])
+
+    def prepend_init_time(sequence):
+        arr_seq = np.array(sequence)
+        avg_gap = np.mean(arr_seq[1:]-arr_seq[:-1])
+        return [sequence[0]-avg_gap] + sequence
+
+    def prepend_init_event(sequence):
+        return [np.max(sequence)] + sequence
+
+    eventTrainIn = [prepend_init_event(seq) for seq in eventTrainIn]
+    timeTrainIn = [prepend_init_time(seq) for seq in timeTrainIn]
+    #eventDevIn = [prepend_init_event(seq) for seq in eventDevIn]
+    #timeDevIn = [prepend_init_time(seq) for seq in timeDevIn]
+    #eventTestIn = [prepend_init_event(seq) for seq in eventTestIn]
+    #timeTestIn = [prepend_init_time(seq) for seq in timeTestIn]
+
     # Compute Hour-of-day features from data
     getHour = lambda t: t // 3600 % 24
     timeTrainInFeats = [[getHour(s) for s in seq] for seq in timeTrainIn]
@@ -169,10 +186,12 @@ def read_seq2seq_data(dataset_path, alg_name, dec_len,
     # Combine eventTrainIn and eventTrainOut into one eventTrain
     eventTrain = [in_seq + out_seq for in_seq, out_seq in zip(eventTrainIn, eventTrainOut)]
     # Similarly for time ...
-    timeTrain = [in_seq + out_seq for in_seq, out_seq in zip(timeTrainIn, timeTrainOut)]
+    #timeTrain = [in_seq + out_seq for in_seq, out_seq in zip(timeTrainIn, timeTrainOut)]
+    timeTrain = timeTrainIn
     timeDev = [in_seq + out_seq for in_seq, out_seq in zip(timeDevIn, timeDevOut)]
     timeTest = [in_seq + out_seq for in_seq, out_seq in zip(timeTestIn, timeTestOut)]
-    timeTrainFeats = [in_seq + out_seq for in_seq, out_seq in zip(timeTrainInFeats, timeTrainOutFeats)]
+    #timeTrainFeats = [in_seq + out_seq for in_seq, out_seq in zip(timeTrainInFeats, timeTrainOutFeats)]
+    timeTrainFeats = timeTrainInFeats
     timeDevFeats = [in_seq + out_seq for in_seq, out_seq in zip(timeDevInFeats, timeDevOutFeats)]
     timeTestFeats = [in_seq + out_seq for in_seq, out_seq in zip(timeTestInFeats, timeTestOutFeats)]
 
@@ -183,11 +202,13 @@ def read_seq2seq_data(dataset_path, alg_name, dec_len,
     for x in eventTrain + eventDevIn + eventTestIn:
         unique_samples = unique_samples.union(x)
 
-    enc_len = len(timeTrainIn[0])
     trainActualTimeIn = np.array(timeTrainIn)[:, enc_len-1:enc_len].tolist()
     devActualTimeIn = np.array(timeDevIn)[:, enc_len-1:enc_len].tolist()
     testActualTimeIn = np.array(timeTestIn)[:, enc_len-1:enc_len].tolist()
     trainActualTimeOut, devActualTimeOut, testActualTimeOut = timeTrainOut, timeDevOut, timeTestOut
+
+    train_unnorm_time_in_seq, dev_unnorm_time_in_seq, test_unnorm_time_in_seq \
+            = timeTrainIn, timeDevIn, timeTestIn
 
     # ----- Normalization by gaps ----- #
     timeTrain, trainND, trainNA, trainIG, \
@@ -195,8 +216,8 @@ def read_seq2seq_data(dataset_path, alg_name, dec_len,
             timeTest, testND, testNA, testIG \
             = generate_norm_seq(timeTrain, timeDev, timeTest, enc_len, normalization, max_offset)
 
-    timeTrainIn = [seq[:enc_len] for seq in timeTrain]
-    timeTrainOut = [seq[enc_len:] for seq in timeTrain]
+    #timeTrainIn = [seq[:enc_len] for seq in timeTrain]
+    #timeTrainOut = [seq[enc_len:] for seq in timeTrain]
     timeDevIn = [seq[:enc_len] for seq in timeDev]
     timeDevOut = [seq[enc_len:] for seq in timeDev]
     timeTestIn = [seq[:enc_len] for seq in timeTest]
@@ -213,12 +234,17 @@ def read_seq2seq_data(dataset_path, alg_name, dec_len,
     timeTestOutFeats = [seq[enc_len:] for seq in timeTestFeats]
 
     seq_len = enc_len + dec_len - 1
-    eventTrainIn = [x[:seq_len] for x in eventTrain]
-    eventTrainOut = [x[1:seq_len+1] for x in eventTrain]
-    timeTrainIn = [x[:seq_len] for x in timeTrain]
-    timeTrainOut = [x[1:seq_len+1] for x in timeTrain]
-    timeTrainInFeats = [x[:seq_len] for x in timeTrainFeats]
-    timeTrainOutFeats = [x[1:seq_len+1] for x in timeTrainFeats]
+    eventTrainIn = [x[:enc_len] for x in eventTrain]
+    eventTrainOut = [x[1:enc_len+1] for x in eventTrain]
+    timeTrainIn = [x[:enc_len] for x in timeTrain]
+    timeTrainOut = [x[1:enc_len+1] for x in timeTrain]
+    timeTrainInFeats = [x[:enc_len] for x in timeTrainFeats]
+    timeTrainOutFeats = [x[1:enc_len+1] for x in timeTrainFeats]
+
+    dev_nowcast_event_out_seq = [x[1:enc_len] for x in eventDevIn]
+    dev_nowcast_time_out_seq = [x[1:enc_len] for x in dev_unnorm_time_in_seq]
+    test_nowcast_event_out_seq = [x[1:enc_len] for x in eventTestIn]
+    test_nowcast_time_out_seq = [x[1:enc_len] for x in test_unnorm_time_in_seq]
 
     if pad:
         train_event_in_seq = pad_sequences(eventTrainIn, padding='post')
@@ -293,6 +319,15 @@ def read_seq2seq_data(dataset_path, alg_name, dec_len,
         'test_actual_time_in_seq': testActualTimeIn,
         'test_actual_time_out_seq': testActualTimeOut,
 
+        'train_unnorm_time_in_seq': train_unnorm_time_in_seq,
+        'dev_unnorm_time_in_seq': dev_unnorm_time_in_seq,
+        'test_unnorm_time_in_seq': test_unnorm_time_in_seq,
+
+        'dev_nowcast_event_out_seq': dev_nowcast_event_out_seq,
+        'dev_nowcast_time_out_seq': dev_nowcast_time_out_seq,
+        'test_nowcast_event_out_seq': test_nowcast_event_out_seq,
+        'test_nowcast_time_out_seq': test_nowcast_time_out_seq,
+
         'train_time_in_feats': train_time_in_feats,
         'dev_time_in_feats': dev_time_in_feats,
         'test_time_in_feats': test_time_in_feats,
@@ -306,7 +341,7 @@ def read_seq2seq_data(dataset_path, alg_name, dec_len,
 
 
         'num_categories': len(unique_samples),
-        'encoder_length': len(eventTestIn[0]),
+        'encoder_length': len(eventTrainIn[0]),
         #'decoder_length': len(eventTrain[0])-len(eventTestIn[0]),
         'decoder_length': dec_len,
 
@@ -483,29 +518,22 @@ def MAE(time_preds, time_true, events_out):
     time_true = np.array(time_true)
     time_preds = np.array(time_preds)
     events_out = np.array(events_out)
-    seq_limit = time_preds.shape[1]
-    batch_limit = time_preds.shape[0]
-    clipped_time_true = time_true[:batch_limit, :seq_limit]
-    clipped_events_out = events_out[:batch_limit, :seq_limit]
-    #print(clipped_time_true)
-    #print(time_preds)
 
-    is_finite = np.isfinite(time_preds) & (clipped_events_out > 0)
+    is_finite = np.isfinite(time_preds) & (events_out > 0)
 
-    return np.sum(np.abs(time_preds - clipped_time_true), axis=0), np.sum(is_finite, axis=0)
+    print(time_preds.shape, time_true.shape)
+
+    return np.sum(np.abs(time_preds - time_true), axis=0), np.sum(is_finite, axis=0)
 
 def DTW(time_preds, time_true, events_out):
 
-    #seq_limit = time_preds.shape[1]
-    clipped_time_true = time_true#[:, :seq_limit]
-    clipped_events_out = events_out#[:, :seq_limit]
 
     euclidean_norm = lambda x, y: np.abs(x - y)
     distance = 0
-    for time_preds_, clipped_time_true_ in zip(time_preds, clipped_time_true):
-        d, cost_matrix, acc_cost_matrix, path = dtw(time_preds_, clipped_time_true_, dist=euclidean_norm)
+    for time_preds_, time_true_ in zip(time_preds, time_true):
+        d, cost_matrix, acc_cost_matrix, path = dtw(time_preds_, time_true_, dist=euclidean_norm)
         distance += d
-    distance = distance / len(clipped_time_true)
+    distance = distance / len(time_true)
 
     return distance
 
@@ -530,16 +558,14 @@ def ACC(event_preds, event_true):
     """Returns the accuracy of the event prediction, provided the output probability vector."""
     event_preds = np.array(event_preds)
     event_true = np.array(event_true)
-    clipped_event_true = event_true[:event_preds.shape[0], :event_preds.shape[1]]
-    is_valid = clipped_event_true > 0
+    is_valid = event_true > 0
 
     # The indexes start from 0 whereare event_preds start from 1.
     # highest_prob_ev = event_preds.argmax(axis=-1) + 1
     highest_prob_ev = event_preds
-    #print(clipped_event_true)
     #print(highest_prob_ev)
 
-    return np.sum((highest_prob_ev == clipped_event_true), axis=0), np.sum(is_valid, axis=0)
+    return np.sum((highest_prob_ev == event_true), axis=0), np.sum(is_valid, axis=0)
 
 
 def MRR(event_preds_softmax, event_true):
