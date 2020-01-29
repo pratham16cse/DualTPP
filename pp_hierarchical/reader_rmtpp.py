@@ -89,7 +89,7 @@ def get_train_input_output(data):
 
 def create_train_dev_test_split(data, block_size, decoder_length):
     marks, times = data
-    num_events_per_hour = get_num_events_per_hour(data)
+    num_events_per_hour = get_num_events_per_hour((marks, times))
     print(num_events_per_hour.index[0])
     train_marks, train_times = list(), list()
     dev_marks, dev_times = list(), list()
@@ -259,7 +259,7 @@ def get_preprocessed_data(block_size, decoder_length):
     
     block_size_sec = block_size * 3600.0
 
-    data_level_1 = get_preprocessed_((marks, times), block_size, decoder_length)
+    data = get_preprocessed_((marks, times), block_size, decoder_length)
 
     # ----- Start: create compound events ----- #
     #c_train_times_in = get_compound_times(train_times_in, K=10)
@@ -271,10 +271,7 @@ def get_preprocessed_data(block_size, decoder_length):
     #assert data_level_1['num_sequences'] == data_level_2['num_sequences']
     # ----- End: create compound events ----- #
 
-    return {
-        'data_level_1': data_level_1,
-        #'data_level_2': data_level_2,
-        }
+    return data
 
 
 

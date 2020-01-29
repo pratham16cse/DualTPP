@@ -9,14 +9,15 @@ from tensorflow import keras
 from tensorflow.keras import layers
 tf.random.set_seed(42)
 
-from reader_rmtpp import get_preprocessed_data, transpose, \
-        read_data, split_data, \
-        get_train_input_output, create_train_dev_test_split, \
-        get_gaps, get_dev_test_input_output
+#from reader_hierarchical import get_preprocessed_data, transpose, \
+#        read_data, split_data, \
+#        get_train_input_output, create_train_dev_test_split, \
+#        get_gaps, get_dev_test_input_output
 
 import reader_hierarchical
 
-from models import RMTPP, NegativeLogLikelihood, simulate
+#from models import RMTPP, NegativeLogLikelihood, simulate
+import models
                     
 
 batch_size = 2
@@ -27,11 +28,10 @@ block_size_sec = 3600.0 * block_size
 max_offset_sec = 3600.0 * max_offset
 decoder_length = 5
 use_marks = True
-all_levels_data = get_preprocessed_data(block_size, decoder_length)
-data = all_levels_data['data_level_1']
-train_dataset = data['train_dataset']
-dev_dataset = data['dev_dataset']
-test_dataset = data['test_dataset']
+data = reader_hierarchical.get_preprocessed_data(block_size, decoder_length)
+train_dataset = data['c_train_dataset']
+dev_dataset = data['c_dev_dataset']
+test_dataset = data['c_test_dataset']
 dev_marks_out = data['dev_marks_out']
 dev_gaps_out = data['dev_gaps_out']
 dev_times_out = data['dev_times_out']
@@ -42,10 +42,10 @@ num_categories = data['num_categories']
 num_sequences = data['num_sequences']
 dev_t_b_plus = data['dev_begin_tss'] + max_offset_sec
 test_t_b_plus = data['test_begin_tss'] + max_offset_sec
-dev_seq_lens = data['dev_seq_lens']
-test_seq_lens = data['test_seq_lens']
+dev_seq_lens = data['c_dev_seq_lens']
+test_seq_lens = data['c_test_seq_lens']
 
-train_dataset = train_dataset.batch(BPTT, drop_remainder=True).map(transpose)
+train_dataset = train_dataset.batch(BPTT, drop_remainder=True).map(reader_hierarchical.transpose)
 dev_dataset = dev_dataset.batch(num_sequences)
 test_dataset = test_dataset.batch(num_sequences)
 
@@ -61,7 +61,7 @@ dev_gap_metric = tf.keras.metrics.MeanAbsoluteError()
 test_mark_metric = tf.keras.metrics.SparseCategoricalAccuracy()
 test_gap_metric = tf.keras.metrics.MeanAbsoluteError()
 
-model = RMTPP(num_categories, 8, 32, use_marks=use_marks)
+model = models.HierarchicalRNN(num_categories, 8, 32, use_marks=use_marks)
 
 optimizer = keras.optimizers.Adam(learning_rate=1e-2)
 
@@ -92,7 +92,7 @@ for epoch in range(epochs):
                 mark_loss = mark_loss_fn(marks_batch_out, marks_logits)
             else:
                 mark_loss = 0.0
-            gap_loss_fn = NegativeLogLikelihood(D, WT)
+            gap_loss_fn = models.NegativeLogLikelihood(D, WT)
             gap_loss = gap_loss_fn(gaps_batch_out, gaps_pred)
             loss = mark_loss + gap_loss
 
@@ -132,7 +132,7 @@ for epoch in range(epochs):
         else:
             dev_marks_pred_last = None
         last_dev_input_ts = tf.gather(dev_times_in, dev_seq_lens-1, batch_dims=1)
-        dev_marks_logits, dev_gaps_pred = simulate(model,
+        dev_marks_logits, dev_gaps_pred = models.simulate(model,
                                                    dev_gaps_pred[:, -1:],
                                                    last_dev_input_ts,
                                                    dev_t_b_plus,
