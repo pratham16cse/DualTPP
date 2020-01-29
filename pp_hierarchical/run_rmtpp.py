@@ -16,7 +16,7 @@ tf.random.set_seed(42)
 
 import reader_rmtpp
 
-from models import RMTPP, NegativeLogLikelihood, simulate
+from models import RMTPP, NegativeLogLikelihood, simulate_rmtpp
                     
 
 batch_size = 2

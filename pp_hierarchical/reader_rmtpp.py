@@ -30,6 +30,78 @@ def split_data(data, num_chops):
     times_split = np.array(np.array_split(times, num_chops))
     return marks_split, times_split
 
+def get_normalized_dataset(data, normalization='average', max_offset=0.0):
+
+    gaps_in, gaps_out = data
+
+    def _norm_seq(gap_seq_in, gap_seq_out):
+        # init_gap = tf.zeros([1, 1])
+        # gap_seq_in = tf.concat([init_gap, gap_seq_in], axis=0)
+
+        # TODO: 
+        # What will be use of min if we are concat tf.zeroes in gap_seq?
+
+        if normalization in ['minmax']:
+            max_gap = tf.clip_by_value(tf.math.reduce_max(gap_seq_in), 1.0, np.inf)
+            min_gap = tf.clip_by_value(tf.math.reduce_min(gap_seq_in), 1.0, np.inf)
+            n_d, n_a = [(max_gap - min_gap)], [(-min_gap/(max_gap - min_gap))]
+        elif normalization == 'average_per_seq':
+            avg_gap = tf.clip_by_value(tf.math.reduce_mean(gap_seq_in), 1.0, np.inf)
+            n_d, n_a = [avg_gap], [0.0]
+        elif normalization == 'max_per_seq':
+            max_gap = tf.clip_by_value(tf.math.reduce_max(gap_seq_in), 1.0, np.inf)
+            n_d, n_a = [max_gap], [0.0]
+        elif normalization is None or normalization in ['average', 'max_offset']:
+            n_d, n_a = [1.0], [0.0]
+        else:
+            print('Normalization not found')
+            assert False
+
+        avg_gap_norm_in = gap_seq_in/n_d + n_a
+        avg_gap_norm_in = tf.cumsum(avg_gap_norm_in)
+        avg_gap_norm_out = gap_seq_out/n_d + n_a
+        avg_gap_norm_out = tf.cumsum(avg_gap_norm_out)
+
+        return avg_gap_norm_in, avg_gap_norm_out, n_d, n_a
+    
+    avg_gaps_norm_in, avg_gaps_norm_out, normalizer_d, normalizer_a = list(), list(), list(), list()
+
+    for sequence_in, sequence_out in zip(gaps_in, gaps_out):
+        avg_gap_norm_in, avg_gap_norm_out, n_d, n_a = _norm_seq(sequence_in, sequence_out)
+        avg_gaps_norm_in.append(avg_gap_norm_in)
+        avg_gaps_norm_out.append(avg_gap_norm_out)
+        normalizer_d.append(n_d)
+        normalizer_a.append(n_a)
+
+    if normalization == 'average':
+        #normalizer_d = np.mean([n_d * (enc_len-1) for n_d in normalizer_d])
+        #normalizer_d = np.ones((len(sequences), 1)) * normalizer_d
+
+        # TODO: 
+        # Why are we taking average of gaps of gaps instead of gaps?
+        # n_d = 0.0
+        # for gap_seq in avg_gaps_norm_in:
+        #     n_d += np.sum(gap_seq[1:]-gap_seq[:-1])
+        # n_d = n_d / (len(sequences) * (enc_len-1))
+        # avg_gaps_norm = [gap_seq/n_d for gap_seq in avg_gaps_norm]
+        # normalizer_d = np.ones((len(sequences), 1)) * n_d
+
+        n_d = tf.reduce_mean(avg_gaps_norm_in)
+        avg_gaps_norm_in = [gap_seq/n_d for gap_seq in avg_gaps_norm_in]
+        avg_gaps_norm_out = [gap_seq/n_d for gap_seq in avg_gaps_norm_out]
+        normalizer_d = np.ones((len(gaps_in), 1)) * n_d
+
+    elif normalization == 'max_offset':
+        n_d = [max_offset]
+        avg_gaps_norm_in = [gap_seq/n_d for gap_seq in avg_gaps_norm_in]
+        avg_gaps_norm_out = [gap_seq/n_d for gap_seq in avg_gaps_norm_in]
+        normalizer_d = np.ones((len(gaps_in), 1)) * n_d
+
+    avg_gaps_norm_in = tf.stack(avg_gaps_norm_in, axis=0)
+    avg_gaps_norm_out = tf.stack(avg_gaps_norm_out, axis=0)
+
+    return avg_gaps_norm_in, avg_gaps_norm_out, normalizer_d, normalizer_a
+
 def get_num_events_per_hour(data):
     marks, times = data
     #print(times)
@@ -195,6 +267,11 @@ def get_preprocessed_(data, block_size, decoder_length):
      train_marks_out, train_gaps_out, train_times_out) \
             = transpose(train_marks_in, train_gaps_in, train_times_in,
                         train_marks_out, train_gaps_out, train_times_out)
+
+    (train_gaps_in_norm, train_gaps_out_norm,
+     train_normalizer_d, train_normalizer_a) \
+            = get_normalized_dataset((train_gaps_in, train_gaps_out))
+
     train_dataset = tf.data.Dataset.from_tensor_slices((train_marks_in,
                                                         train_gaps_in,
                                                         train_times_in,
@@ -222,6 +299,11 @@ def get_preprocessed_(data, block_size, decoder_length):
      dev_seq_lens) \
             = get_padded_dataset((dev_marks_in, dev_gaps_in, dev_times_in,
                                   dev_marks_out, dev_gaps_out, dev_times_out))
+
+    (dev_gaps_in_norm, dev_gaps_out_norm,
+     dev_normalizer_d, dev_normalizer_a) \
+            = get_normalized_dataset((dev_gaps_in, dev_gaps_out))
+
     dev_dataset = tf.data.Dataset.from_tensor_slices((dev_marks_in,
                                                       dev_gaps_in,
                                                       dev_times_in))
@@ -230,6 +312,11 @@ def get_preprocessed_(data, block_size, decoder_length):
      test_seq_lens) \
             = get_padded_dataset((test_marks_in, test_gaps_in, test_times_in,
                                   test_marks_out, test_gaps_out, test_times_out))
+
+    (test_gaps_in_norm, test_gaps_out_norm,
+     test_normalizer_d, test_normalizer_a) \
+            = get_normalized_dataset((test_gaps_in, test_gaps_out))
+
     test_dataset = tf.data.Dataset.from_tensor_slices((test_marks_in,
                                                        test_gaps_in,
                                                        test_times_in))
@@ -251,6 +338,22 @@ def get_preprocessed_(data, block_size, decoder_length):
         'train_seq_lens': train_seq_lens,
         'dev_seq_lens': dev_seq_lens,
         'test_seq_lens': test_seq_lens,
+
+        'train_gaps_in_norm': train_gaps_in_norm,
+        'train_gaps_out_norm': train_gaps_out_norm,
+        'train_normalizer_d': train_normalizer_d,
+        'train_normalizer_a': train_normalizer_a,
+
+        'dev_gaps_in_norm': dev_gaps_in_norm,
+        'dev_gaps_out_norm': dev_gaps_out_norm,
+        'dev_normalizer_d': dev_normalizer_d,
+        'dev_normalizer_a': dev_normalizer_a,
+
+        'test_gaps_in_norm': test_gaps_in_norm,
+        'test_gaps_out_norm': test_gaps_out_norm,
+        'test_normalizer_d': test_normalizer_d,
+        'test_normalizer_a': test_normalizer_a,
+
         }
 
 def get_preprocessed_data(block_size, decoder_length):
