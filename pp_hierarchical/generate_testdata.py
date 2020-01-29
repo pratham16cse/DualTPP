@@ -17,7 +17,7 @@ for i in range(sequence_length):
     cur_ts += gaps_list[gap_idx-1]
     timestamps.append(cur_ts)
     markers.append(gap_idx)
-    gap_idx = (gap_idx % len(gaps_list)) + 1
+    gap_idx = (gap_idx+1) % len(gaps_list)
 
 
 #markers = np.ones_like(timestamps)
