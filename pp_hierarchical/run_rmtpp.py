@@ -16,8 +16,11 @@ tf.random.set_seed(42)
 
 import reader_rmtpp
 
-from models import RMTPP, NegativeLogLikelihood, simulate_rmtpp
+#from models import RMTPP, NegativeLogLikelihood, simulate_rmtpp
+import models
                     
+epochs = 100
+patience = 10
 
 batch_size = 2
 BPTT = 20
@@ -26,7 +29,8 @@ max_offset = 1
 block_size_sec = 3600.0 * block_size
 max_offset_sec = 3600.0 * max_offset
 decoder_length = 5
-use_marks = True
+use_marks = False
+use_intensity = True
 data = reader_rmtpp.get_preprocessed_data(block_size, decoder_length)
 train_dataset = data['train_dataset']
 dev_dataset = data['dev_dataset']
@@ -60,12 +64,12 @@ dev_gap_metric = tf.keras.metrics.MeanAbsoluteError()
 test_mark_metric = tf.keras.metrics.SparseCategoricalAccuracy()
 test_gap_metric = tf.keras.metrics.MeanAbsoluteError()
 
-model = RMTPP(num_categories, 8, 32, use_marks=use_marks)
+model = models.RMTPP(num_categories, 8, 32, use_marks=use_marks,
+                     use_intensity=use_intensity)
 
 optimizer = keras.optimizers.Adam(learning_rate=1e-2)
 
 # Iterate over epochs.
-epochs = 100
 for epoch in range(epochs):
     print('Start of epoch %d' % (epoch,))
 
@@ -91,7 +95,7 @@ for epoch in range(epochs):
                 mark_loss = mark_loss_fn(marks_batch_out, marks_logits)
             else:
                 mark_loss = 0.0
-            gap_loss_fn = NegativeLogLikelihood(D, WT)
+            gap_loss_fn = models.NegativeLogLikelihood(D, WT)
             gap_loss = gap_loss_fn(gaps_batch_out, gaps_pred)
             loss = mark_loss + gap_loss
 
@@ -122,62 +126,66 @@ for epoch in range(epochs):
     print('Training mark acc and gap err over epoch: %s, %s' \
             % (float(train_mark_acc), float(train_gap_err)))
 
-    for dev_step, (dev_marks_in, dev_gaps_in, dev_times_in) \
-            in enumerate(dev_dataset):
-        dev_marks_logits, dev_gaps_pred, _, _ = model(dev_gaps_in, dev_marks_in)
+    if epoch > patience:
+
+        for dev_step, (dev_marks_in, dev_gaps_in, dev_times_in) \
+                in enumerate(dev_dataset):
+            dev_marks_logits, dev_gaps_pred, _, _ = model(dev_gaps_in, dev_marks_in)
+            if use_marks:
+                dev_marks_pred = tf.argmax(dev_marks_logits, axis=-1) + 1
+                dev_marks_pred_last = dev_marks_pred[:, -1:]
+            else:
+                dev_marks_pred_last = None
+            last_dev_input_ts = tf.gather(dev_times_in, dev_seq_lens-1, batch_dims=1)
+            dev_marks_logits, dev_gaps_pred \
+                    = models.simulate_rmtpp(model,
+                                            dev_gaps_pred[:, -1:],
+                                            last_dev_input_ts,
+                                            dev_t_b_plus,
+                                            decoder_length,
+                                            marks=dev_marks_pred_last)
+        model.rnn_layer.reset_states()
+
+        for test_step, (test_marks_in, test_gaps_in, test_times_in) \
+                in enumerate(test_dataset):
+            test_marks_logits, test_gaps_pred, _, _ = model(test_gaps_in, test_marks_in)
+            if use_marks:
+                test_marks_pred = tf.argmax(test_marks_logits, axis=-1) + 1
+                test_marks_pred_last = test_marks_pred[:, -1:]
+            else:
+                test_marks_pred_last = None
+            last_test_input_ts = tf.gather(test_times_in, test_seq_lens-1, batch_dims=1)
+            test_marks_logits, test_gaps_pred \
+                    = models.simulate_rmtpp(model,
+                                            test_gaps_pred[:, -1:],
+                                            last_test_input_ts,
+                                            test_t_b_plus,
+                                            decoder_length,
+                                            marks=test_marks_pred_last)
+        model.rnn_layer.reset_states()
+
+        #print(dev_marks_out, 'dev_marks_out')
+        #print(np.argmax(dev_marks_logits, axis=-1), 'dev_marks_preds')
+
         if use_marks:
-            dev_marks_pred = tf.argmax(dev_marks_logits, axis=-1) + 1
-            dev_marks_pred_last = dev_marks_pred[:, -1:]
+            dev_mark_metric(dev_marks_out, dev_marks_logits)
+            test_mark_metric(test_marks_out, test_marks_logits)
+            dev_mark_acc = dev_mark_metric.result()
+            test_mark_acc = test_mark_metric.result()
+            dev_mark_metric.reset_states()
+            test_mark_metric.reset_states()
         else:
-            dev_marks_pred_last = None
-        last_dev_input_ts = tf.gather(dev_times_in, dev_seq_lens-1, batch_dims=1)
-        dev_marks_logits, dev_gaps_pred = simulate(model,
-                                                   dev_gaps_pred[:, -1:],
-                                                   last_dev_input_ts,
-                                                   dev_t_b_plus,
-                                                   decoder_length,
-                                                   marks=dev_marks_pred_last)
-    model.rnn_layer.reset_states()
+            dev_mark_acc, test_mark_acc = 0.0, 0.0
 
-    for test_step, (test_marks_in, test_gaps_in, test_times_in) \
-            in enumerate(test_dataset):
-        test_marks_logits, test_gaps_pred, _, _ = model(test_gaps_in, test_marks_in)
-        if use_marks:
-            test_marks_pred = tf.argmax(test_marks_logits, axis=-1) + 1
-            test_marks_pred_last = test_marks_pred[:, -1:]
-        else:
-            test_marks_pred_last = None
-        last_test_input_ts = tf.gather(test_times_in, test_seq_lens-1, batch_dims=1)
-        test_marks_logits, test_gaps_pred = simulate(model,
-                                                     test_gaps_pred[:, -1:],
-                                                     last_test_input_ts,
-                                                     test_t_b_plus,
-                                                     decoder_length,
-                                                     marks=test_marks_pred_last)
-    model.rnn_layer.reset_states()
+        dev_gap_metric(dev_gaps_out, dev_gaps_pred)
+        test_gap_metric(test_gaps_out, test_gaps_pred)
+        dev_gap_err = dev_gap_metric.result()
+        test_gap_err = test_gap_metric.result()
+        dev_gap_metric.reset_states()
+        test_gap_metric.reset_states()
+        print('Dev mark acc and gap err over epoch: %s, %s' \
+                % (float(dev_mark_acc), float(dev_gap_err)))
+        print('Test mark acc and gap err over epoch: %s, %s' \
+                % (float(test_mark_acc), float(test_gap_err)))
 
-    #print(dev_marks_out, 'dev_marks_out')
-    #print(np.argmax(dev_marks_logits, axis=-1), 'dev_marks_preds')
-
-    if use_marks:
-        dev_mark_metric(dev_marks_out, dev_marks_logits)
-        test_mark_metric(test_marks_out, test_marks_logits)
-        dev_mark_acc = dev_mark_metric.result()
-        test_mark_acc = test_mark_metric.result()
-        dev_mark_metric.reset_states()
-        test_mark_metric.reset_states()
-    else:
-        dev_mark_acc, test_mark_acc = 0.0, 0.0
-
-    dev_gap_metric(dev_gaps_out, dev_gaps_pred)
-    test_gap_metric(test_gaps_out, test_gaps_pred)
-    dev_gap_err = dev_gap_metric.result()
-    test_gap_err = test_gap_metric.result()
-    dev_gap_metric.reset_states()
-    test_gap_metric.reset_states()
-    print('Dev mark acc and gap err over epoch: %s, %s' \
-            % (float(dev_mark_acc), float(dev_gap_err)))
-    print('Test mark acc and gap err over epoch: %s, %s' \
-            % (float(test_mark_acc), float(test_gap_err)))
-
-    model.rnn_layer.reset_states()
+        model.rnn_layer.reset_states()

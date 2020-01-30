@@ -19,6 +19,8 @@ import reader_hierarchical
 #from models import RMTPP, NegativeLogLikelihood, simulate_hierarchicalrnn
 import models
                     
+epochs = 100
+patience = 10
 
 batch_size = 2
 BPTT = 20
@@ -28,6 +30,7 @@ block_size_sec = 3600.0 * block_size
 max_offset_sec = 3600.0 * max_offset
 decoder_length = 5
 use_marks = False
+use_intensity = True
 data = reader_hierarchical.get_preprocessed_data(block_size, decoder_length)
 c_train_dataset = data['c_train_dataset']
 c_dev_dataset = data['c_dev_dataset']
@@ -62,12 +65,12 @@ dev_gap_metric = tf.keras.metrics.MeanAbsoluteError()
 test_mark_metric = tf.keras.metrics.SparseCategoricalAccuracy()
 test_gap_metric = tf.keras.metrics.MeanAbsoluteError()
 
-model = models.HierarchicalRNN(num_categories, 8, 32, use_marks=use_marks)
+model = models.HierarchicalRNN(num_categories, 8, 32, use_marks=use_marks,
+                               use_intensity=use_intensity)
 
 optimizer = keras.optimizers.Adam(learning_rate=1e-2)
 
 # Iterate over epochs.
-epochs = 100
 for epoch in range(epochs):
     print('Start of epoch %d' % (epoch,))
 
@@ -132,72 +135,72 @@ for epoch in range(epochs):
     print('Training mark acc and gap err over epoch: %s, %s' \
             % (float(train_mark_acc), float(train_gap_err)))
 
-    for dev_step, (c_dev_marks_in, c_dev_gaps_in, c_dev_times_in) \
-            in enumerate(c_dev_dataset):
+    if epoch > patience:
 
-        (dev_l2_marks_logits, dev_l2_gaps_pred, _, _,
-         dev_l1_marks_logits, dev_l1_gaps_pred, _, _) \
-                = model(c_dev_gaps_in)
-        #dev_marks_logits, dev_gaps_pred, _, _ = model(c_dev_gaps_in, c_dev_marks_in)
+        for dev_step, (c_dev_marks_in, c_dev_gaps_in, c_dev_times_in) \
+                in enumerate(c_dev_dataset):
+
+            (dev_l2_marks_logits, dev_l2_gaps_pred, _, _,
+             dev_l1_marks_logits, dev_l1_gaps_pred, _, _) \
+                    = model(c_dev_gaps_in)
+            #dev_marks_logits, dev_gaps_pred, _, _ = model(c_dev_gaps_in, c_dev_marks_in)
+            if use_marks:
+                dev_marks_pred = tf.argmax(dev_marks_logits, axis=-1) + 1
+                dev_marks_pred_last = dev_marks_pred[:, -1:]
+            else:
+                dev_marks_pred_last = None
+            last_dev_input_ts = tf.gather(c_dev_times_in, c_dev_seq_lens-1, batch_dims=1)
+            dev_gaps_pred \
+                    = models.simulate_hierarchicalrnn(model,
+                                      dev_l2_gaps_pred[:, -1:],
+                                      last_dev_input_ts,
+                                      dev_t_b_plus,
+                                      decoder_length)
+        model.reset_states()
+
+        for test_step, (c_test_marks_in, c_test_gaps_in, c_test_times_in) \
+                in enumerate(c_test_dataset):
+
+            (test_l2_marks_logits, test_l2_gaps_pred, _, _,
+             test_l1_marks_logits, test_l1_gaps_pred, _, _) \
+                    = model(c_test_gaps_in)
+            #test_marks_logits, test_gaps_pred, _, _ = model(c_test_gaps_in, c_test_marks_in)
+            if use_marks:
+                test_marks_pred = tf.argmax(test_marks_logits, axis=-1) + 1
+                test_marks_pred_last = test_marks_pred[:, -1:]
+            else:
+                test_marks_pred_last = None
+            last_test_input_ts = tf.gather(c_test_times_in, c_test_seq_lens-1, batch_dims=1)
+            test_gaps_pred \
+                    = models.simulate_hierarchicalrnn(model,
+                                      test_l2_gaps_pred[:, -1:],
+                                      last_test_input_ts,
+                                      test_t_b_plus,
+                                      decoder_length)
+        model.reset_states()
+
+        #print(dev_marks_out, 'dev_marks_out')
+        #print(np.argmax(dev_marks_logits, axis=-1), 'dev_marks_preds')
+
         if use_marks:
-            dev_marks_pred = tf.argmax(dev_marks_logits, axis=-1) + 1
-            dev_marks_pred_last = dev_marks_pred[:, -1:]
+            dev_mark_metric(dev_marks_out, dev_marks_logits)
+            test_mark_metric(test_marks_out, test_marks_logits)
+            dev_mark_acc = dev_mark_metric.result()
+            test_mark_acc = test_mark_metric.result()
+            dev_mark_metric.reset_states()
+            test_mark_metric.reset_states()
         else:
-            dev_marks_pred_last = None
-        last_dev_input_ts = tf.gather(c_dev_times_in, c_dev_seq_lens-1, batch_dims=1)
-        dev_marks_logits, dev_gaps_pred \
-                = models.simulate_hierarchicalrnn(model,
-                                  dev_l2_gaps_pred[:, -1:],
-                                  last_dev_input_ts,
-                                  dev_t_b_plus,
-                                  decoder_length,
-                                  l2_marks=dev_marks_pred_last)
-    model.reset_states()
+            dev_mark_acc, test_mark_acc = 0.0, 0.0
 
-    for test_step, (c_test_marks_in, c_test_gaps_in, c_test_times_in) \
-            in enumerate(c_test_dataset):
+        dev_gap_metric(dev_gaps_out, dev_gaps_pred)
+        test_gap_metric(test_gaps_out, test_gaps_pred)
+        dev_gap_err = dev_gap_metric.result()
+        test_gap_err = test_gap_metric.result()
+        dev_gap_metric.reset_states()
+        test_gap_metric.reset_states()
+        print('Dev mark acc and gap err over epoch: %s, %s' \
+                % (float(dev_mark_acc), float(dev_gap_err)))
+        print('Test mark acc and gap err over epoch: %s, %s' \
+                % (float(test_mark_acc), float(test_gap_err)))
 
-        (test_l2_marks_logits, test_l2_gaps_pred, _, _,
-         test_l1_marks_logits, test_l1_gaps_pred, _, _) \
-                = model(c_test_gaps_in)
-        #test_marks_logits, test_gaps_pred, _, _ = model(c_test_gaps_in, c_test_marks_in)
-        if use_marks:
-            test_marks_pred = tf.argmax(test_marks_logits, axis=-1) + 1
-            test_marks_pred_last = test_marks_pred[:, -1:]
-        else:
-            test_marks_pred_last = None
-        last_test_input_ts = tf.gather(c_test_times_in, c_test_seq_lens-1, batch_dims=1)
-        test_marks_logits, test_gaps_pred \
-                = models.simulate_hierarchicalrnn(model,
-                                  test_l2_gaps_pred[:, -1:],
-                                  last_test_input_ts,
-                                  test_t_b_plus,
-                                  decoder_length,
-                                  l2_marks=test_marks_pred_last)
-    model.reset_states()
-
-    #print(dev_marks_out, 'dev_marks_out')
-    #print(np.argmax(dev_marks_logits, axis=-1), 'dev_marks_preds')
-
-    if use_marks:
-        dev_mark_metric(dev_marks_out, dev_marks_logits)
-        test_mark_metric(test_marks_out, test_marks_logits)
-        dev_mark_acc = dev_mark_metric.result()
-        test_mark_acc = test_mark_metric.result()
-        dev_mark_metric.reset_states()
-        test_mark_metric.reset_states()
-    else:
-        dev_mark_acc, test_mark_acc = 0.0, 0.0
-
-    dev_gap_metric(dev_gaps_out, dev_gaps_pred)
-    test_gap_metric(test_gaps_out, test_gaps_pred)
-    dev_gap_err = dev_gap_metric.result()
-    test_gap_err = test_gap_metric.result()
-    dev_gap_metric.reset_states()
-    test_gap_metric.reset_states()
-    print('Dev mark acc and gap err over epoch: %s, %s' \
-            % (float(dev_mark_acc), float(dev_gap_err)))
-    print('Test mark acc and gap err over epoch: %s, %s' \
-            % (float(test_mark_acc), float(test_gap_err)))
-
-    model.reset_states()
+        model.reset_states()

@@ -52,9 +52,12 @@ class RMTPP(tf.keras.Model):
                  hidden_layer_size,
                  name='RMTPP',
                  use_marks=True,
+                 use_intensity=True,
                  **kwargs):
         super(RMTPP, self).__init__(name=name, **kwargs)
         self.use_marks = use_marks
+        self.use_intensity = use_intensity
+
         if self.use_marks:
             self.embedding_layer = layers.Embedding(num_categories+1, embed_size,
                                                     mask_zero=False,
@@ -68,7 +71,8 @@ class RMTPP(tf.keras.Model):
             self.marks_output_layer = layers.Dense(num_categories,
                                                    activation='softmax',
                                                    name='marks_output_layer')
-        self.gaps_output_layer = InverseTransformSampling()
+        if self.use_intensity:
+            self.gaps_output_layer = InverseTransformSampling()
 
     def call(self, gaps, marks=None, initial_state=None):
         if self.use_marks:
@@ -91,7 +95,10 @@ class RMTPP(tf.keras.Model):
             self.marks_logits = self.marks_output_layer(self.hidden_states)
         else:
             self.marks_logits = None
-        self.gaps_pred = self.gaps_output_layer((self.D, self.WT))
+        if self.use_intensity:
+            self.gaps_pred = self.gaps_output_layer((self.D, self.WT))
+        else:
+            self.gaps_pred = tf.nn.softplus(self.D)
 
         return self.marks_logits, self.gaps_pred, self.D, self.WT
 
@@ -102,11 +109,16 @@ class HierarchicalRNN(tf.keras.Model):
                  hidden_layer_size,
                  name='HierarchicalRNN',
                  use_marks=True,
+                 use_intensity=True,
                  **kwargs):
         super(HierarchicalRNN, self).__init__(name=name, **kwargs)
         self.use_marks = use_marks
-        self.l1_rnn = RMTPP(num_categories, embed_size, hidden_layer_size, use_marks=use_marks)
-        self.l2_rnn = RMTPP(num_categories, embed_size, hidden_layer_size, use_marks=use_marks)
+        self.l1_rnn = RMTPP(num_categories, embed_size, hidden_layer_size,
+                            use_marks=use_marks,
+                            use_intensity=use_intensity)
+        self.l2_rnn = RMTPP(num_categories, embed_size, hidden_layer_size,
+                            use_marks=use_marks,
+                            use_intensity=use_intensity)
         self.state_transform_l1 = layers.Dense(hidden_layer_size,
                                                activation=tf.sigmoid,
                                                name='state_transform_l1')
@@ -209,12 +221,12 @@ def simulate_rmtpp(model, gaps, last_input_ts, t_b_plus, decoder_length, marks=N
 
 
 def simulate_hierarchicalrnn(model, l2_gaps, last_input_ts, t_b_plus,
-                             decoder_length, l2_marks=None):
+                             decoder_length):
 
     # ----- Start: Simulation of Layer 2 RNN ----- #
-    l2_gaps_pred, l2_marks_logits = list(), list()
+    l2_gaps_pred = list()
     l2_hidden_states = list()
-    l2_gaps_inputs, l2_marks_inputs = l2_gaps, l2_marks
+    l2_gaps_inputs = l2_gaps
     cum_l2_gaps_pred = tf.squeeze(l2_gaps, axis=1)
     offset = t_b_plus - tf.squeeze(last_input_ts, axis=1)
     N = len(l2_gaps)
@@ -222,31 +234,21 @@ def simulate_hierarchicalrnn(model, l2_gaps, last_input_ts, t_b_plus,
     l2_idxes =  -1 * np.ones(N, dtype=int) 
     simul_step = 0
     while any(cum_l2_gaps_pred<offset):
-        (step_l2_marks_logits, step_l2_gaps_pred, _, _, _, _, _, _) \
-                = model(None, l2_gaps=l2_gaps_inputs, l2_marks=l2_marks_inputs)
-        if l2_marks is not None:
-            step_l2_marks_pred = tf.argmax(step_l2_marks_logits, axis=-1) + 1
-        else:
-            step_l2_marks_pred = None
+        (_, step_l2_gaps_pred, _, _, _, _, _, _) \
+                = model(None, l2_gaps=l2_gaps_inputs)
 
         #print('Simul step:', simul_step)
-        l2_marks_logits.append(step_l2_marks_logits)
         l2_gaps_pred.append(step_l2_gaps_pred)
         l2_hidden_states.append(model.l2_rnn.final_state)
         cum_l2_gaps_pred += tf.squeeze(step_l2_gaps_pred, axis=1)
 
-        l2_marks_inputs, l2_gaps_inputs = step_l2_marks_pred, step_l2_gaps_pred
+        l2_gaps_inputs = step_l2_gaps_pred
         simul_step += 1
 
         for ex_id, (cum_ts, off) in enumerate(zip(cum_l2_gaps_pred, offset)):
             if cum_ts > off and l2_idxes[ex_id] == -1:
                 l2_idxes[ex_id] = simul_step-1
 
-    if l2_marks is not None:
-        l2_marks_logits = tf.squeeze(tf.stack(marks_logits, axis=1), axis=2)
-        l2_marks_logits = [m_l[idx] for m_l, idx in \
-                            zip(l2_marks_logits, l2_idxes)]
-        marks_logits = tf.stack(marks_logits, axis=0)
     l2_gaps_pred = tf.squeeze(tf.stack(l2_gaps_pred, axis=1), axis=2)
     cum_l2_gaps_pred_before_offset \
             = [sum(t_l[:idx+1]) for t_l, idx in zip(l2_gaps_pred, l2_idxes)]
@@ -261,10 +263,9 @@ def simulate_hierarchicalrnn(model, l2_gaps, last_input_ts, t_b_plus,
     last_input_ts = last_input_ts + tf.expand_dims(cum_l2_gaps_pred_before_offset, axis=-1)
 
     # ----- Start: Simulation of Layer 1 RNN ----- #
-    l1_gaps_pred, l1_marks_logits = list(), list()
+    l1_gaps_pred = list()
     l1_hidden_states = list()
     l1_gaps_inputs = l2_gaps_pred / 10.0 #TODO Can we do better here?
-    l1_marks = None #TODO Don't hardcode
     l1_gaps_inputs = tf.expand_dims(l1_gaps_inputs, axis=-1)
     cum_l1_gaps_pred = tf.squeeze(l1_gaps_inputs, axis=-1)
     offset = t_b_plus - tf.squeeze(last_input_ts, axis=1)
@@ -273,15 +274,10 @@ def simulate_hierarchicalrnn(model, l2_gaps, last_input_ts, t_b_plus,
     l1_begin_idxes, l1_end_idxes =  np.zeros(N, dtype=int), np.zeros(N, dtype=int)
     pred_idxes = -1.0 * np.ones(N)
     while any(cum_l1_gaps_pred<offset) or any(pred_idxes<decoder_length):
-        (step_l1_marks_logits, step_l1_gaps_pred, _, _, _, _, _, _) \
+        (_, step_l1_gaps_pred, _, _, _, _, _, _) \
                 = model(None, l1_gaps=tf.expand_dims(l1_gaps_inputs, axis=-1))
-        if l1_marks is not None:
-            step_l1_marks_pred = tf.argmax(step_l1_marks_logits, axis=-1) + 1
-        else:
-            step_l1_marks_pred = None
 
         #print('Simul step:', simul_step)
-        l1_marks_logits.append(step_l1_marks_logits)
         l1_gaps_pred.append(step_l1_gaps_pred)
         l1_hidden_states.append(model.l1_rnn.final_state)
         cum_l1_gaps_pred += tf.squeeze(step_l1_gaps_pred, axis=1)
@@ -297,11 +293,6 @@ def simulate_hierarchicalrnn(model, l2_gaps, last_input_ts, t_b_plus,
                 if pred_idxes[ex_id] == decoder_length:
                     l1_end_idxes[ex_id] = simul_step
 
-    if l1_marks is not None:
-        l1_marks_logits = tf.squeeze(tf.stack(l1_marks_logits, axis=1), axis=2)
-        l1_marks_logits = [m_l[b_idx:e_idx] for m_l, b_idx, e_idx in \
-                            zip(l1_marks_logits, l1_begin_idxes, l1_end_idxes)]
-        l1_marks_logits = tf.stack(l1_marks_logits, axis=0)
     l1_gaps_pred = tf.squeeze(tf.stack(l1_gaps_pred, axis=1), axis=2)
     l1_gaps_pred = [t_l[b_idx:e_idx] for t_l, b_idx, e_idx in \
                         zip(l1_gaps_pred, l1_begin_idxes, l1_end_idxes)]
@@ -309,4 +300,4 @@ def simulate_hierarchicalrnn(model, l2_gaps, last_input_ts, t_b_plus,
     # ----- End: Simulation of Layer 1 RNN ----- #
 
 
-    return l1_marks_logits, l1_gaps_pred
+    return l1_gaps_pred
