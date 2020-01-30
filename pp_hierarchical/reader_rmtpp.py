@@ -254,10 +254,10 @@ def get_preprocessed_(data, block_size, decoder_length):
             = get_normalized_dataset((train_gaps_in, train_gaps_out))
 
     train_dataset = tf.data.Dataset.from_tensor_slices((train_marks_in,
-                                                        train_gaps_in,
+                                                        train_gaps_in_norm,
                                                         train_times_in,
                                                         train_marks_out,
-                                                        train_gaps_out,
+                                                        train_gaps_out_norm,
                                                         train_times_out))
 
     (dev_marks_in, dev_gaps_in, dev_times_in,
@@ -286,7 +286,7 @@ def get_preprocessed_(data, block_size, decoder_length):
             = get_normalized_dataset((dev_gaps_in, dev_gaps_out))
 
     dev_dataset = tf.data.Dataset.from_tensor_slices((dev_marks_in,
-                                                      dev_gaps_in,
+                                                      dev_gaps_in_norm,
                                                       dev_times_in))
     (test_marks_in, test_gaps_in, test_times_in,
      test_marks_out, test_gaps_out, test_times_out,
@@ -299,7 +299,7 @@ def get_preprocessed_(data, block_size, decoder_length):
             = get_normalized_dataset((test_gaps_in, test_gaps_out))
 
     test_dataset = tf.data.Dataset.from_tensor_slices((test_marks_in,
-                                                       test_gaps_in,
+                                                       test_gaps_in_norm,
                                                        test_times_in))
 
     return {

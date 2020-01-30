@@ -43,10 +43,29 @@ test_gaps_out = data['test_gaps_out']
 test_times_out = data['test_times_out']
 num_categories = data['num_categories']
 num_sequences = data['num_sequences']
-dev_t_b_plus = data['dev_begin_tss'] + max_offset_sec
-test_t_b_plus = data['test_begin_tss'] + max_offset_sec
+dev_t_b_plus = data['dev_begin_tss'] #+ max_offset_sec
+test_t_b_plus = data['test_begin_tss'] #+ max_offset_sec
 dev_seq_lens = data['dev_seq_lens']
 test_seq_lens = data['test_seq_lens']
+
+dev_normalizer_d = data['dev_normalizer_d']
+dev_normalizer_a = data['dev_normalizer_a']
+test_normalizer_d = data['test_normalizer_d']
+test_normalizer_a = data['test_normalizer_a']
+
+max_offset_sec_dev_norm = max_offset_sec/dev_normalizer_d + dev_normalizer_a
+max_offset_sec_test_norm = max_offset_sec/test_normalizer_d + test_normalizer_a
+dev_t_b_plus += max_offset_sec_dev_norm.numpy().tolist()
+test_t_b_plus += max_offset_sec_test_norm.numpy().tolist()
+
+tile_shape = dev_gaps_out.get_shape().as_list()
+tile_shape[0] = tile_shape[2] = 1
+dev_normalizer_d = tf.tile(tf.expand_dims(dev_normalizer_d, axis=1), tile_shape)
+dev_normalizer_a = tf.tile(tf.expand_dims(dev_normalizer_a, axis=1), tile_shape)
+tile_shape = test_gaps_out.get_shape().as_list()
+tile_shape[0] = tile_shape[2] = 1
+test_normalizer_d = tf.tile(tf.expand_dims(test_normalizer_d, axis=1), tile_shape)
+test_normalizer_a = tf.tile(tf.expand_dims(test_normalizer_a, axis=1), tile_shape)
 
 train_dataset = train_dataset.batch(BPTT, drop_remainder=True).map(reader_rmtpp.transpose)
 dev_dataset = dev_dataset.batch(num_sequences)
@@ -176,6 +195,11 @@ for epoch in range(epochs):
             test_mark_metric.reset_states()
         else:
             dev_mark_acc, test_mark_acc = 0.0, 0.0
+
+        dev_gaps_pred = (dev_gaps_pred - dev_normalizer_a) * dev_normalizer_d
+        print('dev_gaps_pred', dev_gaps_pred)
+        print('dev_gaps_out', dev_gaps_out)
+        test_gaps_pred = (test_gaps_pred - test_normalizer_a) * test_normalizer_d
 
         dev_gap_metric(dev_gaps_out, dev_gaps_pred)
         test_gap_metric(test_gaps_out, test_gaps_pred)

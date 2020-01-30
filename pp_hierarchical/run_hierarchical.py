@@ -43,10 +43,30 @@ test_gaps_out = data['test_gaps_out']
 test_times_out = data['test_times_out']
 num_categories = data['num_categories']
 num_sequences = data['num_sequences']
-dev_t_b_plus = data['dev_begin_tss'] + max_offset_sec
-test_t_b_plus = data['test_begin_tss'] + max_offset_sec
+dev_t_b_plus = data['dev_begin_tss'] #+ max_offset_sec
+test_t_b_plus = data['test_begin_tss'] #+ max_offset_sec
 c_dev_seq_lens = data['c_dev_seq_lens']
 c_test_seq_lens = data['c_test_seq_lens']
+
+c_dev_normalizer_d = data['c_dev_normalizer_d']
+c_dev_normalizer_a = data['c_dev_normalizer_a']
+c_test_normalizer_d = data['c_test_normalizer_d']
+c_test_normalizer_a = data['c_test_normalizer_a']
+
+max_offset_sec_dev_norm = max_offset_sec/c_dev_normalizer_d + c_dev_normalizer_a
+max_offset_sec_test_norm = max_offset_sec/c_test_normalizer_d + c_test_normalizer_a
+dev_t_b_plus += max_offset_sec_dev_norm.numpy().tolist()
+test_t_b_plus += max_offset_sec_test_norm.numpy().tolist()
+
+tile_shape = dev_gaps_out.get_shape().as_list()
+tile_shape[0] = tile_shape[2] = 1
+c_dev_normalizer_d = tf.tile(tf.expand_dims(c_dev_normalizer_d, axis=1), tile_shape)
+c_dev_normalizer_a = tf.tile(tf.expand_dims(c_dev_normalizer_a, axis=1), tile_shape)
+tile_shape = test_gaps_out.get_shape().as_list()
+tile_shape[0] = tile_shape[2] = 1
+c_test_normalizer_d = tf.tile(tf.expand_dims(c_test_normalizer_d, axis=1), tile_shape)
+c_test_normalizer_a = tf.tile(tf.expand_dims(c_test_normalizer_a, axis=1), tile_shape)
+
 
 c_train_dataset = c_train_dataset.batch(BPTT, drop_remainder=True).map(reader_hierarchical.transpose)
 c_dev_dataset = c_dev_dataset.batch(num_sequences)
@@ -191,6 +211,11 @@ for epoch in range(epochs):
             test_mark_metric.reset_states()
         else:
             dev_mark_acc, test_mark_acc = 0.0, 0.0
+
+        dev_gaps_pred = (dev_gaps_pred - c_dev_normalizer_a) * c_dev_normalizer_d
+        print('dev_gaps_pred', dev_gaps_pred)
+        print('dev_gaps_out', dev_gaps_out)
+        test_gaps_pred = (test_gaps_pred - c_test_normalizer_a) * c_test_normalizer_d
 
         dev_gap_metric(dev_gaps_out, dev_gaps_pred)
         test_gap_metric(test_gaps_out, test_gaps_pred)

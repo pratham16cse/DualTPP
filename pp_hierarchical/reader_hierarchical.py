@@ -319,14 +319,14 @@ def get_preprocessed_(c_data, data, block_size, decoder_length):
             = get_normalized_dataset((c_train_gaps_in, c_train_gaps_out))
 
     c_train_dataset = tf.data.Dataset.from_tensor_slices((c_train_marks_in,
-                                                          c_train_gaps_in,
+                                                          c_train_gaps_in_norm,
                                                           c_train_times_in,
                                                           c_train_marks_out,
-                                                          c_train_gaps_out,
+                                                          c_train_gaps_out_norm,
                                                           c_train_times_out,
-                                                          train_gaps_in,
+                                                          train_gaps_in_norm,
                                                           train_times_in,
-                                                          train_gaps_out,
+                                                          train_gaps_out_norm,
                                                           train_times_out))
 
     (c_dev_marks_in, c_dev_gaps_in, c_dev_times_in,
@@ -377,7 +377,7 @@ def get_preprocessed_(c_data, data, block_size, decoder_length):
             = get_normalized_dataset((c_dev_gaps_in, c_dev_gaps_out))
 
     c_dev_dataset = tf.data.Dataset.from_tensor_slices((c_dev_marks_in,
-                                                        c_dev_gaps_in,
+                                                        c_dev_gaps_in_norm,
                                                         c_dev_times_in))
 
     (c_test_marks_in, c_test_gaps_in, c_test_times_in,
@@ -405,7 +405,7 @@ def get_preprocessed_(c_data, data, block_size, decoder_length):
             = get_normalized_dataset((c_test_gaps_in, c_test_gaps_out))
 
     c_test_dataset = tf.data.Dataset.from_tensor_slices((c_test_marks_in,
-                                                         c_test_gaps_in,
+                                                         c_test_gaps_in_norm,
                                                          c_test_times_in))
 
     return {
