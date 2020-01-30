@@ -35,11 +35,6 @@ def get_normalized_dataset(data, normalization='average', max_offset=0.0):
     gaps_in, gaps_out = data
 
     def _norm_seq(gap_seq_in, gap_seq_out):
-        # init_gap = tf.zeros([1, 1])
-        # gap_seq_in = tf.concat([init_gap, gap_seq_in], axis=0)
-
-        # TODO: 
-        # What will be use of min if we are concat tf.zeroes in gap_seq?
 
         if normalization in ['minmax']:
             max_gap = tf.clip_by_value(tf.math.reduce_max(gap_seq_in), 1.0, np.inf)
@@ -58,9 +53,7 @@ def get_normalized_dataset(data, normalization='average', max_offset=0.0):
             assert False
 
         avg_gap_norm_in = gap_seq_in/n_d + n_a
-        avg_gap_norm_in = tf.cumsum(avg_gap_norm_in)
         avg_gap_norm_out = gap_seq_out/n_d + n_a
-        avg_gap_norm_out = tf.cumsum(avg_gap_norm_out)
 
         return avg_gap_norm_in, avg_gap_norm_out, n_d, n_a
     
@@ -74,18 +67,6 @@ def get_normalized_dataset(data, normalization='average', max_offset=0.0):
         normalizer_a.append(n_a)
 
     if normalization == 'average':
-        #normalizer_d = np.mean([n_d * (enc_len-1) for n_d in normalizer_d])
-        #normalizer_d = np.ones((len(sequences), 1)) * normalizer_d
-
-        # TODO: 
-        # Why are we taking average of gaps of gaps instead of gaps?
-        # n_d = 0.0
-        # for gap_seq in avg_gaps_norm_in:
-        #     n_d += np.sum(gap_seq[1:]-gap_seq[:-1])
-        # n_d = n_d / (len(sequences) * (enc_len-1))
-        # avg_gaps_norm = [gap_seq/n_d for gap_seq in avg_gaps_norm]
-        # normalizer_d = np.ones((len(sequences), 1)) * n_d
-
         n_d = tf.reduce_mean(avg_gaps_norm_in)
         avg_gaps_norm_in = [gap_seq/n_d for gap_seq in avg_gaps_norm_in]
         avg_gaps_norm_out = [gap_seq/n_d for gap_seq in avg_gaps_norm_out]
