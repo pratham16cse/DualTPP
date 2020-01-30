@@ -154,21 +154,26 @@ for epoch in range(epochs):
                                   l2_marks=dev_marks_pred_last)
     model.reset_states()
 
-    for test_step, (test_marks_in, test_gaps_in, test_times_in) \
-            in enumerate(test_dataset):
-        test_marks_logits, test_gaps_pred, _, _ = model(test_gaps_in, test_marks_in)
+    for test_step, (c_test_marks_in, c_test_gaps_in, c_test_times_in) \
+            in enumerate(c_test_dataset):
+
+        (test_l2_marks_logits, test_l2_gaps_pred, _, _,
+         test_l1_marks_logits, test_l1_gaps_pred, _, _) \
+                = model(c_test_gaps_in)
+        #test_marks_logits, test_gaps_pred, _, _ = model(c_test_gaps_in, c_test_marks_in)
         if use_marks:
             test_marks_pred = tf.argmax(test_marks_logits, axis=-1) + 1
             test_marks_pred_last = test_marks_pred[:, -1:]
         else:
             test_marks_pred_last = None
-        last_test_input_ts = tf.gather(test_times_in, test_seq_lens-1, batch_dims=1)
-        test_marks_logits, test_gaps_pred = simulate_hierarchicalrnn(model,
-                                                     test_gaps_pred[:, -1:],
-                                                     last_test_input_ts,
-                                                     test_t_b_plus,
-                                                     decoder_length,
-                                                     l2_marks=test_marks_pred_last)
+        last_test_input_ts = tf.gather(c_test_times_in, c_test_seq_lens-1, batch_dims=1)
+        test_marks_logits, test_gaps_pred \
+                = models.simulate_hierarchicalrnn(model,
+                                  test_l2_gaps_pred[:, -1:],
+                                  last_test_input_ts,
+                                  test_t_b_plus,
+                                  decoder_length,
+                                  l2_marks=test_marks_pred_last)
     model.reset_states()
 
     #print(dev_marks_out, 'dev_marks_out')
