@@ -8,6 +8,7 @@ gaps_list = [4, 8, 3, 5, 2, 10, 15]
 num_discrete_states = len(gaps_list)
 sequence_length = 10000
 begin_ts = 1431777686
+begin_ts = 0000000000
 
 cur_ts = begin_ts
 timestamps = list()

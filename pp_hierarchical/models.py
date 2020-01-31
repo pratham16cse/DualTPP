@@ -223,7 +223,7 @@ def simulate_rmtpp(model, gaps, block_begin_ts, t_b_plus,
     return marks_logits, gaps_pred
 
 
-def simulate_hierarchicalrnn(model, l2_gaps, block_begin_ts, t_b_plus,
+def simulate_hierarchicalrnn(model, l2_gaps, block_begin_ts, t_b_plus, c_t_b_plus,
                              decoder_length):
 
     # ----- Start: Simulation of Layer 2 RNN ----- #
@@ -231,7 +231,7 @@ def simulate_hierarchicalrnn(model, l2_gaps, block_begin_ts, t_b_plus,
     l2_hidden_states = list()
     l2_gaps_inputs = l2_gaps
     cum_l2_gaps_pred = tf.squeeze(l2_gaps, axis=1)
-    offset = t_b_plus - block_begin_ts
+    offset = c_t_b_plus - block_begin_ts
     N = len(l2_gaps)
     simul_step = 0
     l2_idxes =  -1 * np.ones(N, dtype=int) 

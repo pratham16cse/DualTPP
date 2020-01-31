@@ -25,9 +25,7 @@ patience = 10
 batch_size = 2
 BPTT = 20
 block_size = 1
-max_offset = 1
 block_size_sec = 3600.0 * block_size
-max_offset_sec = 3600.0 * max_offset
 decoder_length = 5
 use_marks = False
 use_intensity = False
@@ -37,16 +35,15 @@ num_sequences = data['num_sequences']
 
 c_train_dataset = data['c_train_dataset']
 
+# ----- Start: Load dev_dataset ----- #
 c_dev_dataset = data['c_dev_dataset']
 c_dev_seq_lens = data['c_dev_seq_lens']
 dev_marks_out = data['dev_marks_out']
 dev_gaps_out = data['dev_gaps_out']
 dev_times_out = data['dev_times_out']
-dev_t_b_plus = data['dev_begin_tss'] + max_offset_sec
 dev_begin_tss = data['dev_begin_tss']
-dev_offsets = tf.random.uniform(shape=(num_sequences, 1)) * 3600.
-#dev_t_b_plus = data['dev_begin_tss'] + max_offset_sec
-dev_t_b_plus = data['dev_begin_tss'] + dev_offsets
+dev_offsets = tf.random.uniform(shape=(num_sequences, 1)) * 3600. * block_size # Sampling offsets
+dev_t_b_plus = dev_begin_tss + dev_offsets
 print(dev_offsets)
 print(tf.squeeze(dev_times_out, axis=-1).numpy().tolist()[0])
 dev_times_out_indices = [bisect_right(dev_t_out, t_b) for dev_t_out, t_b \
@@ -58,17 +55,28 @@ dev_times_out_indices \
 print(dev_times_out_indices)
 dev_gaps_out = tf.gather(dev_gaps_out, dev_times_out_indices, batch_dims=1)
 
+# ----- Normalize dev_offsets and dev_t_b_plus ----- #
+c_dev_normalizer_d = data['c_dev_normalizer_d']
+c_dev_normalizer_a = data['c_dev_normalizer_a']
+c_dev_offsets_sec_norm = dev_offsets/c_dev_normalizer_d + c_dev_normalizer_a
+c_dev_t_b_plus = dev_begin_tss + c_dev_offsets_sec_norm
 
+dev_normalizer_d = data['dev_normalizer_d']
+dev_normalizer_a = data['dev_normalizer_a']
+dev_offsets_sec_norm = dev_offsets/dev_normalizer_d + dev_normalizer_a
+dev_t_b_plus = dev_begin_tss + dev_offsets_sec_norm
+
+# ----- End: Load dev_dataset ----- #
+
+# ----- Start: Load test_dataset ----- #
 c_test_dataset = data['c_test_dataset']
+c_test_seq_lens = data['c_test_seq_lens']
 test_marks_out = data['test_marks_out']
 test_gaps_out = data['test_gaps_out']
 test_times_out = data['test_times_out']
-test_t_b_plus = data['test_begin_tss'] + max_offset_sec
-c_test_seq_lens = data['c_test_seq_lens']
 test_begin_tss = data['test_begin_tss']
-test_offsets = tf.random.uniform(shape=(num_sequences, 1)) * 3600.
-#test_t_b_plus = data['test_begin_tss'] + max_offset_sec
-test_t_b_plus = data['test_begin_tss'] + test_offsets
+test_offsets = tf.random.uniform(shape=(num_sequences, 1)) * 3600. * block_size # Sampling offsets
+test_t_b_plus = test_begin_tss + test_offsets
 print(test_offsets)
 print(tf.squeeze(test_times_out, axis=-1).numpy().tolist()[0])
 test_times_out_indices = [bisect_right(test_t_out, t_b) for test_t_out, t_b \
@@ -80,7 +88,31 @@ test_times_out_indices \
 print(test_times_out_indices)
 test_gaps_out = tf.gather(test_gaps_out, test_times_out_indices, batch_dims=1)
 
+# ----- Normalize test_offsets and test_t_b_plus ----- #
+c_test_normalizer_d = data['c_test_normalizer_d']
+c_test_normalizer_a = data['c_test_normalizer_a']
+c_test_offsets_sec_norm = test_offsets/c_test_normalizer_d + c_test_normalizer_a
+c_test_t_b_plus = test_begin_tss + c_test_offsets_sec_norm
+
+test_normalizer_d = data['test_normalizer_d']
+test_normalizer_a = data['test_normalizer_a']
+test_offsets_sec_norm = test_offsets/test_normalizer_d + test_normalizer_a
+test_t_b_plus = test_begin_tss + test_offsets_sec_norm
+
+# ----- End: Load test_dataset ----- #
+
+tile_shape = dev_gaps_out.get_shape().as_list()
+tile_shape[0] = tile_shape[2] = 1
+dev_normalizer_d = tf.tile(tf.expand_dims(dev_normalizer_d, axis=1), tile_shape)
+dev_normalizer_a = tf.tile(tf.expand_dims(dev_normalizer_a, axis=1), tile_shape)
+tile_shape = test_gaps_out.get_shape().as_list()
+tile_shape[0] = tile_shape[2] = 1
+test_normalizer_d = tf.tile(tf.expand_dims(test_normalizer_d, axis=1), tile_shape)
+test_normalizer_a = tf.tile(tf.expand_dims(test_normalizer_a, axis=1), tile_shape)
+
+#c_train_dataset = c_train_dataset.batch(BPTT, drop_remainder=True).map(reader_hierarchical.transpose)
 c_train_dataset = c_train_dataset.batch(BPTT, drop_remainder=False).map(reader_hierarchical.transpose)
+
 c_dev_dataset = c_dev_dataset.batch(num_sequences)
 c_test_dataset = c_test_dataset.batch(num_sequences)
 
@@ -187,10 +219,11 @@ for epoch in range(epochs):
                 dev_marks_pred_last = None
             dev_gaps_pred \
                     = models.simulate_hierarchicalrnn(model,
-                                      dev_l2_gaps_pred[:, -1:],
-                                      dev_begin_tss,
-                                      dev_t_b_plus,
-                                      decoder_length)
+                                                      dev_l2_gaps_pred[:, -1:],
+                                                      dev_begin_tss,
+                                                      dev_t_b_plus,
+                                                      c_dev_t_b_plus,
+                                                      decoder_length)
         model.reset_states()
 
         for test_step, (c_test_marks_in, c_test_gaps_in, c_test_times_in, c_test_seqmask_in) \
@@ -208,10 +241,11 @@ for epoch in range(epochs):
             last_test_input_ts = tf.gather(c_test_times_in, c_test_seq_lens-1, batch_dims=1)
             test_gaps_pred \
                     = models.simulate_hierarchicalrnn(model,
-                                      test_l2_gaps_pred[:, -1:],
-                                      test_begin_tss,
-                                      test_t_b_plus,
-                                      decoder_length)
+                                                      test_l2_gaps_pred[:, -1:],
+                                                      test_begin_tss,
+                                                      test_t_b_plus,
+                                                      c_test_t_b_plus,
+                                                      decoder_length)
         model.reset_states()
 
         #print(dev_marks_out, 'dev_marks_out')
@@ -226,6 +260,9 @@ for epoch in range(epochs):
             test_mark_metric.reset_states()
         else:
             dev_mark_acc, test_mark_acc = 0.0, 0.0
+
+        dev_gaps_pred = (dev_gaps_pred - dev_normalizer_a) * dev_normalizer_d
+        test_gaps_pred = (test_gaps_pred - test_normalizer_a) * test_normalizer_d
 
         print('\ndev_gaps_pred')
         print(tf.squeeze(dev_gaps_pred[:, 1:], axis=-1))
