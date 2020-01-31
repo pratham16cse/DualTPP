@@ -102,11 +102,20 @@ def get_normalized_dataset(data, normalization='average', max_offset=0.0):
 
     return avg_gaps_norm_in, avg_gaps_norm_out, normalizer_d, normalizer_a
 
+def get_hour_of_day_ts(ts):
+    ''' Returns timestamp at the beginning of the hour'''
+
+    return datetime.timestamp(pd.Timestamp(ts, unit='s', tz='utc').floor('H')) / 3600.
+
 def get_num_events_per_hour(data):
     marks, times = data
     #print(times)
     times = pd.Series(times)
-    times_grouped = times.groupby(lambda x: pd.Timestamp(times[x], unit='s').floor('H')).agg('count')
+    #for x in times:
+    #    print(x, pd.Timestamp(x, unit='s', tz='utc').floor('H'),
+    #          datetime.timestamp(pd.Timestamp(x, unit='s', tz='utc').floor('H')),
+    #          get_hour_of_day_ts(x))
+    times_grouped = times.groupby(lambda x: pd.Timestamp(times[x], unit='s', tz='utc').floor('H')).agg('count')
     #plt.bar(times_grouped.index, times_grouped.tolist(), width=0.02)
     plt.bar(range(len(times_grouped.index)), times_grouped.values)
     return times_grouped
@@ -137,6 +146,14 @@ def get_dev_test_input_output(train_marks, train_times,
     test_times_out = [np.concatenate([dev_t[-1:], tst_t[:-1]]) \
                         for dev_t, tst_t in zip(dev_times, test_times)]
     test_gaps_out = get_gaps(test_times_out)
+
+    print('DevIn:', dev_times_in[0].tolist())
+    print('\n')
+    print('DevOut', dev_times_out[0].tolist())
+    print('\n')
+    print('TestIn:', test_times_in[0].tolist())
+    print('\n')
+    print('TestOut', test_times_out[0].tolist())
 
     return  (dev_marks_in, dev_gaps_in, dev_times_in,
              dev_marks_out, dev_gaps_out, dev_times_out,
@@ -173,33 +190,33 @@ def create_train_dev_test_split(data, block_size, decoder_length):
     for idx in range(0, num_hrs, 4*block_size):
         print(idx, num_hrs)
         train_start_idx = block_begin_idxes[idx-1]+1 if idx>0 else 0
-        train_end_idx = block_begin_idxes[idx+(2*block_size-1)]-decoder_length-1
+        train_end_idx = block_begin_idxes[idx+(2*block_size-1)]#-decoder_length-1
         train_marks.append(marks[train_start_idx:train_end_idx])
         train_times.append(times[train_start_idx:train_end_idx])
 
-        dev_start_idx = block_begin_idxes[idx+(2*block_size-1)]+1-decoder_length-1
-        dev_end_idx = block_begin_idxes[idx+(3*block_size-1)]-decoder_length-1
+        dev_start_idx = block_begin_idxes[idx+(2*block_size-1)]+1#-decoder_length-1
+        dev_end_idx = block_begin_idxes[idx+(3*block_size-1)]#-decoder_length-1
         dev_marks.append(marks[dev_start_idx:dev_end_idx])
         dev_times.append(times[dev_start_idx:dev_end_idx])
-        dev_begin_tss.append(times[dev_start_idx])
+        dev_begin_tss.append(get_hour_of_day_ts(times[dev_start_idx]) * 3600.)
 
-        test_start_idx = block_begin_idxes[idx+(3*block_size-1)]+1-decoder_length-1
+        test_start_idx = block_begin_idxes[idx+(3*block_size-1)]+1#-decoder_length-1
         test_end_idx = block_begin_idxes[idx+(4*block_size-1)]
         test_marks.append(marks[test_start_idx:test_end_idx])
         test_times.append(times[test_start_idx:test_end_idx])
-        test_begin_tss.append(times[test_start_idx])
+        test_begin_tss.append(get_hour_of_day_ts(times[test_start_idx]) * 3600.)
 
-    dev_begin_tss = np.expand_dims(np.array(dev_begin_tss), axis=-1)
-    test_begin_tss = np.expand_dims(np.array(test_begin_tss), axis=-1)
+    dev_begin_tss = tf.expand_dims(tf.constant(dev_begin_tss), axis=-1)
+    test_begin_tss = tf.expand_dims(tf.constant(test_begin_tss), axis=-1)
 
     return (train_marks, train_times,
             dev_marks, dev_times,
             test_marks, test_times,
             dev_begin_tss, test_begin_tss)
 
-def transpose(m_in, g_in, t_in, m_out, g_out, t_out):
-    return tf.transpose(m_in), tf.transpose(g_in, [1, 0, 2]), tf.transpose(t_in, [1, 0, 2]), \
-            tf.transpose(m_out), tf.transpose(g_out, [1, 0, 2]), tf.transpose(t_out, [1, 0, 2])
+def transpose(m_in, g_in, t_in, sm_in, m_out, g_out, t_out, sm_out):
+    return tf.transpose(m_in), tf.transpose(g_in, [1, 0, 2]), tf.transpose(t_in, [1, 0, 2]), tf.transpose(sm_in), \
+            tf.transpose(m_out), tf.transpose(g_out, [1, 0, 2]), tf.transpose(t_out, [1, 0, 2]), tf.transpose(sm_out)
 
 def get_padded_dataset(data):
     marks_in, gaps_in, times_in, marks_out, gaps_out, times_out = data
@@ -213,15 +230,17 @@ def get_padded_dataset(data):
     gaps_out = pad_sequences(gaps_out, padding='post')
     times_out = pad_sequences(times_out, padding='post')
 
-    
-    times_in = tf.expand_dims(tf.cast(times_in, tf.float32), axis=-1)
-    times_out = tf.expand_dims(tf.cast(times_out, tf.float32), axis=-1)
     gaps_in = tf.expand_dims(tf.cast(gaps_in, tf.float32), axis=-1)
+    times_in = tf.expand_dims(tf.cast(times_in, tf.float32), axis=-1)
     gaps_out = tf.expand_dims(tf.cast(gaps_out, tf.float32), axis=-1)
+    times_out = tf.expand_dims(tf.cast(times_out, tf.float32), axis=-1)
 
-    #TODO Create and return mask also
- 
     return marks_in, gaps_in, times_in, marks_out, gaps_out, times_out, seq_lens
+
+def get_seq_mask(sequences):
+    seq_lens = [len(s) for s in sequences]
+    seq_mask = tf.sequence_mask(seq_lens, dtype=tf.float32)
+    return seq_mask, seq_lens
 
 def get_compound_events(data, K=1):
     def most_frequent(arr):
@@ -253,20 +272,28 @@ def get_preprocessed_(data, block_size, decoder_length):
      dev_begin_tss, test_begin_tss) \
             = create_train_dev_test_split((marks, times), block_size, decoder_length)
     num_sequences = len(train_marks)
-    
+
+    #print(train_times[0].tolist())
+
     (train_marks_in, train_marks_out,
      train_gaps_in, train_gaps_out,
      train_times_in, train_times_out) \
             = get_train_input_output((train_marks, train_times))
+    #print(train_times_in[0].tolist())
+    #print(train_times_out[0].tolist())
+
+    train_seqmask_in, _ = get_seq_mask(train_gaps_in)
+    train_seqmask_out, _ = get_seq_mask(train_gaps_out)
+
     (train_marks_in, train_gaps_in, train_times_in,
      train_marks_out, train_gaps_out, train_times_out,
      train_seq_lens) \
             = get_padded_dataset((train_marks_in, train_gaps_in, train_times_in,
                                   train_marks_out, train_gaps_out, train_times_out))
-    (train_marks_in, train_gaps_in, train_times_in,
-     train_marks_out, train_gaps_out, train_times_out) \
-            = transpose(train_marks_in, train_gaps_in, train_times_in,
-                        train_marks_out, train_gaps_out, train_times_out)
+    (train_marks_in, train_gaps_in, train_times_in, train_seqmask_in,
+     train_marks_out, train_gaps_out, train_times_out, train_seqmask_out) \
+            = transpose(train_marks_in, train_gaps_in, train_times_in, train_seqmask_in,
+                        train_marks_out, train_gaps_out, train_times_out, train_seqmask_out)
 
     (train_gaps_in_norm, train_gaps_out_norm,
      train_normalizer_d, train_normalizer_a) \
@@ -275,9 +302,11 @@ def get_preprocessed_(data, block_size, decoder_length):
     train_dataset = tf.data.Dataset.from_tensor_slices((train_marks_in,
                                                         train_gaps_in,
                                                         train_times_in,
+                                                        train_seqmask_in,
                                                         train_marks_out,
                                                         train_gaps_out,
-                                                        train_times_out))
+                                                        train_times_out,
+                                                        train_seqmask_out))
 
     (dev_marks_in, dev_gaps_in, dev_times_in,
      dev_marks_out, dev_gaps_out, dev_times_out,
@@ -286,13 +315,16 @@ def get_preprocessed_(data, block_size, decoder_length):
             = get_dev_test_input_output(train_marks, train_times,
                                         dev_marks, dev_times,
                                         test_marks, test_times)
-    dev_marks_out = [d_m[-decoder_length:] for d_m in dev_marks_out]
-    dev_gaps_out = [d_g[-decoder_length:] for d_g in dev_gaps_out]
-    dev_times_out = [d_t[-decoder_length:] for d_t in dev_times_out]
-    test_marks_out = [t_m[-decoder_length:] for t_m in test_marks_out]
-    test_gaps_out = [d_g[-decoder_length:] for d_g in test_gaps_out]
-    test_times_out = [t_t[-decoder_length:] for t_t in test_times_out]
-    # TODO Create these according to given offset
+
+    dev_seqmask_in, _ = get_seq_mask(dev_gaps_in)
+    dev_seqmask_out, _ = get_seq_mask(dev_gaps_out)
+
+    #dev_marks_out = [d_m[-decoder_length:] for d_m in dev_marks_out]
+    #dev_gaps_out = [d_g[-decoder_length:] for d_g in dev_gaps_out]
+    #dev_times_out = [d_t[-decoder_length:] for d_t in dev_times_out]
+    #test_marks_out = [t_m[-decoder_length:] for t_m in test_marks_out]
+    #test_gaps_out = [d_g[-decoder_length:] for d_g in test_gaps_out]
+    #test_times_out = [t_t[-decoder_length:] for t_t in test_times_out]
 
     (dev_marks_in, dev_gaps_in, dev_times_in,
      dev_marks_out, dev_gaps_out, dev_times_out,
@@ -306,7 +338,12 @@ def get_preprocessed_(data, block_size, decoder_length):
 
     dev_dataset = tf.data.Dataset.from_tensor_slices((dev_marks_in,
                                                       dev_gaps_in,
-                                                      dev_times_in))
+                                                      dev_times_in,
+                                                      dev_seqmask_in))
+
+    test_seqmask_in, _ = get_seq_mask(test_gaps_in)
+    test_seqmask_out, _ = get_seq_mask(test_gaps_out)
+
     (test_marks_in, test_gaps_in, test_times_in,
      test_marks_out, test_gaps_out, test_times_out,
      test_seq_lens) \
@@ -319,7 +356,28 @@ def get_preprocessed_(data, block_size, decoder_length):
 
     test_dataset = tf.data.Dataset.from_tensor_slices((test_marks_in,
                                                        test_gaps_in,
-                                                       test_times_in))
+                                                       test_times_in,
+                                                       test_seqmask_in))
+
+    print('Train In')
+    print(tf.squeeze(tf.transpose(train_times_in, [1, 0, 2]), axis=-1).numpy().tolist()[0])
+    print('Dev In')
+    print(tf.squeeze(dev_times_in, axis=-1).numpy().tolist()[0])
+    print('\n')
+    print('Dev Begin Timestamp:')
+    print(dev_begin_tss[0])
+    print('\n')
+    print('Dev Out')
+    print(tf.squeeze(dev_times_out, axis=-1).numpy().tolist()[0])
+    print('\n')
+    print('Test In')
+    print(tf.squeeze(test_times_in, axis=-1).numpy().tolist()[0])
+    print('\n')
+    print('Test Begin Timestamp:')
+    print(test_begin_tss[0])
+    print('\n')
+    print('Test Out')
+    print(tf.squeeze(test_times_out, axis=-1).numpy().tolist()[0])
 
     return {
         'train_dataset': train_dataset,

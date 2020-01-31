@@ -11,6 +11,7 @@ from tensorflow.keras import layers
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 
 import reader_rmtpp
+from reader_rmtpp import get_hour_of_day_ts
 
 def read_data(filename):
     with open(filename, 'r') as f:
@@ -36,7 +37,11 @@ def get_num_events_per_hour(data):
     marks, times = data
     #print(times)
     times = pd.Series(times)
-    times_grouped = times.groupby(lambda x: pd.Timestamp(times[x], unit='s').floor('H')).agg('count')
+    #for x in times:
+    #    print(x, pd.Timestamp(x, unit='s', tz='utc').floor('H'),
+    #          datetime.timestamp(pd.Timestamp(x, unit='s', tz='utc').floor('H')),
+    #          get_hour_of_day_ts(x))
+    times_grouped = times.groupby(lambda x: pd.Timestamp(times[x], unit='s', tz='utc').floor('H')).agg('count')
     #plt.bar(times_grouped.index, times_grouped.tolist(), width=0.02)
     plt.bar(range(len(times_grouped.index)), times_grouped.values)
     return times_grouped
@@ -68,12 +73,21 @@ def get_dev_test_input_output(train_marks, train_times,
                         for dev_t, tst_t in zip(dev_times, test_times)]
     test_gaps_out = get_gaps(test_times_out)
 
+    print('DevIn:', dev_times_in[0].tolist())
+    print('\n')
+    print('DevOut', dev_times_out[0].tolist())
+    print('\n')
+    print('TestIn:', test_times_in[0].tolist())
+    print('\n')
+    print('TestOut', test_times_out[0].tolist())
+
     return  (dev_marks_in, dev_gaps_in, dev_times_in,
              dev_marks_out, dev_gaps_out, dev_times_out,
              test_marks_in, test_gaps_in, test_times_in,
              test_marks_out, test_gaps_out, test_times_out)
 
 def get_train_input_output(c_data, data, dec_len):
+    train_dec_len = dec_len #TODO Fix appropriate train_dec_len
     c_marks, c_times, l1_idxes = c_data
     marks, times = data
 
@@ -89,10 +103,10 @@ def get_train_input_output(c_data, data, dec_len):
     c_times_out = [np.array(x[2:]) for x in c_times]
 
     gaps = np.array(times[1:]) - np.array(times[:-1])
-    gaps_in = [[np.array(gaps[idx:idx+dec_len]) for idx in idxes[:-2]] for idxes in l1_idxes]
-    times_in = [[np.array(times[idx+1:idx+1+dec_len]) for idx in idxes[1:-1]] for idxes in l1_idxes]
-    gaps_out = [[np.array(gaps[idx:idx+dec_len]) for idx in idxes[1:-1]] for idxes in l1_idxes]
-    times_out = [[np.array(times[idx+1:idx+1+dec_len]) for idx in idxes[2:]] for idxes in l1_idxes]
+    gaps_in = [[np.array(gaps[idx:idx+train_dec_len]) for idx in idxes[:-2]] for idxes in l1_idxes]
+    times_in = [[np.array(times[idx+1:idx+1+train_dec_len]) for idx in idxes[1:-1]] for idxes in l1_idxes]
+    gaps_out = [[np.array(gaps[idx:idx+train_dec_len]) for idx in idxes[1:-1]] for idxes in l1_idxes]
+    times_out = [[np.array(times[idx+1:idx+1+train_dec_len]) for idx in idxes[2:]] for idxes in l1_idxes]
 
     #print(len(c_marks_in), len(c_marks_out),
     #      len(c_gaps_in), len(c_gaps_out),
@@ -119,41 +133,48 @@ def create_train_dev_test_split(data, block_size, decoder_length):
     for idx in range(0, num_hrs, 4*block_size):
         print(idx, num_hrs)
         train_start_idx = block_begin_idxes[idx-1]+1 if idx>0 else 0
-        train_end_idx = block_begin_idxes[idx+(2*block_size-1)]-decoder_length-1
+        train_end_idx = block_begin_idxes[idx+(2*block_size-1)]#-decoder_length-1
         train_marks.append(marks[train_start_idx:train_end_idx])
         train_times.append(times[train_start_idx:train_end_idx])
         train_l1_idxes.append(l1_idxes[train_start_idx:train_end_idx])
 
-        dev_start_idx = block_begin_idxes[idx+(2*block_size-1)]+1-decoder_length-1
-        dev_end_idx = block_begin_idxes[idx+(3*block_size-1)]-decoder_length-1
+        dev_start_idx = block_begin_idxes[idx+(2*block_size-1)]+1#-decoder_length-1
+        dev_end_idx = block_begin_idxes[idx+(3*block_size-1)]#-decoder_length-1
         dev_marks.append(marks[dev_start_idx:dev_end_idx])
         dev_times.append(times[dev_start_idx:dev_end_idx])
         dev_l1_idxes.append(l1_idxes[dev_start_idx:dev_end_idx])
-        dev_begin_tss.append(times[dev_start_idx])
+        dev_begin_tss.append(get_hour_of_day_ts(times[dev_start_idx]) * 3600.)
 
-        test_start_idx = block_begin_idxes[idx+(3*block_size-1)]+1-decoder_length-1
+        test_start_idx = block_begin_idxes[idx+(3*block_size-1)]+1#-decoder_length-1
         test_end_idx = block_begin_idxes[idx+(4*block_size-1)]
         test_marks.append(marks[test_start_idx:test_end_idx])
         test_times.append(times[test_start_idx:test_end_idx])
         test_l1_idxes.append(l1_idxes[test_start_idx:test_end_idx])
-        test_begin_tss.append(times[test_start_idx])
+        test_begin_tss.append(get_hour_of_day_ts(times[test_start_idx]) * 3600.)
 
-    dev_begin_tss = np.expand_dims(np.array(dev_begin_tss), axis=-1)
-    test_begin_tss = np.expand_dims(np.array(test_begin_tss), axis=-1)
+    dev_begin_tss = tf.expand_dims(tf.constant(dev_begin_tss), axis=-1)
+    test_begin_tss = tf.expand_dims(tf.constant(test_begin_tss), axis=-1)
 
     return (train_marks, train_times, train_l1_idxes,
             dev_marks, dev_times, dev_l1_idxes,
             test_marks, test_times, test_l1_idxes,
             dev_begin_tss, test_begin_tss)
 
-def transpose(c_m_in, c_g_in, c_t_in, c_m_out, c_g_out, c_t_out, g_in, t_in, g_out, t_out):
-    print(c_m_in.shape, c_g_in.shape, c_t_in.shape,
-          c_m_out.shape, c_g_out.shape, c_t_out.shape,
+def transpose(c_m_in, c_g_in, c_t_in, c_sm_in,
+              c_m_out, c_g_out, c_t_out, c_sm_out,
+              g_in, t_in, sm_in,
+              g_out, t_out, sm_out):
+    print(c_m_in.shape, c_g_in.shape, c_t_in.shape, c_sm_in.shape,
+          c_m_out.shape, c_g_out.shape, c_t_out.shape, sm_in.shape,
           g_out.shape, t_out.shape)
-    return (tf.transpose(c_m_in), tf.transpose(c_g_in, [1, 0, 2]), tf.transpose(c_t_in, [1, 0, 2]),
-            tf.transpose(c_m_out), tf.transpose(c_g_out, [1, 0, 2]), tf.transpose(c_t_out, [1, 0, 2]),
+    return (tf.transpose(c_m_in), tf.transpose(c_g_in, [1, 0, 2]),
+            tf.transpose(c_t_in, [1, 0, 2]), tf.transpose(c_sm_in),
+            tf.transpose(c_m_out), tf.transpose(c_g_out, [1, 0, 2]),
+            tf.transpose(c_t_out, [1, 0, 2]), tf.transpose(c_sm_out),
             tf.transpose(g_in, [1, 0, 2, 3]), tf.transpose(t_in, [1, 0, 2, 3]),
-            tf.transpose(g_out, [1, 0, 2, 3]), tf.transpose(t_out, [1, 0, 2, 3]))
+            tf.transpose(sm_in),
+            tf.transpose(g_out, [1, 0, 2, 3]), tf.transpose(t_out, [1, 0, 2, 3]),
+            tf.transpose(sm_out))
 
 def get_padded_dataset(data):
     (c_marks_in, c_gaps_in, c_times_in,
@@ -230,6 +251,12 @@ def get_preprocessed_(c_data, data, block_size, decoder_length):
             = get_train_input_output((c_train_marks, c_train_times, c_train_l1_idxes),
                                      (marks, times),
                                      decoder_length)
+
+    c_train_seqmask_in, _ = reader_rmtpp.get_seq_mask(c_train_gaps_in)
+    c_train_seqmask_out, _ = reader_rmtpp.get_seq_mask(c_train_gaps_out)
+    train_seqmask_in, _ = reader_rmtpp.get_seq_mask(train_gaps_in)
+    train_seqmask_out, _ = reader_rmtpp.get_seq_mask(train_gaps_out)
+
     (train_marks, train_times,
      dev_marks, dev_times,
      test_marks, test_times,
@@ -247,24 +274,29 @@ def get_preprocessed_(c_data, data, block_size, decoder_length):
                                   c_train_marks_out, c_train_gaps_out, c_train_times_out,
                                   train_gaps_in, train_times_in,
                                   train_gaps_out, train_times_out))
-    (c_train_marks_in, c_train_gaps_in, c_train_times_in,
-     c_train_marks_out, c_train_gaps_out, c_train_times_out,
-     train_gaps_in, train_times_in,
-     train_gaps_out, train_times_out) \
-            = transpose(c_train_marks_in, c_train_gaps_in, c_train_times_in,
-                        c_train_marks_out, c_train_gaps_out, c_train_times_out,
-                        train_gaps_in, train_times_in,
-                        train_gaps_out, train_times_out)
+    (c_train_marks_in, c_train_gaps_in, c_train_times_in, c_train_seqmask_in,
+     c_train_marks_out, c_train_gaps_out, c_train_times_out, c_train_seqmask_out,
+     train_gaps_in, train_times_in, train_seqmask_in,
+     train_gaps_out, train_times_out, train_seqmask_out) \
+            = transpose(c_train_marks_in, c_train_gaps_in, c_train_times_in, c_train_seqmask_in,
+                        c_train_marks_out, c_train_gaps_out, c_train_times_out, c_train_seqmask_out,
+                        train_gaps_in, train_times_in, train_seqmask_in,
+                        train_gaps_out, train_times_out, train_seqmask_out)
+
     c_train_dataset = tf.data.Dataset.from_tensor_slices((c_train_marks_in,
                                                           c_train_gaps_in,
                                                           c_train_times_in,
+                                                          c_train_seqmask_in,
                                                           c_train_marks_out,
                                                           c_train_gaps_out,
                                                           c_train_times_out,
+                                                          c_train_seqmask_out,
                                                           train_gaps_in,
                                                           train_times_in,
+                                                          train_seqmask_in,
                                                           train_gaps_out,
-                                                          train_times_out))
+                                                          train_times_out,
+                                                          train_seqmask_out))
 
     (c_dev_marks_in, c_dev_gaps_in, c_dev_times_in,
      c_dev_marks_out, c_dev_gaps_out, c_dev_times_out,
@@ -281,35 +313,53 @@ def get_preprocessed_(c_data, data, block_size, decoder_length):
                                                      dev_marks, dev_times,
                                                      test_marks, test_times)
 
-    dev_marks_out = [d_m[-decoder_length:] for d_m in dev_marks_out]
-    dev_gaps_out = [d_g[-decoder_length:] for d_g in dev_gaps_out]
-    dev_times_out = [d_t[-decoder_length:] for d_t in dev_times_out]
-    test_marks_out = [t_m[-decoder_length:] for t_m in test_marks_out]
-    test_gaps_out = [d_g[-decoder_length:] for d_g in test_gaps_out]
-    test_times_out = [t_t[-decoder_length:] for t_t in test_times_out]
-    # TODO Create these according to given offset
+
+    c_dev_seqmask_in, _ = reader_rmtpp.get_seq_mask(c_dev_gaps_in)
+    c_dev_seqmask_out, _ = reader_rmtpp.get_seq_mask(c_dev_gaps_out)
+
+    #dev_marks_out = [d_m[-decoder_length:] for d_m in dev_marks_out]
+    #dev_gaps_out = [d_g[-decoder_length:] for d_g in dev_gaps_out]
+    #dev_times_out = [d_t[-decoder_length:] for d_t in dev_times_out]
+    #test_marks_out = [t_m[-decoder_length:] for t_m in test_marks_out]
+    #test_gaps_out = [d_g[-decoder_length:] for d_g in test_gaps_out]
+    #test_times_out = [t_t[-decoder_length:] for t_t in test_times_out]
 
     (c_dev_marks_in, c_dev_gaps_in, c_dev_times_in,
+     c_dev_marks_out, c_dev_gaps_out, c_dev_times_out,
+     c_dev_seq_lens) \
+            = reader_rmtpp.get_padded_dataset((c_dev_marks_in, c_dev_gaps_in, c_dev_times_in,
+                                               c_dev_marks_out, c_dev_gaps_out, c_dev_times_out))
+
+    (dev_marks_in, dev_gaps_in, dev_times_in,
      dev_marks_out, dev_gaps_out, dev_times_out,
-     c_dev_seq_lens, _, _, _, _) \
-            = get_padded_dataset((c_dev_marks_in, c_dev_gaps_in, c_dev_times_in,
-                                  dev_marks_out, dev_gaps_out, dev_times_out,
-                                  dev_gaps_in, dev_times_in,
-                                  dev_gaps_out, dev_times_out))
+     dev_seq_lens) \
+            = reader_rmtpp.get_padded_dataset((dev_marks_in, dev_gaps_in, dev_times_in,
+                                               dev_marks_out, dev_gaps_out, dev_times_out))
+
     c_dev_dataset = tf.data.Dataset.from_tensor_slices((c_dev_marks_in,
                                                         c_dev_gaps_in,
-                                                        c_dev_times_in))
+                                                        c_dev_times_in,
+                                                        c_dev_seqmask_in))
+
+    c_test_seqmask_in, _ = reader_rmtpp.get_seq_mask(c_test_gaps_in)
+    c_test_seqmask_out, _ = reader_rmtpp.get_seq_mask(c_test_gaps_out)
 
     (c_test_marks_in, c_test_gaps_in, c_test_times_in,
+     c_test_marks_out, c_test_gaps_out, c_test_times_out,
+     c_test_seq_lens) \
+            = reader_rmtpp.get_padded_dataset((c_test_marks_in, c_test_gaps_in, c_test_times_in,
+                                               c_test_marks_out, c_test_gaps_out, c_test_times_out))
+
+    (test_marks_in, test_gaps_in, test_times_in,
      test_marks_out, test_gaps_out, test_times_out,
-     c_test_seq_lens, _, _, _, _) \
-            = get_padded_dataset((c_test_marks_in, c_test_gaps_in, c_test_times_in,
-                                  test_marks_out, test_gaps_out, test_times_out,
-                                  test_gaps_in, test_gaps_out,
-                                  test_gaps_out, test_times_out))
+     test_seq_lens) \
+            = reader_rmtpp.get_padded_dataset((test_marks_in, test_gaps_in, test_times_in,
+                                               test_marks_out, test_gaps_out, test_times_out))
+
     c_test_dataset = tf.data.Dataset.from_tensor_slices((c_test_marks_in,
                                                          c_test_gaps_in,
-                                                         c_test_times_in))
+                                                         c_test_times_in,
+                                                         c_test_seqmask_in))
 
     return {
         'c_train_dataset': c_train_dataset,
