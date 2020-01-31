@@ -20,7 +20,7 @@ import reader_hierarchical
 import models
                     
 epochs = 100
-patience = 10
+patience = 20
 
 batch_size = 2
 BPTT = 20
@@ -210,16 +210,22 @@ for epoch in range(epochs):
 
             (dev_l2_marks_logits, dev_l2_gaps_pred, _, _,
              dev_l1_marks_logits, dev_l1_gaps_pred, _, _) \
-                    = model(c_dev_gaps_in)
+                    = model(None, l2_gaps=c_dev_gaps_in)
             #dev_marks_logits, dev_gaps_pred, _, _ = model(c_dev_gaps_in, c_dev_marks_in)
             if use_marks:
                 dev_marks_pred = tf.argmax(dev_marks_logits, axis=-1) + 1
                 dev_marks_pred_last = dev_marks_pred[:, -1:]
             else:
                 dev_marks_pred_last = None
+
+            last_c_dev_times_in = tf.gather(c_dev_times_in,
+                                            c_dev_seq_lens-1,
+                                            batch_dims=1)
+            print('Inputs shape:', c_dev_gaps_in.shape)
             dev_gaps_pred \
                     = models.simulate_hierarchicalrnn(model,
-                                                      dev_l2_gaps_pred[:, -1:],
+                                                      last_c_dev_times_in,
+                                                      dev_l2_gaps_pred,
                                                       dev_begin_tss,
                                                       dev_t_b_plus,
                                                       c_dev_t_b_plus,
@@ -229,19 +235,24 @@ for epoch in range(epochs):
         for test_step, (c_test_marks_in, c_test_gaps_in, c_test_times_in, c_test_seqmask_in) \
                 in enumerate(c_test_dataset):
 
+            print('Inputs shape:', c_test_gaps_in.shape)
             (test_l2_marks_logits, test_l2_gaps_pred, _, _,
              test_l1_marks_logits, test_l1_gaps_pred, _, _) \
-                    = model(c_test_gaps_in)
+                    = model(None, l2_gaps=c_test_gaps_in)
             #test_marks_logits, test_gaps_pred, _, _ = model(c_test_gaps_in, c_test_marks_in)
             if use_marks:
                 test_marks_pred = tf.argmax(test_marks_logits, axis=-1) + 1
                 test_marks_pred_last = test_marks_pred[:, -1:]
             else:
                 test_marks_pred_last = None
-            last_test_input_ts = tf.gather(c_test_times_in, c_test_seq_lens-1, batch_dims=1)
+
+            last_c_test_times_in = tf.gather(c_test_times_in,
+                                             c_test_seq_lens-1,
+                                             batch_dims=1)
             test_gaps_pred \
                     = models.simulate_hierarchicalrnn(model,
-                                                      test_l2_gaps_pred[:, -1:],
+                                                      last_c_test_times_in,
+                                                      test_l2_gaps_pred,
                                                       test_begin_tss,
                                                       test_t_b_plus,
                                                       c_test_t_b_plus,

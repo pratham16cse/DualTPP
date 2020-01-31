@@ -20,7 +20,7 @@ import reader_rmtpp
 import models
                     
 epochs = 100
-patience = 10
+patience = 20
 
 batch_size = 2
 BPTT = 20
@@ -45,11 +45,12 @@ dev_times_out = data['dev_times_out']
 dev_begin_tss = data['dev_begin_tss']
 dev_offsets = tf.random.uniform(shape=(num_sequences, 1)) * 3600. * block_size
 dev_t_b_plus = dev_begin_tss + dev_offsets
+print('\ndev_offsets')
 print(dev_offsets)
-print(tf.squeeze(dev_times_out, axis=-1).numpy().tolist()[0])
 dev_times_out_indices = [bisect_right(dev_t_out, t_b) for dev_t_out, t_b in zip(dev_times_out, dev_t_b_plus)]
 dev_times_out_indices = tf.expand_dims(dev_times_out_indices, axis=-1)
 dev_times_out_indices = (dev_times_out_indices-1) + tf.expand_dims(tf.range(decoder_length), axis=0)
+print('\ndev_times_out_indices')
 print(dev_times_out_indices)
 dev_gaps_out = tf.gather(dev_gaps_out, dev_times_out_indices, batch_dims=1)
 
@@ -57,10 +58,10 @@ dev_gaps_out = tf.gather(dev_gaps_out, dev_times_out_indices, batch_dims=1)
 dev_normalizer_d = data['dev_normalizer_d']
 dev_normalizer_a = data['dev_normalizer_a']
 dev_offsets_sec_norm = dev_offsets/dev_normalizer_d + dev_normalizer_a
-print('dev_t_b_plus before adding offset')
+print('\ndev_t_b_plus before adding offset')
 print(dev_t_b_plus)
 dev_t_b_plus = dev_begin_tss + dev_offsets_sec_norm
-print('dev_t_b_plus after adding offset')
+print('\ndev_t_b_plus after adding offset')
 print(dev_t_b_plus)
 
 # ----- End: Load dev_dataset ----- #
@@ -74,11 +75,13 @@ test_times_out = data['test_times_out']
 test_begin_tss = data['test_begin_tss']
 test_offsets = tf.random.uniform(shape=(num_sequences, 1)) * 3600. * block_size
 test_t_b_plus = test_begin_tss + test_offsets
+print('\ntest_offsets')
 print(test_offsets)
 print(tf.squeeze(test_times_out, axis=-1).numpy().tolist()[0])
 test_times_out_indices = [bisect_right(test_t_out, t_b) for test_t_out, t_b in zip(test_times_out, test_t_b_plus)]
 test_times_out_indices = tf.expand_dims(test_times_out_indices, axis=-1)
 test_times_out_indices = (test_times_out_indices-1) + tf.expand_dims(tf.range(decoder_length), axis=0)
+print('\ntest_times_out_indices')
 print(test_times_out_indices)
 test_gaps_out = tf.gather(test_gaps_out, test_times_out_indices, batch_dims=1)
 
@@ -86,10 +89,10 @@ test_gaps_out = tf.gather(test_gaps_out, test_times_out_indices, batch_dims=1)
 test_normalizer_d = data['test_normalizer_d']
 test_normalizer_a = data['test_normalizer_a']
 test_offsets_sec_norm = test_offsets/test_normalizer_d + test_normalizer_a
-print('test_t_b_plus before adding offset')
+print('\ntest_t_b_plus before adding offset')
 print(test_t_b_plus)
 test_t_b_plus = test_begin_tss + test_offsets_sec_norm
-print('test_t_b_plus after adding offset')
+print('\ntest_t_b_plus after adding offset')
 print(test_t_b_plus)
 
 # ----- End: Load test_dataset ----- #
@@ -201,31 +204,43 @@ for epoch in range(epochs):
                 dev_marks_pred_last = dev_marks_pred[:, -1:]
             else:
                 dev_marks_pred_last = None
+
+            last_dev_times_in = tf.gather(dev_times_in,
+                                          dev_seq_lens-1,
+                                          batch_dims=1)
             dev_marks_logits, dev_gaps_pred \
-                    = models.simulate_rmtpp(model,
+                    = models.simulate_rmtpp_tb_compare(model,
+                                            last_dev_times_in,
                                             dev_gaps_pred[:, -1:],
                                             dev_begin_tss,
                                             dev_t_b_plus,
                                             decoder_length,
-                                            marks=dev_marks_pred_last)
+                                            marks_in=dev_marks_pred_last)
         model.rnn_layer.reset_states()
 
         for test_step, (test_marks_in, test_gaps_in, test_times_in, test_seqmask_in) \
                 in enumerate(test_dataset):
+            # Sample offset for test and test
+
+
             test_marks_logits, test_gaps_pred, _, _ = model(test_gaps_in, test_marks_in)
             if use_marks:
                 test_marks_pred = tf.argmax(test_marks_logits, axis=-1) + 1
                 test_marks_pred_last = test_marks_pred[:, -1:]
             else:
                 test_marks_pred_last = None
-            last_test_input_ts = tf.gather(test_times_in, test_seq_lens-1, batch_dims=1)
+
+            last_test_times_in = tf.gather(test_times_in,
+                                          test_seq_lens-1,
+                                          batch_dims=1)
             test_marks_logits, test_gaps_pred \
-                    = models.simulate_rmtpp(model,
+                    = models.simulate_rmtpp_tb_compare(model,
+                                            last_test_times_in,
                                             test_gaps_pred[:, -1:],
                                             test_begin_tss,
                                             test_t_b_plus,
                                             decoder_length,
-                                            marks=test_marks_pred_last)
+                                            marks_in=test_marks_pred_last)
         model.rnn_layer.reset_states()
 
         #print(dev_marks_out, 'dev_marks_out')
