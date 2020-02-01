@@ -467,6 +467,7 @@ def get_preprocessed_(c_data, data, block_size, decoder_length):
         'test_begin_tss': test_begin_tss,
         'num_categories': num_categories,
         'num_sequences': num_sequences,
+        'dev_seq_lens': dev_seq_lens,
         'c_train_seq_lens': c_train_seq_lens,
         'c_dev_seq_lens': c_dev_seq_lens,
         'c_test_seq_lens': c_test_seq_lens,
