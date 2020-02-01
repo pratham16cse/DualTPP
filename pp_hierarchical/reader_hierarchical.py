@@ -445,6 +445,7 @@ def get_preprocessed_(c_data, data, block_size, decoder_length):
         'c_test_dataset': c_test_dataset,
         'dev_marks_out': dev_marks_out,
         'dev_gaps_out': dev_gaps_out,
+        'dev_gaps_in': dev_gaps_in,
         'dev_times_out': dev_times_out,
         'test_marks_out': test_marks_out,
         'test_gaps_out': test_gaps_out,
