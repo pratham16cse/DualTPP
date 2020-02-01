@@ -146,6 +146,10 @@ model = models.RMTPP(num_categories, 8, 32, use_marks=use_marks,
 
 optimizer = keras.optimizers.Adam(learning_rate=1e-2)
 
+SAVE_DIR = './plots/rmtpp/'
+os.makedirs(SAVE_DIR, exist_ok=True)
+cntr = 0
+cntr = len(next(os.walk(SAVE_DIR))[1])
 # Iterate over epochs.
 for epoch in range(epochs):
     print('Start of epoch %d' % (epoch,))
@@ -290,12 +294,9 @@ for epoch in range(epochs):
         true_gaps_plot = list(inp_tru_gaps) + list(true_gaps_plot)
         pred_gaps_plot = list(inp_tru_gaps) + list(pred_gaps_plot)
 
-        SAVE_DIR = './plots/'
-        plot_dir = os.path.join(SAVE_DIR,'dev_plots')
-        plot_hparam_dir = 'rmtpp'
-        plot_dir = os.path.join(plot_dir, plot_hparam_dir)
-
-        if not os.path.isdir(plot_dir): os.mkdir(plot_dir)
+        plot_dir = os.path.join(SAVE_DIR,'dev_plots_'+str(cntr))
+        # if not os.path.isdir(plot_dir): os.mkdir(plot_dir)
+        os.makedirs(plot_dir, exist_ok=True)
 
         name_plot = os.path.join(plot_dir, 'epoch_' + str(epoch))
 
