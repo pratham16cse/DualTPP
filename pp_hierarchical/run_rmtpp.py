@@ -315,12 +315,17 @@ for epoch in range(epochs):
         print('\ndev_gaps_out')
         print(tf.squeeze(dev_gaps_out[:, 1:], axis=-1))
 
-        dev_gaps_in_unnorm = data['dev_gaps_in'][:, -20:]
+        end_of_input_seq = dev_seq_lens - 20
+        dev_gaps_in_unnorm = data['dev_gaps_in'].numpy()
+        dev_gaps_in_unnorm_lst = list()
+        for x in range(len(dev_gaps_in_unnorm)):
+            dev_gaps_in_unnorm_lst.append(dev_gaps_in_unnorm[x, end_of_input_seq[x][0]:dev_seq_lens[x][0]])
+        dev_gaps_in_unnorm = np.array(dev_gaps_in_unnorm_lst)
 
         idx = 1
         true_gaps_plot = dev_gaps_out.numpy()[idx]
         pred_gaps_plot = dev_gaps_pred.numpy()[idx]
-        inp_tru_gaps = dev_gaps_in_unnorm.numpy()[idx]
+        inp_tru_gaps = dev_gaps_in_unnorm[idx]
 
         true_gaps_plot = list(inp_tru_gaps) + list(true_gaps_plot)
         pred_gaps_plot = list(inp_tru_gaps) + list(pred_gaps_plot)
@@ -363,7 +368,7 @@ for epoch in range(epochs):
 
             best_true_gaps_plot = dev_gaps_out.numpy()
             best_pred_gaps_plot = dev_gaps_pred.numpy()
-            best_inp_tru_gaps = dev_gaps_in_unnorm.numpy()
+            best_inp_tru_gaps = dev_gaps_in_unnorm
 
         print('Dev mark acc and gap err over epoch: %s, %s' \
                 % (float(dev_mark_acc), float(dev_gap_err)))
@@ -392,9 +397,6 @@ for idx in range(len(best_inp_tru_gaps)):
     true_gaps_plot = list(best_inp_tru_gaps[idx]) + list(best_true_gaps_plot[idx])
     pred_gaps_plot = list(best_inp_tru_gaps[idx]) + list(best_pred_gaps_plot[idx])
     assert len(true_gaps_plot) == len(pred_gaps_plot)
-
-    print(true_gaps_plot)
-    print(len(true_gaps_plot))
 
     fig_pred_gaps = plt.figure()
     ax1 = fig_pred_gaps.add_subplot(111)
