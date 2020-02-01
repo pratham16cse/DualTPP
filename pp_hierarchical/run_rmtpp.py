@@ -4,6 +4,7 @@ import collections
 import matplotlib.pyplot as plt
 import numpy as np
 from bisect import bisect_right
+import os, sys
 
 import tensorflow as tf
 from tensorflow import keras
@@ -36,7 +37,17 @@ num_sequences = data['num_sequences']
 
 train_dataset = data['train_dataset']
 
+best_dev_gap_error = np.inf
+best_test_gap_error = np.inf
+best_dev_mark_acc = np.inf
+best_test_mark_acc = np.inf
+
 # ----- Start: Load dev_dataset ----- #
+# dynamic_block_size = data['dev_normalizer_d']
+# dynamic_block_size = round(dynamic_block_size.numpy().tolist()[0][0]//6)
+# dynamic_block_size = max(1, dynamic_block_size)
+# print('block_size', dynamic_block_size)
+
 dev_dataset = data['dev_dataset']
 dev_seq_lens = data['dev_seq_lens']
 dev_marks_out = data['dev_marks_out']
@@ -58,11 +69,15 @@ dev_gaps_out = tf.gather(dev_gaps_out, dev_times_out_indices, batch_dims=1)
 dev_normalizer_d = data['dev_normalizer_d']
 dev_normalizer_a = data['dev_normalizer_a']
 dev_offsets_sec_norm = dev_offsets/dev_normalizer_d + dev_normalizer_a
+
+print('dev_normalizer_d', dev_normalizer_d)
+print('dev_offsets', dev_offsets.numpy().tolist())
+print('dev_offsets_sec_norm', dev_offsets_sec_norm.numpy().tolist())
 print('\ndev_t_b_plus before adding offset')
-print(dev_t_b_plus)
+print(dev_begin_tss.numpy().tolist())
 dev_t_b_plus = dev_begin_tss + dev_offsets_sec_norm
 print('\ndev_t_b_plus after adding offset')
-print(dev_t_b_plus)
+print(dev_t_b_plus.numpy().tolist())
 
 # ----- End: Load dev_dataset ----- #
 
@@ -265,6 +280,41 @@ for epoch in range(epochs):
         print('\ndev_gaps_out')
         print(tf.squeeze(dev_gaps_out[:, 1:], axis=-1))
 
+        dev_gaps_in_unnorm = data['dev_gaps_in'][:, -20:]
+
+        idx = 1
+        true_gaps_plot = dev_gaps_out.numpy()[idx]
+        pred_gaps_plot = dev_gaps_pred.numpy()[idx]
+        inp_tru_gaps = dev_gaps_in_unnorm.numpy()[idx]
+
+        true_gaps_plot = list(inp_tru_gaps) + list(true_gaps_plot)
+        pred_gaps_plot = list(inp_tru_gaps) + list(pred_gaps_plot)
+
+        SAVE_DIR = './plots/'
+        plot_dir = os.path.join(SAVE_DIR,'dev_plots')
+        plot_hparam_dir = 'rmtpp'
+        plot_dir = os.path.join(plot_dir, plot_hparam_dir)
+
+        if not os.path.isdir(plot_dir): os.mkdir(plot_dir)
+
+        name_plot = os.path.join(plot_dir, 'epoch_' + str(epoch))
+
+        assert len(true_gaps_plot) == len(pred_gaps_plot)
+
+        fig_pred_gaps = plt.figure()
+        ax1 = fig_pred_gaps.add_subplot(111)
+        ax1.scatter(list(range(1, len(pred_gaps_plot)+1)), pred_gaps_plot, c='r', label='Pred gaps')
+        ax1.scatter(list(range(1, len(true_gaps_plot)+1)), true_gaps_plot, c='b', label='True gaps')
+        ax1.plot([BPTT-0.5, BPTT-0.5],
+                 [0, max(np.concatenate([true_gaps_plot, pred_gaps_plot]))],
+                 'g-')
+        ax1.set_xlabel('Index')
+        ax1.set_ylabel('Gaps')
+        plt.grid()
+
+        plt.savefig(name_plot+'.png')
+        plt.close()
+
         dev_gap_metric(dev_gaps_out[:, 1:], dev_gaps_pred[:, 1:])
         test_gap_metric(test_gaps_out[:, 1:], test_gaps_pred[:, 1:])
 
@@ -272,9 +322,21 @@ for epoch in range(epochs):
         test_gap_err = test_gap_metric.result()
         dev_gap_metric.reset_states()
         test_gap_metric.reset_states()
+
+        if dev_gap_err < best_dev_gap_error:
+            best_dev_gap_error = dev_gap_err
+            best_test_gap_error = test_gap_err
+            best_dev_mark_acc = dev_mark_acc
+            best_test_mark_acc = test_mark_acc
+
         print('Dev mark acc and gap err over epoch: %s, %s' \
                 % (float(dev_mark_acc), float(dev_gap_err)))
         print('Test mark acc and gap err over epoch: %s, %s' \
                 % (float(test_mark_acc), float(test_gap_err)))
 
         model.rnn_layer.reset_states()
+
+print('Best Dev mark acc and gap err over epoch: %s, %s' \
+        % (float(best_dev_mark_acc), float(best_dev_gap_error)))
+print('Best Test mark acc and gap err over epoch: %s, %s' \
+        % (float(best_test_mark_acc), float(best_test_gap_error)))

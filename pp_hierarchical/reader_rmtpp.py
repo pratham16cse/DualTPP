@@ -211,6 +211,9 @@ def get_padded_dataset(data):
     gaps_out = pad_sequences(gaps_out, padding='post')
     times_out = pad_sequences(times_out, padding='post')
 
+    print('seq_lens', seq_lens)
+    print('times_in.shape', times_in.shape)
+
     gaps_in = tf.expand_dims(tf.cast(gaps_in, tf.float32), axis=-1)
     times_in = tf.expand_dims(tf.cast(times_in, tf.float32), axis=-1)
     gaps_out = tf.expand_dims(tf.cast(gaps_out, tf.float32), axis=-1)
@@ -365,6 +368,7 @@ def get_preprocessed_(data, block_size, decoder_length):
         'dev_dataset': dev_dataset,
         'test_dataset': test_dataset,
         'dev_marks_out': dev_marks_out,
+        'dev_gaps_in': dev_gaps_in,
         'dev_gaps_out': dev_gaps_out,
         'dev_times_out': dev_times_out,
         'test_marks_out': test_marks_out,
