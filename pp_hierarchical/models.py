@@ -74,12 +74,12 @@ class RMTPP(tf.keras.Model):
             self.WT_layer = layers.Dense(1, activation=tf.nn.softplus, name='WT_layer')
             self.gaps_output_layer = InverseTransformSampling()
 
-    def call(self, gaps, marks=None, initial_state=None):
+    def call(self, gaps, mask=None, marks=None, initial_state=None):
         if self.use_marks:
             self.marks_embd = self.embedding_layer(marks)
-            mask = self.embedding_layer.compute_mask(marks)
-        else:
-            mask = tf.not_equal(gaps, tf.zeros_like(gaps))
+        #    mask = self.embedding_layer.compute_mask(marks)
+        #else:
+        #    mask = tf.not_equal(gaps, tf.zeros_like(gaps))
         self.gaps = gaps
         if self.use_marks:
             rnn_inputs = tf.concat([self.marks_embd, self.gaps], axis=-1)
@@ -100,6 +100,14 @@ class RMTPP(tf.keras.Model):
         else:
             self.gaps_pred = tf.nn.softplus(self.D)
             self.WT = tf.zeros_like(self.D)
+
+        if mask is not None:
+            if self.use_marks:
+                self.marks_logits = self.marks_logits * mask
+            self.gaps_pred = self.gaps_pred * tf.expand_dims(mask, axis=-1)
+            self.D = self.D * tf.expand_dims(mask, axis=-1)
+            if self.use_intensity:
+                self.WT = self.WT * mask
 
         return self.marks_logits, self.gaps_pred, self.D, self.WT
 
@@ -128,7 +136,9 @@ class HierarchicalRNN(tf.keras.Model):
                                                activation=tf.tanh,
                                                name='state_transform_l2')
 
-    def call(self, inputs, l2_gaps=None, l1_gaps=None, l2_marks=None, l1_marks=None):
+    def call(self, inputs, l2_gaps=None, l1_gaps=None,
+             l2_mask=None, l1_mask=None,
+             l2_marks=None, l1_marks=None):
         if self.use_marks:
             self.l1_marks_embd = self.l1_rnn.embedding_layer(l1_marks)
         #TODO Feed mask externally
@@ -143,7 +153,7 @@ class HierarchicalRNN(tf.keras.Model):
 
         if l2_gaps is not None:
             self.l2_marks_logits, self.l2_gaps_pred, self.l2_D, self.l2_WT \
-                     = self.l2_rnn(l2_gaps, l2_marks)
+                     = self.l2_rnn(l2_gaps, mask=l2_mask, marks=l2_marks)
 
         self.state_transform_1 = self.state_transform_l1(self.l2_rnn.hidden_states)
         self.state_transformed = self.state_transform_l2(self.state_transform_1)

@@ -38,6 +38,10 @@ c_train_dataset = data['c_train_dataset']
 # ----- Start: Load dev_dataset ----- #
 c_dev_dataset = data['c_dev_dataset']
 c_dev_seq_lens = data['c_dev_seq_lens']
+c_dev_seq_lens_in = tf.cast(tf.reduce_sum(data['c_dev_seqmask_in'], axis=-1), tf.int32)
+c_dev_seq_lens_out = tf.cast(tf.reduce_sum(data['c_dev_seqmask_out'], axis=-1), tf.int32)
+dev_seq_lens_in = tf.cast(tf.reduce_sum(data['dev_seqmask_in'], axis=-1), tf.int32)
+dev_seq_lens_out = tf.cast(tf.reduce_sum(data['dev_seqmask_out'], axis=-1), tf.int32)
 dev_marks_out = data['dev_marks_out']
 dev_gaps_out = data['dev_gaps_out']
 dev_times_out = data['dev_times_out']
@@ -48,10 +52,13 @@ print(dev_offsets)
 print(tf.squeeze(dev_times_out, axis=-1).numpy().tolist()[0])
 dev_times_out_indices = [bisect_right(dev_t_out, t_b) for dev_t_out, t_b \
                             in zip(dev_times_out, dev_t_b_plus)]
+dev_times_out_indices = tf.minimum(dev_times_out_indices, dev_seq_lens_out-decoder_length+1)
+print('\ndev_seq_lens_out', dev_seq_lens_out)
 dev_times_out_indices = tf.expand_dims(dev_times_out_indices, axis=-1)
 dev_times_out_indices \
         = (dev_times_out_indices-1) \
         + tf.expand_dims(tf.range(decoder_length), axis=0)
+print('\ndev_times_out_indices')
 print(dev_times_out_indices)
 dev_gaps_out = tf.gather(dev_gaps_out, dev_times_out_indices, batch_dims=1)
 
@@ -71,6 +78,10 @@ dev_t_b_plus = dev_begin_tss + dev_offsets_sec_norm
 # ----- Start: Load test_dataset ----- #
 c_test_dataset = data['c_test_dataset']
 c_test_seq_lens = data['c_test_seq_lens']
+c_test_seq_lens_in = tf.cast(tf.reduce_sum(data['c_test_seqmask_in'], axis=-1), tf.int32)
+c_test_seq_lens_out = tf.cast(tf.reduce_sum(data['c_test_seqmask_out'], axis=-1), tf.int32)
+test_seq_lens_in = tf.cast(tf.reduce_sum(data['test_seqmask_in'], axis=-1), tf.int32)
+test_seq_lens_out = tf.cast(tf.reduce_sum(data['test_seqmask_out'], axis=-1), tf.int32)
 test_marks_out = data['test_marks_out']
 test_gaps_out = data['test_gaps_out']
 test_times_out = data['test_times_out']
@@ -81,10 +92,13 @@ print(test_offsets)
 print(tf.squeeze(test_times_out, axis=-1).numpy().tolist()[0])
 test_times_out_indices = [bisect_right(test_t_out, t_b) for test_t_out, t_b \
                             in zip(test_times_out, test_t_b_plus)]
+test_times_out_indices = tf.minimum(test_times_out_indices, test_seq_lens_out-decoder_length+1)
+print('\ntest_seq_lens_out', test_seq_lens_out)
 test_times_out_indices = tf.expand_dims(test_times_out_indices, axis=-1)
 test_times_out_indices \
         = (test_times_out_indices-1) \
         + tf.expand_dims(tf.range(decoder_length), axis=0)
+print('\ntest_times_out_indices')
 print(test_times_out_indices)
 test_gaps_out = tf.gather(test_gaps_out, test_times_out_indices, batch_dims=1)
 
@@ -152,6 +166,7 @@ for epoch in range(epochs):
              l1_marks_logits, l1_gaps_pred, l1_D, l1_WT) \
                     = model(None, l2_gaps=c_gaps_batch_in,
                             l1_gaps=gaps_batch_in,
+                            l2_mask=c_seqmask_batch_in,
                             l2_marks=c_marks_batch_in)
             #marks_pred = tf.argmax(marks_logits, axis=-1) + 1
 
@@ -210,7 +225,7 @@ for epoch in range(epochs):
 
             (dev_l2_marks_logits, dev_l2_gaps_pred, _, _,
              dev_l1_marks_logits, dev_l1_gaps_pred, _, _) \
-                    = model(None, l2_gaps=c_dev_gaps_in)
+                    = model(None, l2_gaps=c_dev_gaps_in, l2_mask=c_dev_seqmask_in)
             #dev_marks_logits, dev_gaps_pred, _, _ = model(c_dev_gaps_in, c_dev_marks_in)
             if use_marks:
                 dev_marks_pred = tf.argmax(dev_marks_logits, axis=-1) + 1
@@ -238,7 +253,7 @@ for epoch in range(epochs):
             print('Inputs shape:', c_test_gaps_in.shape)
             (test_l2_marks_logits, test_l2_gaps_pred, _, _,
              test_l1_marks_logits, test_l1_gaps_pred, _, _) \
-                    = model(None, l2_gaps=c_test_gaps_in)
+                    = model(None, l2_gaps=c_test_gaps_in, l2_mask=c_test_seqmask_in)
             #test_marks_logits, test_gaps_pred, _, _ = model(c_test_gaps_in, c_test_marks_in)
             if use_marks:
                 test_marks_pred = tf.argmax(test_marks_logits, axis=-1) + 1
