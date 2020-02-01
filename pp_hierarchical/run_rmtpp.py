@@ -20,7 +20,7 @@ import reader_rmtpp
 
 import models
                     
-epochs = 100
+epochs = 50
 patience = 20
 
 batch_size = 2
@@ -83,6 +83,7 @@ dev_gaps_out = tf.gather(dev_gaps_out, dev_times_out_indices, batch_dims=1)
 # ----- Normalize dev_offsets and dev_t_b_plus ----- #
 dev_normalizer_d = data['dev_normalizer_d']
 dev_normalizer_a = data['dev_normalizer_a']
+print(dev_offsets, dev_normalizer_d)
 dev_offsets_sec_norm = dev_offsets/dev_normalizer_d + dev_normalizer_a
 dev_t_b_plus = dev_begin_tss + dev_offsets_sec_norm
 print('\n dev_begin_tss')
@@ -244,6 +245,7 @@ for epoch in range(epochs):
             # Sample offset for dev and test
 
 
+            print(dev_gaps_in.shape, dev_seqmask_in.shape, dev_marks_in.shape)
             dev_marks_logits, dev_gaps_pred, _, _ = model(dev_gaps_in,
                                                           dev_seqmask_in,
                                                           dev_marks_in)

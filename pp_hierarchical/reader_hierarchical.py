@@ -141,7 +141,7 @@ def get_dev_test_input_output(train_marks, train_times,
              test_marks_out, test_gaps_out, test_times_out)
 
 def get_train_input_output(c_data, data, dec_len):
-    train_dec_len = dec_len #TODO Fix appropriate train_dec_len
+    train_dec_len = 3*dec_len #TODO Fix appropriate train_dec_len
     c_marks, c_times, l1_idxes = c_data
     marks, times = data
 
@@ -205,6 +205,18 @@ def create_train_dev_test_split(data, block_size, decoder_length):
         test_times.append(times[test_start_idx:test_end_idx])
         test_l1_idxes.append(l1_idxes[test_start_idx:test_end_idx])
         test_begin_tss.append(get_hour_of_day_ts(times[test_start_idx]) * 3600.)
+
+    train_marks = train_marks * 5
+    train_times = train_times * 5
+    train_l1_idxes = train_l1_idxes * 5
+    dev_marks = dev_marks * 5
+    dev_times = dev_times * 5
+    dev_l1_idxes = dev_l1_idxes * 5
+    test_marks = test_marks * 5
+    test_times = test_times * 5
+    test_l1_idxes = test_l1_idxes * 5
+    dev_begin_tss = dev_begin_tss * 5
+    test_begin_tss = test_begin_tss * 5
 
     dev_begin_tss = tf.expand_dims(tf.constant(dev_begin_tss), axis=-1)
     test_begin_tss = tf.expand_dims(tf.constant(test_begin_tss), axis=-1)
@@ -305,6 +317,7 @@ def get_preprocessed_(c_data, data, block_size, decoder_length):
             = get_train_input_output((c_train_marks, c_train_times, c_train_l1_idxes),
                                      (marks, times),
                                      decoder_length)
+    print(train_gaps_in)
 
     c_train_seqmask_in, _ = reader_rmtpp.get_seq_mask(c_train_gaps_in)
     c_train_seqmask_out, _ = reader_rmtpp.get_seq_mask(c_train_gaps_out)
@@ -500,7 +513,7 @@ def get_preprocessed_(c_data, data, block_size, decoder_length):
         }
 
 def get_preprocessed_data(block_size, decoder_length):
-    marks, times = read_data('testdata.txt')
+    marks, times = read_data('sin.txt')
     c_marks, c_times, level_1_idxes = get_compound_events((marks, times), K=10)
     #marks, times = split_data((marks, times), 7)
     

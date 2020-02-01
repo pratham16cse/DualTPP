@@ -20,7 +20,7 @@ import reader_hierarchical
 
 import models
                     
-epochs = 100
+epochs = 50
 patience = 20
 
 batch_size = 2

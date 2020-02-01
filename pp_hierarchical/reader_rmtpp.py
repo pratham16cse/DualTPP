@@ -190,6 +190,14 @@ def create_train_dev_test_split(data, block_size, decoder_length):
         test_begin_tss.append(get_hour_of_day_ts(times[test_start_idx]) * 3600.)
         print(idx, 'test length:', len(times[test_start_idx:test_end_idx]))
 
+    train_marks = train_marks * 5
+    train_times = train_times * 5
+    dev_marks = dev_marks * 5
+    dev_times = dev_times * 5
+    test_marks = test_marks * 5
+    test_times = test_times * 5
+    dev_begin_tss = dev_begin_tss * 5
+    test_begin_tss = test_begin_tss * 5
 
     dev_begin_tss = tf.expand_dims(tf.constant(dev_begin_tss), axis=-1)
     test_begin_tss = tf.expand_dims(tf.constant(test_begin_tss), axis=-1)
@@ -410,7 +418,7 @@ def get_preprocessed_(data, block_size, decoder_length):
         }
 
 def get_preprocessed_data(block_size, decoder_length):
-    marks, times = read_data('testdata.txt')
+    marks, times = read_data('sin.txt')
     # '../pp_seq2seq/data/DataSetForSeq2SeqPP/Delhi.txt'
     #marks, times = split_data((marks, times), 7)
     
