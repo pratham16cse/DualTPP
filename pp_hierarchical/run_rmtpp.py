@@ -50,17 +50,32 @@ best_test_mark_acc = np.inf
 
 dev_dataset = data['dev_dataset']
 dev_seq_lens = data['dev_seq_lens']
+dev_seq_lens_in = tf.cast(tf.reduce_sum(data['dev_seqmask_in'], axis=-1), tf.int32)
+dev_seq_lens_out = tf.cast(tf.reduce_sum(data['dev_seqmask_out'], axis=-1), tf.int32)
 dev_marks_out = data['dev_marks_out']
 dev_gaps_out = data['dev_gaps_out']
 dev_times_out = data['dev_times_out']
 dev_begin_tss = data['dev_begin_tss']
 dev_offsets = tf.random.uniform(shape=(num_sequences, 1)) * 3600. * block_size
 dev_t_b_plus = dev_begin_tss + dev_offsets
-print('\ndev_offsets')
-print(dev_offsets)
+
+#print('\n dev_begin_tss')
+#for d in dev_begin_tss.numpy().tolist():
+#    print('{0:.15f}'.format(d[0]))
+#print('\n dev_offsets')
+#for d in dev_offsets.numpy().tolist():
+#    print('{0:.15f}'.format(d[0]))
+#print('\n dev_t_b_plus')
+#for d in dev_t_b_plus.numpy().tolist():
+#    print('{0:.15f}'.format(d[0]))
+
 dev_times_out_indices = [bisect_right(dev_t_out, t_b) for dev_t_out, t_b in zip(dev_times_out, dev_t_b_plus)]
+dev_times_out_indices = tf.minimum(dev_times_out_indices, dev_seq_lens_out-decoder_length+1)
 dev_times_out_indices = tf.expand_dims(dev_times_out_indices, axis=-1)
-dev_times_out_indices = (dev_times_out_indices-1) + tf.expand_dims(tf.range(decoder_length), axis=0)
+print('\ndev_seq_lens_out', dev_seq_lens_out)
+dev_times_out_indices \
+        = (dev_times_out_indices-1) \
+        + tf.expand_dims(tf.range(decoder_length), axis=0)
 print('\ndev_times_out_indices')
 print(dev_times_out_indices)
 dev_gaps_out = tf.gather(dev_gaps_out, dev_times_out_indices, batch_dims=1)
@@ -69,32 +84,42 @@ dev_gaps_out = tf.gather(dev_gaps_out, dev_times_out_indices, batch_dims=1)
 dev_normalizer_d = data['dev_normalizer_d']
 dev_normalizer_a = data['dev_normalizer_a']
 dev_offsets_sec_norm = dev_offsets/dev_normalizer_d + dev_normalizer_a
-
-print('dev_normalizer_d', dev_normalizer_d)
-print('dev_offsets', dev_offsets.numpy().tolist())
-print('dev_offsets_sec_norm', dev_offsets_sec_norm.numpy().tolist())
-print('\ndev_t_b_plus before adding offset')
-print(dev_begin_tss.numpy().tolist())
 dev_t_b_plus = dev_begin_tss + dev_offsets_sec_norm
-print('\ndev_t_b_plus after adding offset')
-print(dev_t_b_plus.numpy().tolist())
+print('\n dev_begin_tss')
+print(dev_begin_tss)
+print('\n dev_offsets_sec_norm')
+print(dev_offsets_sec_norm)
+print('\n dev_t_b_plus')
+print(dev_t_b_plus)
 
 # ----- End: Load dev_dataset ----- #
 
 # ----- Start: Load test_dataset ----- #
 test_dataset = data['test_dataset']
 test_seq_lens = data['test_seq_lens']
+test_seq_lens_in = tf.cast(tf.reduce_sum(data['test_seqmask_in'], axis=-1), tf.int32)
+test_seq_lens_out = tf.cast(tf.reduce_sum(data['test_seqmask_out'], axis=-1), tf.int32)
 test_marks_out = data['test_marks_out']
 test_gaps_out = data['test_gaps_out']
 test_times_out = data['test_times_out']
 test_begin_tss = data['test_begin_tss']
 test_offsets = tf.random.uniform(shape=(num_sequences, 1)) * 3600. * block_size
 test_t_b_plus = test_begin_tss + test_offsets
-print('\ntest_offsets')
-print(test_offsets)
-print(tf.squeeze(test_times_out, axis=-1).numpy().tolist()[0])
+
+#print('\n test_begin_tss')
+#for d in test_begin_tss.numpy().tolist():
+#    print('{0:.15f}'.format(d[0]))
+#print('\n test_offsets')
+#for d in test_offsets.numpy().tolist():
+#    print('{0:.15f}'.format(d[0]))
+#print('\n test_t_b_plus')
+#for d in test_t_b_plus.numpy().tolist():
+#    print('{0:.15f}'.format(d[0]))
+
 test_times_out_indices = [bisect_right(test_t_out, t_b) for test_t_out, t_b in zip(test_times_out, test_t_b_plus)]
+test_times_out_indices = tf.minimum(test_times_out_indices, test_seq_lens_out-decoder_length+1)
 test_times_out_indices = tf.expand_dims(test_times_out_indices, axis=-1)
+print('\ntest_seq_lens_out', test_seq_lens_out)
 test_times_out_indices = (test_times_out_indices-1) + tf.expand_dims(tf.range(decoder_length), axis=0)
 print('\ntest_times_out_indices')
 print(test_times_out_indices)
@@ -104,10 +129,12 @@ test_gaps_out = tf.gather(test_gaps_out, test_times_out_indices, batch_dims=1)
 test_normalizer_d = data['test_normalizer_d']
 test_normalizer_a = data['test_normalizer_a']
 test_offsets_sec_norm = test_offsets/test_normalizer_d + test_normalizer_a
-print('\ntest_t_b_plus before adding offset')
-print(test_t_b_plus)
 test_t_b_plus = test_begin_tss + test_offsets_sec_norm
-print('\ntest_t_b_plus after adding offset')
+print('\n test_begin_tss')
+print(test_begin_tss)
+print('\n test_offsets_sec_norm')
+print(test_offsets_sec_norm)
+print('\n test_t_b_plus')
 print(test_t_b_plus)
 
 # ----- End: Load test_dataset ----- #
@@ -161,7 +188,7 @@ for epoch in range(epochs):
 
         with tf.GradientTape() as tape:
 
-            marks_logits, gaps_pred, D, WT = model(gaps_batch_in, marks_batch_in)
+            marks_logits, gaps_pred, D, WT = model(gaps_batch_in, seqmask_batch_in, marks_batch_in)
             #marks_pred = tf.argmax(marks_logits, axis=-1) + 1
 
             #print(step, marks_batch_in.shape, gaps_batch_in.shape)
@@ -217,7 +244,9 @@ for epoch in range(epochs):
             # Sample offset for dev and test
 
 
-            dev_marks_logits, dev_gaps_pred, _, _ = model(dev_gaps_in, dev_marks_in)
+            dev_marks_logits, dev_gaps_pred, _, _ = model(dev_gaps_in,
+                                                          dev_seqmask_in,
+                                                          dev_marks_in)
             if use_marks:
                 dev_marks_pred = tf.argmax(dev_marks_logits, axis=-1) + 1
                 dev_marks_pred_last = dev_marks_pred[:, -1:]
@@ -242,7 +271,9 @@ for epoch in range(epochs):
             # Sample offset for test and test
 
 
-            test_marks_logits, test_gaps_pred, _, _ = model(test_gaps_in, test_marks_in)
+            test_marks_logits, test_gaps_pred, _, _ = model(test_gaps_in,
+                                                            test_seqmask_in,
+                                                            test_marks_in)
             if use_marks:
                 test_marks_pred = tf.argmax(test_marks_logits, axis=-1) + 1
                 test_marks_pred_last = test_marks_pred[:, -1:]

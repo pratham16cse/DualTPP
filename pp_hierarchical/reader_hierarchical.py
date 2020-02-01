@@ -379,6 +379,8 @@ def get_preprocessed_(c_data, data, block_size, decoder_length):
 
     c_dev_seqmask_in, _ = reader_rmtpp.get_seq_mask(c_dev_gaps_in)
     c_dev_seqmask_out, _ = reader_rmtpp.get_seq_mask(c_dev_gaps_out)
+    dev_seqmask_in, _ = reader_rmtpp.get_seq_mask(dev_gaps_in)
+    dev_seqmask_out, _ = reader_rmtpp.get_seq_mask(dev_gaps_out)
 
     (c_dev_marks_in, c_dev_gaps_in, c_dev_times_in,
      c_dev_marks_out, c_dev_gaps_out, c_dev_times_out,
@@ -408,6 +410,8 @@ def get_preprocessed_(c_data, data, block_size, decoder_length):
 
     c_test_seqmask_in, _ = reader_rmtpp.get_seq_mask(c_test_gaps_in)
     c_test_seqmask_out, _ = reader_rmtpp.get_seq_mask(c_test_gaps_out)
+    test_seqmask_in, _ = reader_rmtpp.get_seq_mask(test_gaps_in)
+    test_seqmask_out, _ = reader_rmtpp.get_seq_mask(test_gaps_out)
 
     (c_test_marks_in, c_test_gaps_in, c_test_times_in,
      c_test_marks_out, c_test_gaps_out, c_test_times_out,
@@ -453,6 +457,18 @@ def get_preprocessed_(c_data, data, block_size, decoder_length):
         'c_train_seq_lens': c_train_seq_lens,
         'c_dev_seq_lens': c_dev_seq_lens,
         'c_test_seq_lens': c_test_seq_lens,
+        'c_train_seqmask_in': c_train_seqmask_in,
+        'c_dev_seqmask_in': c_dev_seqmask_in,
+        'c_test_seqmask_in': c_test_seqmask_in,
+        'c_train_seqmask_out': c_train_seqmask_out,
+        'c_dev_seqmask_out': c_dev_seqmask_out,
+        'c_test_seqmask_out': c_test_seqmask_out,
+        'train_seqmask_in': train_seqmask_in,
+        'dev_seqmask_in': dev_seqmask_in,
+        'test_seqmask_in': test_seqmask_in,
+        'train_seqmask_out': train_seqmask_out,
+        'dev_seqmask_out': dev_seqmask_out,
+        'test_seqmask_out': test_seqmask_out,
 
         'train_gaps_in_norm': train_gaps_in_norm,
         'train_gaps_out_norm': train_gaps_out_norm,

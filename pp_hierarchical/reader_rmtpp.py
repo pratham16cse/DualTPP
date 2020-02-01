@@ -174,18 +174,22 @@ def create_train_dev_test_split(data, block_size, decoder_length):
         train_end_idx = block_begin_idxes[idx+(2*block_size-1)]#-decoder_length-1
         train_marks.append(marks[train_start_idx:train_end_idx])
         train_times.append(times[train_start_idx:train_end_idx])
+        print(idx, 'train length:', len(times[train_start_idx:train_end_idx]))
 
         dev_start_idx = block_begin_idxes[idx+(2*block_size-1)]+1#-decoder_length-1
         dev_end_idx = block_begin_idxes[idx+(3*block_size-1)]#-decoder_length-1
         dev_marks.append(marks[dev_start_idx:dev_end_idx])
         dev_times.append(times[dev_start_idx:dev_end_idx])
         dev_begin_tss.append(get_hour_of_day_ts(times[dev_start_idx]) * 3600.)
+        print(idx, 'dev length:', len(times[dev_start_idx:dev_end_idx]))
 
         test_start_idx = block_begin_idxes[idx+(3*block_size-1)]+1#-decoder_length-1
         test_end_idx = block_begin_idxes[idx+(4*block_size-1)]
         test_marks.append(marks[test_start_idx:test_end_idx])
         test_times.append(times[test_start_idx:test_end_idx])
         test_begin_tss.append(get_hour_of_day_ts(times[test_start_idx]) * 3600.)
+        print(idx, 'test length:', len(times[test_start_idx:test_end_idx]))
+
 
     dev_begin_tss = tf.expand_dims(tf.constant(dev_begin_tss), axis=-1)
     test_begin_tss = tf.expand_dims(tf.constant(test_begin_tss), axis=-1)
@@ -381,6 +385,12 @@ def get_preprocessed_(data, block_size, decoder_length):
         'train_seq_lens': train_seq_lens,
         'dev_seq_lens': dev_seq_lens,
         'test_seq_lens': test_seq_lens,
+        'train_seqmask_in': train_seqmask_in,
+        'dev_seqmask_in': dev_seqmask_in,
+        'test_seqmask_in': test_seqmask_in,
+        'train_seqmask_out': train_seqmask_out,
+        'dev_seqmask_out': dev_seqmask_out,
+        'test_seqmask_out': test_seqmask_out,
 
         'train_gaps_in_norm': train_gaps_in_norm,
         'train_gaps_out_norm': train_gaps_out_norm,
@@ -401,6 +411,7 @@ def get_preprocessed_(data, block_size, decoder_length):
 
 def get_preprocessed_data(block_size, decoder_length):
     marks, times = read_data('testdata.txt')
+    # '../pp_seq2seq/data/DataSetForSeq2SeqPP/Delhi.txt'
     #marks, times = split_data((marks, times), 7)
     
     block_size_sec = block_size * 3600.0
