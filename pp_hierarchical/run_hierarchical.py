@@ -349,6 +349,10 @@ for epoch in range(epochs):
             best_test_gap_error = test_gap_err
             best_dev_mark_acc = dev_mark_acc
             best_test_mark_acc = test_mark_acc
+            
+            best_true_gaps_plot = dev_gaps_out.numpy()
+            best_pred_gaps_plot = dev_gaps_pred.numpy()
+            best_inp_tru_gaps = dev_gaps_in_unnorm.numpy()
 
         print('Dev mark acc and gap err over epoch: %s, %s' \
                 % (float(dev_mark_acc), float(dev_gap_err)))
@@ -361,3 +365,36 @@ print('Best Dev mark acc and gap err over epoch: %s, %s' \
         % (float(best_dev_mark_acc), float(best_dev_gap_error)))
 print('Best Test mark acc and gap err over epoch: %s, %s' \
         % (float(best_test_mark_acc), float(best_test_gap_error)))
+
+SAVE_DIR = './joint_plots/hierarchical/'
+os.makedirs(SAVE_DIR, exist_ok=True)
+cntr = 0
+cntr = len(next(os.walk(SAVE_DIR))[1])
+
+plot_dir = os.path.join(SAVE_DIR,'dev_plots_'+str(cntr))
+os.makedirs(plot_dir, exist_ok=True)
+
+for idx in range(len(best_inp_tru_gaps)):
+
+    name_plot = os.path.join(plot_dir, 'seq_' + str(idx))
+
+    true_gaps_plot = list(best_inp_tru_gaps[idx]) + list(best_true_gaps_plot[idx])
+    pred_gaps_plot = list(best_inp_tru_gaps[idx]) + list(best_pred_gaps_plot[idx])
+    assert len(true_gaps_plot) == len(pred_gaps_plot)
+
+    print(true_gaps_plot)
+    print(len(true_gaps_plot))
+
+    fig_pred_gaps = plt.figure()
+    ax1 = fig_pred_gaps.add_subplot(111)
+    ax1.scatter(list(range(1, len(pred_gaps_plot)+1)), pred_gaps_plot, c='r', label='Pred gaps')
+    ax1.scatter(list(range(1, len(true_gaps_plot)+1)), true_gaps_plot, c='b', label='True gaps')
+    ax1.plot([BPTT-0.5, BPTT-0.5],
+             [0, max(np.concatenate([true_gaps_plot, pred_gaps_plot]))],
+             'g-')
+    ax1.set_xlabel('Index')
+    ax1.set_ylabel('Gaps')
+    plt.grid()
+
+    plt.savefig(name_plot+'.png')
+    plt.close()
