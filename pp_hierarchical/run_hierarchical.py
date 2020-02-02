@@ -163,9 +163,17 @@ model = models.HierarchicalRNN(num_categories, 8, 32, use_marks=use_marks,
 optimizer = keras.optimizers.Adam(learning_rate=1e-2)
 
 SAVE_DIR = './plots/hierarchical/'
+SAVE_DIR_L2 = './plots_l2/hierarchical/'
 os.makedirs(SAVE_DIR, exist_ok=True)
+os.makedirs(SAVE_DIR_L2, exist_ok=True)
 cntr = 0
 cntr = len(next(os.walk(SAVE_DIR))[1])
+
+plot_dir = os.path.join(SAVE_DIR,'dev_plots_'+str(cntr))
+os.makedirs(plot_dir, exist_ok=True)
+plot_dir_l2 = os.path.join(SAVE_DIR_L2,'dev_plots_'+str(cntr))
+os.makedirs(plot_dir_l2, exist_ok=True)
+
 # Iterate over epochs.
 for epoch in range(epochs):
     print('Start of epoch %d' % (epoch,))
@@ -358,13 +366,14 @@ for epoch in range(epochs):
 
         # ----- Dev nowcasting plots for layer 2 ----- #
         # TODO Check similar plots for layer 1
+        name_plot = os.path.join(plot_dir_l2, 'epoch_' + str(epoch))
         print('\ndev_l2_gaps_pred')
         print(tf.squeeze(all_c_dev_gaps_pred, axis=-1))
         print('\nc_dev_gaps_out')
         print(tf.squeeze(c_dev_gaps_out, axis=-1))
         plt.plot(tf.squeeze(c_dev_gaps_out[0], axis=-1), 'bo-')
         plt.plot(tf.squeeze(all_c_dev_gaps_pred[0][:len(c_dev_gaps_out[0])], axis=-1), 'r*-')
-        plt.show()
+        plt.savefig(name_plot+'.png')
         plt.close()
 
         end_of_input_seq = dev_seq_lens - 20
@@ -383,10 +392,6 @@ for epoch in range(epochs):
 
         true_gaps_plot = list(inp_tru_gaps) + list(true_gaps_plot)
         pred_gaps_plot = list(inp_tru_gaps) + list(pred_gaps_plot)
-
-        plot_dir = os.path.join(SAVE_DIR,'dev_plots_'+str(cntr))
-        # if not os.path.isdir(plot_dir): os.mkdir(plot_dir)
-        os.makedirs(plot_dir, exist_ok=True)
 
         name_plot = os.path.join(plot_dir, 'epoch_' + str(epoch))
 

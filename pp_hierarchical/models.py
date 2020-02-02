@@ -138,7 +138,7 @@ class HierarchicalRNN(tf.keras.Model):
 
     def call(self, inputs, l2_gaps=None, l1_gaps=None,
              l2_mask=None, l1_mask=None,
-             l2_marks=None, l1_marks=None):
+             l2_marks=None, l1_marks=None, debug=False):
         if self.use_marks:
             self.l1_marks_embd = self.l1_rnn.embedding_layer(l1_marks)
         #TODO Feed mask externally
@@ -157,6 +157,9 @@ class HierarchicalRNN(tf.keras.Model):
 
         self.state_transform_1 = self.state_transform_l1(self.l2_rnn.hidden_states)
         self.state_transformed = self.state_transform_l2(self.state_transform_1)
+
+        if l1_gaps is not None and debug:
+            print('self.state_transformed', self.state_transformed)
 
         if l1_gaps is not None:
             self.l1_D, self.l1_WT = list(), list()
@@ -341,11 +344,12 @@ class SimulateHierarchicalRNN:
 
         while any(l1_times_pred[-1]<t_b_plus) or any(pred_idxes<decoder_length):
 
-            #print('layer 1 simul_step:', simul_step)
+            # print('layer 1 simul_step:', simul_step)
 
             (_, _, _, _, _, step_l1_gaps_pred, _, _) \
-                    = model(None, l1_gaps=tf.expand_dims(l1_gaps_inputs, axis=-1))
+                    = model(None, l1_gaps=tf.expand_dims(l1_gaps_inputs, axis=-1), debug=False)
 
+            # print('step_l1_gaps_pred', step_l1_gaps_pred)
             l1_gaps_pred.append(step_l1_gaps_pred)
             l1_gaps_inputs = tf.squeeze(step_l1_gaps_pred, axis=1)
             step_l1_gaps_pred_squeeze = tf.squeeze(tf.squeeze(step_l1_gaps_pred, axis=-1), axis=-1)
