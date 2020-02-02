@@ -89,6 +89,7 @@ dev_t_b_plus = dev_begin_tss + dev_offsets_sec_norm
 # ----- Start: Load test_dataset ----- #
 c_test_dataset = data['c_test_dataset']
 c_test_seq_lens = data['c_test_seq_lens']
+test_seq_lens = data['test_seq_lens']
 c_test_seq_lens_in = tf.cast(tf.reduce_sum(data['c_test_seqmask_in'], axis=-1), tf.int32)
 c_test_seq_lens_out = tf.cast(tf.reduce_sum(data['c_test_seqmask_out'], axis=-1), tf.int32)
 test_seq_lens_in = tf.cast(tf.reduce_sum(data['test_seqmask_in'], axis=-1), tf.int32)
@@ -173,6 +174,26 @@ plot_dir = os.path.join(SAVE_DIR,'dev_plots_'+str(cntr))
 os.makedirs(plot_dir, exist_ok=True)
 plot_dir_l2 = os.path.join(SAVE_DIR_L2,'dev_plots_'+str(cntr))
 os.makedirs(plot_dir_l2, exist_ok=True)
+
+last_true_dev_gap = data['dev_gaps_in']
+dev_gaps_in = data['dev_gaps_in'].numpy()
+dev_gaps_in_lst = list()
+for x in range(len(dev_gaps_in)):
+    dev_gaps_in_lst.append(dev_gaps_in[x, dev_seq_lens[x][0]-1])
+last_true_dev_gap = np.array(dev_gaps_in_lst)
+last_true_dev_gap = tf.convert_to_tensor(last_true_dev_gap, dtype=tf.float32)
+last_true_dev_gap = last_true_dev_gap / data['dev_normalizer_d']
+last_true_dev_gap = tf.expand_dims(last_true_dev_gap, axis=1)
+
+test_gaps_in = data['test_gaps_in'].numpy()
+test_gaps_in_lst = list()
+for x in range(len(test_gaps_in)):
+    test_gaps_in_lst.append(test_gaps_in[x, test_seq_lens[x][0]-1])
+last_true_test_gap = np.array(test_gaps_in_lst)
+last_true_test_gap = tf.convert_to_tensor(last_true_test_gap, dtype=tf.float32)
+last_true_test_gap = last_true_test_gap / data['test_normalizer_d']
+last_true_test_gap = tf.expand_dims(last_true_test_gap, axis=1)
+#TODO: try passing more than 1 prev true gaps see if it works.
 
 # Iterate over epochs.
 for epoch in range(epochs):
@@ -306,6 +327,7 @@ for epoch in range(epochs):
                                              dev_begin_tss,
                                              dev_t_b_plus,
                                              c_dev_t_b_plus,
+                                             last_true_dev_gap,
                                              decoder_length)
         model.reset_states()
 
@@ -335,6 +357,7 @@ for epoch in range(epochs):
                                               test_begin_tss,
                                               test_t_b_plus,
                                               c_test_t_b_plus,
+                                              last_true_test_gap,
                                               decoder_length)
         model.reset_states()
 
