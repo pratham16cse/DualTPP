@@ -347,6 +347,7 @@ class SimulateHierarchicalRNN:
                     = model(None, l1_gaps=tf.expand_dims(l1_gaps_inputs, axis=-1))
 
             l1_gaps_pred.append(step_l1_gaps_pred)
+            l1_gaps_inputs = tf.squeeze(step_l1_gaps_pred, axis=1)
             step_l1_gaps_pred_squeeze = tf.squeeze(tf.squeeze(step_l1_gaps_pred, axis=-1), axis=-1)
             l1_last_times_pred = l1_times_pred[-1] + step_l1_gaps_pred_squeeze
             l1_times_pred.append(l1_last_times_pred)

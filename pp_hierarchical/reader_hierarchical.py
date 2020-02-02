@@ -4,6 +4,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from collections import Counter
 from datetime import datetime
+import ipdb
 
 import tensorflow as tf
 from tensorflow import keras
@@ -46,9 +47,6 @@ def get_num_events_per_hour(data):
     plt.bar(range(len(times_grouped.index)), times_grouped.values)
     plt.close()
     return times_grouped
-
-def get_gaps(times):
-    return [np.array(x[1:])-np.array(x[:-1]) for x in times]
 
 def get_normalized_dataset(data, normalization='average', max_offset=0.0):
 
@@ -103,6 +101,8 @@ def get_normalized_dataset(data, normalization='average', max_offset=0.0):
 
     return avg_gaps_norm_in, avg_gaps_norm_out, normalizer_d, normalizer_a
 
+def get_gaps(times):
+    return [np.array(x[1:])-np.array(x[:-1]) for x in times]
 
 def get_dev_test_input_output(train_marks, train_times,
                               dev_marks, dev_times,
@@ -185,22 +185,24 @@ def create_train_dev_test_split(data, block_size, decoder_length):
 
     block_begin_idxes = num_events_per_hour.cumsum()
     num_hrs = len(num_events_per_hour)-len(num_events_per_hour)%(4*block_size)
+    for t in times:
+        print(t)
     for idx in range(0, num_hrs, 4*block_size):
         print(idx, num_hrs)
-        train_start_idx = block_begin_idxes[idx-1]+1 if idx>0 else 0
+        train_start_idx = block_begin_idxes[idx-1] if idx>0 else 0
         train_end_idx = block_begin_idxes[idx+(2*block_size-1)]#-decoder_length-1
         train_marks.append(marks[train_start_idx:train_end_idx])
         train_times.append(times[train_start_idx:train_end_idx])
         train_l1_idxes.append(l1_idxes[train_start_idx:train_end_idx])
 
-        dev_start_idx = block_begin_idxes[idx+(2*block_size-1)]+1#-decoder_length-1
+        dev_start_idx = block_begin_idxes[idx+(2*block_size-1)]#-decoder_length-1
         dev_end_idx = block_begin_idxes[idx+(3*block_size-1)]#-decoder_length-1
         dev_marks.append(marks[dev_start_idx:dev_end_idx])
         dev_times.append(times[dev_start_idx:dev_end_idx])
         dev_l1_idxes.append(l1_idxes[dev_start_idx:dev_end_idx])
         dev_begin_tss.append(get_hour_of_day_ts(times[dev_start_idx]) * 3600.)
 
-        test_start_idx = block_begin_idxes[idx+(3*block_size-1)]+1#-decoder_length-1
+        test_start_idx = block_begin_idxes[idx+(3*block_size-1)]#-decoder_length-1
         test_end_idx = block_begin_idxes[idx+(4*block_size-1)]
         test_marks.append(marks[test_start_idx:test_end_idx])
         test_times.append(times[test_start_idx:test_end_idx])
