@@ -99,6 +99,7 @@ def get_num_events_per_hour(data):
     times_grouped = times.groupby(lambda x: pd.Timestamp(times[x], unit='s', tz='utc').floor('H')).agg('count')
     #plt.bar(times_grouped.index, times_grouped.tolist(), width=0.02)
     plt.bar(range(len(times_grouped.index)), times_grouped.values)
+    plt.close()
     return times_grouped
 
 def get_gaps(times):
@@ -128,13 +129,13 @@ def get_dev_test_input_output(train_marks, train_times,
                         for dev_t, tst_t in zip(dev_times, test_times)]
     test_gaps_out = get_gaps(test_times_out)
 
-    print('DevIn:', dev_times_in[0].tolist())
-    print('\n')
-    print('DevOut', dev_times_out[0].tolist())
-    print('\n')
-    print('TestIn:', test_times_in[0].tolist())
-    print('\n')
-    print('TestOut', test_times_out[0].tolist())
+    #print('DevIn:', dev_times_in[0].tolist())
+    #print('\n')
+    #print('DevOut', dev_times_out[0].tolist())
+    #print('\n')
+    #print('TestIn:', test_times_in[0].tolist())
+    #print('\n')
+    #print('TestOut', test_times_out[0].tolist())
 
     return  (dev_marks_in, dev_gaps_in, dev_times_in,
              dev_marks_out, dev_gaps_out, dev_times_out,
@@ -223,8 +224,8 @@ def get_padded_dataset(data):
     gaps_out = pad_sequences(gaps_out, padding='post')
     times_out = pad_sequences(times_out, padding='post')
 
-    print('seq_lens', seq_lens)
-    print('times_in.shape', times_in.shape)
+    #print('seq_lens', seq_lens)
+    #print('times_in.shape', times_in.shape)
 
     gaps_in = tf.expand_dims(tf.cast(gaps_in, tf.float32), axis=-1)
     times_in = tf.expand_dims(tf.cast(times_in, tf.float32), axis=-1)
@@ -355,25 +356,25 @@ def get_preprocessed_(data, block_size, decoder_length):
                                                        test_times_in,
                                                        test_seqmask_in))
 
-    print('Train In')
-    print(tf.squeeze(tf.transpose(train_times_in, [1, 0, 2]), axis=-1).numpy().tolist()[0])
-    print('Dev In')
-    print(tf.squeeze(dev_times_in, axis=-1).numpy().tolist()[0])
-    print('\n')
-    print('Dev Begin Timestamp:')
-    print(dev_begin_tss[0])
-    print('\n')
-    print('Dev Out')
-    print(tf.squeeze(dev_times_out, axis=-1).numpy().tolist()[0])
-    print('\n')
-    print('Test In')
-    print(tf.squeeze(test_times_in, axis=-1).numpy().tolist()[0])
-    print('\n')
-    print('Test Begin Timestamp:')
-    print(test_begin_tss[0])
-    print('\n')
-    print('Test Out')
-    print(tf.squeeze(test_times_out, axis=-1).numpy().tolist()[0])
+    #print('Train In')
+    #print(tf.squeeze(tf.transpose(train_times_in, [1, 0, 2]), axis=-1).numpy().tolist()[0])
+    #print('Dev In')
+    #print(tf.squeeze(dev_times_in, axis=-1).numpy().tolist()[0])
+    #print('\n')
+    #print('Dev Begin Timestamp:')
+    #print(dev_begin_tss[0])
+    #print('\n')
+    #print('Dev Out')
+    #print(tf.squeeze(dev_times_out, axis=-1).numpy().tolist()[0])
+    #print('\n')
+    #print('Test In')
+    #print(tf.squeeze(test_times_in, axis=-1).numpy().tolist()[0])
+    #print('\n')
+    #print('Test Begin Timestamp:')
+    #print(test_begin_tss[0])
+    #print('\n')
+    #print('Test Out')
+    #print(tf.squeeze(test_times_out, axis=-1).numpy().tolist()[0])
 
     return {
         'train_dataset': train_dataset,

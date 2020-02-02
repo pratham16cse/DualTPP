@@ -21,10 +21,10 @@ import reader_hierarchical
 import models
                     
 epochs = 50
-patience = 20
+patience = 40
 
 batch_size = 2
-BPTT = 20
+BPTT = 30
 block_size = 1
 block_size_sec = 3600.0 * block_size
 decoder_length = 5
@@ -35,6 +35,10 @@ num_categories = data['num_categories']
 num_sequences = data['num_sequences']
 
 c_train_dataset = data['c_train_dataset']
+c_train_normalizer_d = data['c_train_normalizer_d']
+c_train_normalizer_a = data['c_train_normalizer_a']
+train_normalizer_d = data['train_normalizer_d']
+train_normalizer_a = data['train_normalizer_a']
 
 best_dev_gap_error = np.inf
 best_test_gap_error = np.inf
@@ -55,18 +59,18 @@ dev_times_out = data['dev_times_out']
 dev_begin_tss = data['dev_begin_tss']
 dev_offsets = tf.random.uniform(shape=(num_sequences, 1)) * 3600. * block_size # Sampling offsets
 dev_t_b_plus = dev_begin_tss + dev_offsets
-print(dev_offsets)
-print(tf.squeeze(dev_times_out, axis=-1).numpy().tolist()[0])
+#print(dev_offsets)
+#print(tf.squeeze(dev_times_out, axis=-1).numpy().tolist()[0])
 dev_times_out_indices = [bisect_right(dev_t_out, t_b) for dev_t_out, t_b \
                             in zip(dev_times_out, dev_t_b_plus)]
 dev_times_out_indices = tf.minimum(dev_times_out_indices, dev_seq_lens_out-decoder_length+1)
-print('\ndev_seq_lens_out', dev_seq_lens_out)
+#print('\ndev_seq_lens_out', dev_seq_lens_out)
 dev_times_out_indices = tf.expand_dims(dev_times_out_indices, axis=-1)
 dev_times_out_indices \
         = (dev_times_out_indices-1) \
         + tf.expand_dims(tf.range(decoder_length), axis=0)
-print('\ndev_times_out_indices')
-print(dev_times_out_indices)
+#print('\ndev_times_out_indices')
+#print(dev_times_out_indices)
 dev_gaps_out = tf.gather(dev_gaps_out, dev_times_out_indices, batch_dims=1)
 
 # ----- Normalize dev_offsets and dev_t_b_plus ----- #
@@ -95,18 +99,18 @@ test_times_out = data['test_times_out']
 test_begin_tss = data['test_begin_tss']
 test_offsets = tf.random.uniform(shape=(num_sequences, 1)) * 3600. * block_size # Sampling offsets
 test_t_b_plus = test_begin_tss + test_offsets
-print(test_offsets)
-print(tf.squeeze(test_times_out, axis=-1).numpy().tolist()[0])
+#print(test_offsets)
+#print(tf.squeeze(test_times_out, axis=-1).numpy().tolist()[0])
 test_times_out_indices = [bisect_right(test_t_out, t_b) for test_t_out, t_b \
                             in zip(test_times_out, test_t_b_plus)]
 test_times_out_indices = tf.minimum(test_times_out_indices, test_seq_lens_out-decoder_length+1)
-print('\ntest_seq_lens_out', test_seq_lens_out)
+#print('\ntest_seq_lens_out', test_seq_lens_out)
 test_times_out_indices = tf.expand_dims(test_times_out_indices, axis=-1)
 test_times_out_indices \
         = (test_times_out_indices-1) \
         + tf.expand_dims(tf.range(decoder_length), axis=0)
-print('\ntest_times_out_indices')
-print(test_times_out_indices)
+#print('\ntest_times_out_indices')
+#print(test_times_out_indices)
 test_gaps_out = tf.gather(test_gaps_out, test_times_out_indices, batch_dims=1)
 
 # ----- Normalize test_offsets and test_t_b_plus ----- #
@@ -150,6 +154,8 @@ dev_mark_metric = tf.keras.metrics.SparseCategoricalAccuracy()
 dev_gap_metric = tf.keras.metrics.MeanAbsoluteError()
 test_mark_metric = tf.keras.metrics.SparseCategoricalAccuracy()
 test_gap_metric = tf.keras.metrics.MeanAbsoluteError()
+
+c_train_gap_metric = tf.keras.metrics.MeanAbsoluteError()
 
 model = models.HierarchicalRNN(num_categories, 8, 32, use_marks=use_marks,
                                use_intensity=use_intensity)
@@ -200,6 +206,41 @@ for epoch in range(epochs):
             gap_loss = gap_loss_fn(gaps_batch_out, l1_gaps_pred)
             loss = mark_loss + c_gap_loss + gap_loss
 
+
+        # For testdata:
+        #   c_train_normalizer_d: 66.709526
+        #   c_train_normalizer_a: 6.667143
+        # For sin data:
+        #   c_train_normalizer_d: 104.655846
+        #   c_train_normalizer_a: 10.457432
+        c_gaps_batch_out_unnorm = (c_gaps_batch_out) * 104.655846
+        l2_gaps_pred_unnorm = (l2_gaps_pred) * 104.655846
+        gaps_batch_out_unnorm = (gaps_batch_out) * 10.457432
+        l1_gaps_pred_unnorm = (l1_gaps_pred) * 10.457432
+        c_train_gap_metric(c_gaps_batch_out_unnorm, l2_gaps_pred_unnorm)
+        c_train_gap_err = c_train_gap_metric.result()
+
+        # ----- Training nowcasting plots for layer 2 and layer 1 ----- #
+        #if epoch > patience:
+        #    print('\nc_train_batch_gaps_out')
+        #    print(tf.squeeze(c_gaps_batch_out_unnorm[0], axis=-1))
+        #    print('\nc_train_batch_gaps_pred')
+        #    print(tf.squeeze(l2_gaps_pred_unnorm[0], axis=-1))
+        #    plt.plot(tf.squeeze(c_gaps_batch_out_unnorm[0], axis=-1), 'bo-')
+        #    plt.plot(tf.squeeze(l2_gaps_pred_unnorm[0], axis=-1), 'r*-')
+        #    plt.show()
+        #    plt.close()
+
+            #print('\ntrain_batch_gaps_out')
+            #print(tf.squeeze(gaps_batch_out_unnorm[0][0], axis=-1))
+            #print('\ntrain_batch_gaps_pred')
+            #print(tf.squeeze(l1_gaps_pred_unnorm[0][0], axis=-1))
+            #plt.plot(tf.squeeze(gaps_batch_out_unnorm[0][0], axis=-1), 'bo-')
+            #plt.plot(tf.squeeze(l1_gaps_pred_unnorm[0][0], axis=-1), 'r*-')
+            #plt.show()
+            #plt.close()
+
+
         grads = tape.gradient(loss, model.trainable_weights)
         optimizer.apply_gradients(zip(grads, model.trainable_weights))
 
@@ -231,7 +272,8 @@ for epoch in range(epochs):
 
     if epoch > patience:
 
-        for dev_step, (c_dev_marks_in, c_dev_gaps_in, c_dev_times_in, c_dev_seqmask_in) \
+        for dev_step, (c_dev_marks_in, c_dev_gaps_in, c_dev_times_in, c_dev_seqmask_in,
+                       c_dev_gaps_out, c_dev_seqmask_out) \
                 in enumerate(c_dev_dataset):
 
             (dev_l2_marks_logits, dev_l2_gaps_pred, _, _,
@@ -248,17 +290,19 @@ for epoch in range(epochs):
                                             c_dev_seq_lens-1,
                                             batch_dims=1)
             print('Inputs shape:', c_dev_gaps_in.shape)
+            dev_simulator = models.SimulateHierarchicalRNN()
             dev_gaps_pred \
-                    = models.simulate_hierarchicalrnn(model,
-                                                      last_c_dev_times_in,
-                                                      dev_l2_gaps_pred,
-                                                      dev_begin_tss,
-                                                      dev_t_b_plus,
-                                                      c_dev_t_b_plus,
-                                                      decoder_length)
+                    = dev_simulator.simulate(model,
+                                             last_c_dev_times_in,
+                                             dev_l2_gaps_pred,
+                                             dev_begin_tss,
+                                             dev_t_b_plus,
+                                             c_dev_t_b_plus,
+                                             decoder_length)
         model.reset_states()
 
-        for test_step, (c_test_marks_in, c_test_gaps_in, c_test_times_in, c_test_seqmask_in) \
+        for test_step, (c_test_marks_in, c_test_gaps_in, c_test_times_in, c_test_seqmask_in,
+                        c_test_gaps_out, c_test_seqmask_out) \
                 in enumerate(c_test_dataset):
 
             print('Inputs shape:', c_test_gaps_in.shape)
@@ -275,14 +319,15 @@ for epoch in range(epochs):
             last_c_test_times_in = tf.gather(c_test_times_in,
                                              c_test_seq_lens-1,
                                              batch_dims=1)
+            test_simulator = models.SimulateHierarchicalRNN()
             test_gaps_pred \
-                    = models.simulate_hierarchicalrnn(model,
-                                                      last_c_test_times_in,
-                                                      test_l2_gaps_pred,
-                                                      test_begin_tss,
-                                                      test_t_b_plus,
-                                                      c_test_t_b_plus,
-                                                      decoder_length)
+                    = test_simulator.simulate(model,
+                                              last_c_test_times_in,
+                                              test_l2_gaps_pred,
+                                              test_begin_tss,
+                                              test_t_b_plus,
+                                              c_test_t_b_plus,
+                                              decoder_length)
         model.reset_states()
 
         #print(dev_marks_out, 'dev_marks_out')
@@ -301,10 +346,26 @@ for epoch in range(epochs):
         dev_gaps_pred = (dev_gaps_pred - dev_normalizer_a) * dev_normalizer_d
         test_gaps_pred = (test_gaps_pred - test_normalizer_a) * test_normalizer_d
 
-        print('\ndev_gaps_pred')
-        print(tf.squeeze(dev_gaps_pred[:, 1:], axis=-1))
-        print('\ndev_gaps_out')
-        print(tf.squeeze(dev_gaps_out[:, 1:], axis=-1))
+        #print('\ndev_gaps_pred')
+        #print(tf.squeeze(dev_gaps_pred[:, 1:], axis=-1))
+        #print('\ndev_gaps_out')
+        #print(tf.squeeze(dev_gaps_out[:, 1:], axis=-1))
+
+        all_c_dev_gaps_pred = dev_simulator.all_l2_gaps_pred
+        #import pdb
+        #pdb.set_trace()
+        all_c_dev_gaps_pred = (all_c_dev_gaps_pred) * tf.expand_dims(c_dev_normalizer_d, axis=1)
+
+        # ----- Dev nowcasting plots for layer 2 ----- #
+        # TODO Check similar plots for layer 1
+        print('\ndev_l2_gaps_pred')
+        print(tf.squeeze(all_c_dev_gaps_pred, axis=-1))
+        print('\nc_dev_gaps_out')
+        print(tf.squeeze(c_dev_gaps_out, axis=-1))
+        plt.plot(tf.squeeze(c_dev_gaps_out[0], axis=-1), 'bo-')
+        plt.plot(tf.squeeze(all_c_dev_gaps_pred[0][:len(c_dev_gaps_out[0])], axis=-1), 'r*-')
+        plt.show()
+        plt.close()
 
         end_of_input_seq = dev_seq_lens - 20
         dev_gaps_in_unnorm = data['dev_gaps_in'].numpy()
@@ -352,6 +413,7 @@ for epoch in range(epochs):
         dev_gap_metric.reset_states()
         test_gap_metric.reset_states()
 
+
         if dev_gap_err < best_dev_gap_error:
             best_dev_gap_error = dev_gap_err
             best_test_gap_error = test_gap_err
@@ -368,6 +430,10 @@ for epoch in range(epochs):
                 % (float(test_mark_acc), float(test_gap_err)))
 
         model.reset_states()
+
+    print('l2_train gap err over epoch: %s' \
+            % (float(c_train_gap_err)))
+    c_train_gap_metric.reset_states()
 
 print('Best Dev mark acc and gap err over epoch: %s, %s' \
         % (float(best_dev_mark_acc), float(best_dev_gap_error)))

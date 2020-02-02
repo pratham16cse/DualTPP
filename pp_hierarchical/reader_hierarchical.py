@@ -44,6 +44,7 @@ def get_num_events_per_hour(data):
     times_grouped = times.groupby(lambda x: pd.Timestamp(times[x], unit='s', tz='utc').floor('H')).agg('count')
     #plt.bar(times_grouped.index, times_grouped.tolist(), width=0.02)
     plt.bar(range(len(times_grouped.index)), times_grouped.values)
+    plt.close()
     return times_grouped
 
 def get_gaps(times):
@@ -127,13 +128,13 @@ def get_dev_test_input_output(train_marks, train_times,
                         for dev_t, tst_t in zip(dev_times, test_times)]
     test_gaps_out = get_gaps(test_times_out)
 
-    print('DevIn:', dev_times_in[0].tolist())
-    print('\n')
-    print('DevOut', dev_times_out[0].tolist())
-    print('\n')
-    print('TestIn:', test_times_in[0].tolist())
-    print('\n')
-    print('TestOut', test_times_out[0].tolist())
+    #print('DevIn:', dev_times_in[0].tolist())
+    #print('\n')
+    #print('DevOut', dev_times_out[0].tolist())
+    #print('\n')
+    #print('TestIn:', test_times_in[0].tolist())
+    #print('\n')
+    #print('TestOut', test_times_out[0].tolist())
 
     return  (dev_marks_in, dev_gaps_in, dev_times_in,
              dev_marks_out, dev_gaps_out, dev_times_out,
@@ -317,7 +318,6 @@ def get_preprocessed_(c_data, data, block_size, decoder_length):
             = get_train_input_output((c_train_marks, c_train_times, c_train_l1_idxes),
                                      (marks, times),
                                      decoder_length)
-    print(train_gaps_in)
 
     c_train_seqmask_in, _ = reader_rmtpp.get_seq_mask(c_train_gaps_in)
     c_train_seqmask_out, _ = reader_rmtpp.get_seq_mask(c_train_gaps_out)
@@ -418,7 +418,9 @@ def get_preprocessed_(c_data, data, block_size, decoder_length):
     c_dev_dataset = tf.data.Dataset.from_tensor_slices((c_dev_marks_in,
                                                         c_dev_gaps_in_norm,
                                                         c_dev_times_in,
-                                                        c_dev_seqmask_in))
+                                                        c_dev_seqmask_in,
+                                                        c_dev_gaps_out,
+                                                        c_dev_seqmask_out))
 
 
     c_test_seqmask_in, _ = reader_rmtpp.get_seq_mask(c_test_gaps_in)
@@ -449,7 +451,9 @@ def get_preprocessed_(c_data, data, block_size, decoder_length):
     c_test_dataset = tf.data.Dataset.from_tensor_slices((c_test_marks_in,
                                                          c_test_gaps_in_norm,
                                                          c_test_times_in,
-                                                         c_test_seqmask_in))
+                                                         c_test_seqmask_in,
+                                                         c_test_gaps_out,
+                                                         c_test_seqmask_out))
 
 
     return {
