@@ -20,8 +20,8 @@ import reader_rmtpp
 
 import models
                     
-epochs = 50
-patience = 20
+epochs = 100
+patience = 30
 
 batch_size = 2
 BPTT = 20
@@ -258,8 +258,9 @@ for epoch in range(epochs):
             last_dev_times_in = tf.gather(dev_times_in,
                                           dev_seq_lens-1,
                                           batch_dims=1)
+            dev_simulator = models.SimulateRMTPP()
             dev_marks_logits, dev_gaps_pred \
-                    = models.simulate_rmtpp_tb_compare(model,
+                    = dev_simulator.simulate(model,
                                             last_dev_times_in,
                                             dev_gaps_pred[:, -1:],
                                             dev_begin_tss,
@@ -285,14 +286,15 @@ for epoch in range(epochs):
             last_test_times_in = tf.gather(test_times_in,
                                           test_seq_lens-1,
                                           batch_dims=1)
+            test_simulator = models.SimulateRMTPP()
             test_marks_logits, test_gaps_pred \
-                    = models.simulate_rmtpp_tb_compare(model,
-                                            last_test_times_in,
-                                            test_gaps_pred[:, -1:],
-                                            test_begin_tss,
-                                            test_t_b_plus,
-                                            decoder_length,
-                                            marks_in=test_marks_pred_last)
+                    = test_simulator.simulate(model,
+                                              last_test_times_in,
+                                              test_gaps_pred[:, -1:],
+                                              test_begin_tss,
+                                              test_t_b_plus,
+                                              decoder_length,
+                                              marks_in=test_marks_pred_last)
         model.rnn_layer.reset_states()
 
         #print(dev_marks_out, 'dev_marks_out')
@@ -342,8 +344,8 @@ for epoch in range(epochs):
 
         fig_pred_gaps = plt.figure()
         ax1 = fig_pred_gaps.add_subplot(111)
-        ax1.scatter(list(range(1, len(pred_gaps_plot)+1)), pred_gaps_plot, c='r', label='Pred gaps')
-        ax1.scatter(list(range(1, len(true_gaps_plot)+1)), true_gaps_plot, c='b', label='True gaps')
+        ax1.plot(list(range(1, len(pred_gaps_plot)+1)), pred_gaps_plot, 'r*-', label='Pred gaps')
+        ax1.plot(list(range(1, len(true_gaps_plot)+1)), true_gaps_plot, 'bo-', label='True gaps')
         ax1.plot([BPTT-0.5, BPTT-0.5],
                  [0, max(np.concatenate([true_gaps_plot, pred_gaps_plot]))],
                  'g-')
@@ -402,8 +404,8 @@ for idx in range(len(best_inp_tru_gaps)):
 
     fig_pred_gaps = plt.figure()
     ax1 = fig_pred_gaps.add_subplot(111)
-    ax1.scatter(list(range(1, len(pred_gaps_plot)+1)), pred_gaps_plot, c='r', label='Pred gaps')
-    ax1.scatter(list(range(1, len(true_gaps_plot)+1)), true_gaps_plot, c='b', label='True gaps')
+    ax1.plot(list(range(1, len(pred_gaps_plot)+1)), pred_gaps_plot, 'r*-', label='Pred gaps')
+    ax1.plot(list(range(1, len(true_gaps_plot)+1)), true_gaps_plot, 'bo-', label='True gaps')
     ax1.plot([BPTT-0.5, BPTT-0.5],
              [0, max(np.concatenate([true_gaps_plot, pred_gaps_plot]))],
              'g-')

@@ -22,7 +22,7 @@ import reader_hierarchical
 import models
                     
 epochs = 100
-patience = 30
+patience = 20
 
 batch_size = 2
 BPTT = 30
@@ -218,10 +218,10 @@ for epoch in range(epochs):
 
         # For testdata:
         #   c_train_normalizer_d: 66.709526
-        #   c_train_normalizer_a: 6.667143
+        #   train_normalizer_d: 6.667143
         # For sin data:
         #   c_train_normalizer_d: 104.655846
-        #   c_train_normalizer_a: 10.457432
+        #   train_normalizer_d: 10.457432
         c_gaps_batch_out_unnorm = (c_gaps_batch_out) * 104.655846
         l2_gaps_pred_unnorm = (l2_gaps_pred) * 104.655846
         gaps_batch_out_unnorm = (gaps_batch_out) * 10.457432
@@ -296,14 +296,14 @@ for epoch in range(epochs):
                 dev_marks_pred_last = None
             #ipdb.set_trace()
 
-            last_c_dev_times_in = tf.gather(c_dev_times_in,
-                                            c_dev_seq_lens-1,
-                                            batch_dims=1)
+            #last_c_dev_times_in = tf.gather(c_dev_times_in,
+            #                                c_dev_seq_lens-1,
+            #                                batch_dims=1)
             print('Inputs shape:', c_dev_gaps_in.shape)
             dev_simulator = models.SimulateHierarchicalRNN()
             dev_gaps_pred \
                     = dev_simulator.simulate(model,
-                                             last_c_dev_times_in,
+                                             c_dev_times_in,
                                              dev_l2_gaps_pred,
                                              c_dev_seq_lens,
                                              dev_begin_tss,
@@ -327,13 +327,13 @@ for epoch in range(epochs):
             else:
                 test_marks_pred_last = None
 
-            last_c_test_times_in = tf.gather(c_test_times_in,
-                                             c_test_seq_lens-1,
-                                             batch_dims=1)
+            #last_c_test_times_in = tf.gather(c_test_times_in,
+            #                                 c_test_seq_lens-1,
+            #                                 batch_dims=1)
             test_simulator = models.SimulateHierarchicalRNN()
             test_gaps_pred \
                     = test_simulator.simulate(model,
-                                              last_c_test_times_in,
+                                              c_test_times_in,
                                               test_l2_gaps_pred,
                                               c_test_seq_lens,
                                               test_begin_tss,
@@ -358,10 +358,10 @@ for epoch in range(epochs):
         dev_gaps_pred = (dev_gaps_pred - dev_normalizer_a) * dev_normalizer_d
         test_gaps_pred = (test_gaps_pred - test_normalizer_a) * test_normalizer_d
 
-        #print('\ndev_gaps_pred')
-        #print(tf.squeeze(dev_gaps_pred[:, 1:], axis=-1))
-        #print('\ndev_gaps_out')
-        #print(tf.squeeze(dev_gaps_out[:, 1:], axis=-1))
+        print('\ndev_gaps_pred')
+        print(tf.squeeze(dev_gaps_pred[:, 1:], axis=-1))
+        print('\ndev_gaps_out')
+        print(tf.squeeze(dev_gaps_out[:, 1:], axis=-1))
 
         all_c_dev_gaps_pred = dev_simulator.all_l2_gaps_pred
         #import pdb
@@ -370,10 +370,10 @@ for epoch in range(epochs):
 
         # ----- Dev nowcasting plots for layer 2 ----- #
         name_plot = os.path.join(plot_dir_l2, 'epoch_' + str(epoch))
-        print('\ndev_l2_gaps_pred')
-        print(tf.squeeze(all_c_dev_gaps_pred, axis=-1))
-        print('\nc_dev_gaps_out')
-        print(tf.squeeze(c_dev_gaps_out, axis=-1))
+        #print('\ndev_l2_gaps_pred')
+        #print(tf.squeeze(all_c_dev_gaps_pred, axis=-1))
+        #print('\nc_dev_gaps_out')
+        #print(tf.squeeze(c_dev_gaps_out, axis=-1))
         plt.plot(tf.squeeze(c_dev_gaps_out[1], axis=-1), 'bo-')
         plt.plot(tf.squeeze(all_c_dev_gaps_pred[1][1:len(c_dev_gaps_out[1])+1], axis=-1), 'r*-')
         plt.savefig(name_plot+'.png')
@@ -402,8 +402,8 @@ for epoch in range(epochs):
 
         fig_pred_gaps = plt.figure()
         ax1 = fig_pred_gaps.add_subplot(111)
-        ax1.scatter(list(range(1, len(pred_gaps_plot)+1)), pred_gaps_plot, c='r', label='Pred gaps')
-        ax1.scatter(list(range(1, len(true_gaps_plot)+1)), true_gaps_plot, c='b', label='True gaps')
+        ax1.plot(list(range(1, len(pred_gaps_plot)+1)), pred_gaps_plot, 'r*-', label='Pred gaps')
+        ax1.plot(list(range(1, len(true_gaps_plot)+1)), true_gaps_plot, 'bo-', label='True gaps')
         ax1.plot([BPTT-0.5, BPTT-0.5],
                  [0, max(np.concatenate([true_gaps_plot, pred_gaps_plot]))],
                  'g-')
@@ -466,8 +466,8 @@ for idx in range(len(best_inp_tru_gaps)):
 
     fig_pred_gaps = plt.figure()
     ax1 = fig_pred_gaps.add_subplot(111)
-    ax1.scatter(list(range(1, len(pred_gaps_plot)+1)), pred_gaps_plot, c='r', label='Pred gaps')
-    ax1.scatter(list(range(1, len(true_gaps_plot)+1)), true_gaps_plot, c='b', label='True gaps')
+    ax1.plot(list(range(1, len(pred_gaps_plot)+1)), pred_gaps_plot, 'r*-', label='Pred gaps')
+    ax1.plot(list(range(1, len(true_gaps_plot)+1)), true_gaps_plot, 'bo-', label='True gaps')
     ax1.plot([BPTT-0.5, BPTT-0.5],
              [0, max(np.concatenate([true_gaps_plot, pred_gaps_plot]))],
              'g-')
