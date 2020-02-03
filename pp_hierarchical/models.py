@@ -285,7 +285,7 @@ def simulate_rmtpp_offset_compare(model, gaps, block_begin_ts, t_b_plus,
 
 
 class SimulateHierarchicalRNN:
-    def simulate(self, model, c_times_in, c_gaps_pred,
+    def simulate(self, model, c_times_in, c_gaps_pred, c_seq_lens,
                  block_begin_ts,
                  t_b_plus, c_t_b_plus,
                  decoder_length):
@@ -297,11 +297,13 @@ class SimulateHierarchicalRNN:
         l2_times_pred = list()
         N = len(c_gaps_pred)
         l2_idxes = np.zeros(N, dtype=int)
-        l2_last_times_pred = tf.squeeze(c_times_in + c_gaps_pred[:, -1:], axis=-1)
+        l2_last_gaps_pred = tf.gather(c_gaps_pred, c_seq_lens-1, batch_dims=1)
+        l2_last_times_pred = tf.squeeze(c_times_in + l2_last_gaps_pred, axis=-1)
         l2_times_pred.append(l2_last_times_pred)
         l2_hidden_states.append(model.l2_rnn.hidden_states[:, -2])
-        l2_gaps_pred.append(c_gaps_pred[:, -2:-1])
-        l2_gaps_inputs = c_gaps_pred[:, -1:]
+        l2_second_last_gaps_pred = tf.gather(c_gaps_pred, c_seq_lens-2, batch_dims=1)
+        l2_gaps_pred.append(l2_second_last_gaps_pred)
+        l2_gaps_inputs = l2_last_gaps_pred
         simul_step = 0
         while any(l2_times_pred[-1]<c_t_b_plus):
 

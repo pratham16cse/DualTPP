@@ -171,20 +171,20 @@ def create_train_dev_test_split(data, block_size, decoder_length):
     num_hrs = len(num_events_per_hour)-len(num_events_per_hour)%(4*block_size)
     for idx in range(0, num_hrs, 4*block_size):
         print(idx, num_hrs)
-        train_start_idx = block_begin_idxes[idx-1]+1 if idx>0 else 0
+        train_start_idx = block_begin_idxes[idx-1] if idx>0 else 0
         train_end_idx = block_begin_idxes[idx+(2*block_size-1)]#-decoder_length-1
         train_marks.append(marks[train_start_idx:train_end_idx])
         train_times.append(times[train_start_idx:train_end_idx])
         print(idx, 'train length:', len(times[train_start_idx:train_end_idx]))
 
-        dev_start_idx = block_begin_idxes[idx+(2*block_size-1)]+1#-decoder_length-1
+        dev_start_idx = block_begin_idxes[idx+(2*block_size-1)]#-decoder_length-1
         dev_end_idx = block_begin_idxes[idx+(3*block_size-1)]#-decoder_length-1
         dev_marks.append(marks[dev_start_idx:dev_end_idx])
         dev_times.append(times[dev_start_idx:dev_end_idx])
         dev_begin_tss.append(get_hour_of_day_ts(times[dev_start_idx]) * 3600.)
         print(idx, 'dev length:', len(times[dev_start_idx:dev_end_idx]))
 
-        test_start_idx = block_begin_idxes[idx+(3*block_size-1)]+1#-decoder_length-1
+        test_start_idx = block_begin_idxes[idx+(3*block_size-1)]#-decoder_length-1
         test_end_idx = block_begin_idxes[idx+(4*block_size-1)]
         test_marks.append(marks[test_start_idx:test_end_idx])
         test_times.append(times[test_start_idx:test_end_idx])

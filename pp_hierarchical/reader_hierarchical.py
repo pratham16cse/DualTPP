@@ -422,6 +422,7 @@ def get_preprocessed_(c_data, data, block_size, decoder_length):
                                                         c_dev_times_in,
                                                         c_dev_seqmask_in,
                                                         c_dev_gaps_out,
+                                                        c_dev_times_out,
                                                         c_dev_seqmask_out))
 
 
@@ -455,6 +456,7 @@ def get_preprocessed_(c_data, data, block_size, decoder_length):
                                                          c_test_times_in,
                                                          c_test_seqmask_in,
                                                          c_test_gaps_out,
+                                                         c_dev_times_out,
                                                          c_test_seqmask_out))
 
 

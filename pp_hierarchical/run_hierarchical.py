@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from bisect import bisect_right
 import os, sys
+import ipdb
 
 import tensorflow as tf
 from tensorflow import keras
@@ -20,8 +21,8 @@ import reader_hierarchical
 
 import models
                     
-epochs = 50
-patience = 40
+epochs = 100
+patience = 30
 
 batch_size = 2
 BPTT = 30
@@ -281,7 +282,7 @@ for epoch in range(epochs):
     if epoch > patience:
 
         for dev_step, (c_dev_marks_in, c_dev_gaps_in, c_dev_times_in, c_dev_seqmask_in,
-                       c_dev_gaps_out, c_dev_seqmask_out) \
+                       c_dev_gaps_out, c_dev_times_out, c_dev_seqmask_out) \
                 in enumerate(c_dev_dataset):
 
             (dev_l2_marks_logits, dev_l2_gaps_pred, _, _,
@@ -293,6 +294,7 @@ for epoch in range(epochs):
                 dev_marks_pred_last = dev_marks_pred[:, -1:]
             else:
                 dev_marks_pred_last = None
+            #ipdb.set_trace()
 
             last_c_dev_times_in = tf.gather(c_dev_times_in,
                                             c_dev_seq_lens-1,
@@ -303,6 +305,7 @@ for epoch in range(epochs):
                     = dev_simulator.simulate(model,
                                              last_c_dev_times_in,
                                              dev_l2_gaps_pred,
+                                             c_dev_seq_lens,
                                              dev_begin_tss,
                                              dev_t_b_plus,
                                              c_dev_t_b_plus,
@@ -310,7 +313,7 @@ for epoch in range(epochs):
         model.reset_states()
 
         for test_step, (c_test_marks_in, c_test_gaps_in, c_test_times_in, c_test_seqmask_in,
-                        c_test_gaps_out, c_test_seqmask_out) \
+                        c_test_gaps_out, c_dev_times_out, c_test_seqmask_out) \
                 in enumerate(c_test_dataset):
 
             print('Inputs shape:', c_test_gaps_in.shape)
@@ -332,6 +335,7 @@ for epoch in range(epochs):
                     = test_simulator.simulate(model,
                                               last_c_test_times_in,
                                               test_l2_gaps_pred,
+                                              c_test_seq_lens,
                                               test_begin_tss,
                                               test_t_b_plus,
                                               c_test_t_b_plus,
@@ -365,14 +369,13 @@ for epoch in range(epochs):
         all_c_dev_gaps_pred = (all_c_dev_gaps_pred) * tf.expand_dims(c_dev_normalizer_d, axis=1)
 
         # ----- Dev nowcasting plots for layer 2 ----- #
-        # TODO Check similar plots for layer 1
         name_plot = os.path.join(plot_dir_l2, 'epoch_' + str(epoch))
         print('\ndev_l2_gaps_pred')
         print(tf.squeeze(all_c_dev_gaps_pred, axis=-1))
         print('\nc_dev_gaps_out')
         print(tf.squeeze(c_dev_gaps_out, axis=-1))
-        plt.plot(tf.squeeze(c_dev_gaps_out[0], axis=-1), 'bo-')
-        plt.plot(tf.squeeze(all_c_dev_gaps_pred[0][:len(c_dev_gaps_out[0])], axis=-1), 'r*-')
+        plt.plot(tf.squeeze(c_dev_gaps_out[1], axis=-1), 'bo-')
+        plt.plot(tf.squeeze(all_c_dev_gaps_pred[1][1:len(c_dev_gaps_out[1])+1], axis=-1), 'r*-')
         plt.savefig(name_plot+'.png')
         plt.close()
 
