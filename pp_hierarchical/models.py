@@ -342,6 +342,7 @@ class SimulateHierarchicalRNN:
     def simulate(self, model, c_times_in, c_gaps_pred, c_seq_lens,
                  block_begin_ts,
                  t_b_plus, c_t_b_plus,
+                 last_true_gaps,
                  decoder_length):
 
         # ----- Start: Simulation of Layer 2 RNN ----- #
@@ -400,7 +401,8 @@ class SimulateHierarchicalRNN:
         #ipdb.set_trace()
         l1_begin_idxes, l1_end_idxes =  np.zeros(N, dtype=int), np.zeros(N, dtype=int)
         pred_idxes = -1.0 * np.ones(N)
-        l1_gaps_inputs = l2_gaps_pred / 10.0 #TODO Can we do better here?
+        # l1_gaps_inputs = l2_gaps_pred / 10.0 #TODO Can we do better here?
+        l1_gaps_inputs = last_true_gaps
         #l1_gaps_inputs = tf.expand_dims(l1_gaps_inputs, axis=-1)
         simul_step = 0
         l1_rnn_init_state =  l2_hidden_states[-2]
