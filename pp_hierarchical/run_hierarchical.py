@@ -166,8 +166,12 @@ optimizer = keras.optimizers.Adam(learning_rate=1e-2)
 
 SAVE_DIR = './plots/hierarchical/'
 SAVE_DIR_L2 = './plots_l2/hierarchical/'
+SAVE_DIR_L2_TRN = './plots_l2_trn/hierarchical/'
+SAVE_DIR_L1_TRN = './plots_l1_trn/hierarchical/'
 os.makedirs(SAVE_DIR, exist_ok=True)
 os.makedirs(SAVE_DIR_L2, exist_ok=True)
+os.makedirs(SAVE_DIR_L2_TRN, exist_ok=True)
+os.makedirs(SAVE_DIR_L1_TRN, exist_ok=True)
 cntr = 0
 cntr = len(next(os.walk(SAVE_DIR))[1])
 
@@ -175,7 +179,13 @@ plot_dir = os.path.join(SAVE_DIR,'dev_plots_'+str(cntr))
 os.makedirs(plot_dir, exist_ok=True)
 plot_dir_l2 = os.path.join(SAVE_DIR_L2,'dev_plots_'+str(cntr))
 os.makedirs(plot_dir_l2, exist_ok=True)
+plot_dir_l2_trn = os.path.join(SAVE_DIR_L2_TRN,'trn_plots_'+str(cntr))
+os.makedirs(plot_dir_l2_trn, exist_ok=True)
+plot_dir_l1_trn = os.path.join(SAVE_DIR_L1_TRN,'trn_plots_'+str(cntr))
+os.makedirs(plot_dir_l1_trn, exist_ok=True)
 
+train_c_losses = list()
+train_losses = list()
 # Iterate over epochs.
 for epoch in range(epochs):
     print('Start of epoch %d' % (epoch,))
@@ -204,6 +214,10 @@ for epoch in range(epochs):
             #print(marks_batch_out)
             #print(tf.argmax(marks_logits, axis=-1).numpy())
 
+            # Apply mask on l1_gaps_pred
+            l1_gaps_pred = l1_gaps_pred * tf.expand_dims(tf.expand_dims(c_seqmask_batch_in, axis=-1), axis=-1)
+            #TODO Compute MASKED-losses manually instead of using tf helper functions
+
             # Compute the loss for this minibatch.
             if use_marks:
                 mark_loss = mark_loss_fn(marks_batch_out, marks_logits)
@@ -215,6 +229,8 @@ for epoch in range(epochs):
             c_gap_loss = c_gap_loss_fn(c_gaps_batch_out, l2_gaps_pred)
             gap_loss = gap_loss_fn(gaps_batch_out, l1_gaps_pred)
             loss = mark_loss + c_gap_loss + gap_loss
+            train_losses.append(gap_loss.numpy())
+            train_c_losses.append(c_gap_loss.numpy())
 
 
         # For testdata:
@@ -231,24 +247,26 @@ for epoch in range(epochs):
         c_train_gap_err = c_train_gap_metric.result()
 
         # ----- Training nowcasting plots for layer 2 and layer 1 ----- #
-        #if epoch > patience:
-        #    print('\nc_train_batch_gaps_out')
-        #    print(tf.squeeze(c_gaps_batch_out_unnorm[0], axis=-1))
-        #    print('\nc_train_batch_gaps_pred')
-        #    print(tf.squeeze(l2_gaps_pred_unnorm[0], axis=-1))
-        #    plt.plot(tf.squeeze(c_gaps_batch_out_unnorm[0], axis=-1), 'bo-')
-        #    plt.plot(tf.squeeze(l2_gaps_pred_unnorm[0], axis=-1), 'r*-')
-        #    plt.show()
-        #    plt.close()
+        if epoch > patience:
+            print('\nc_train_batch_gaps_out')
+            print(tf.squeeze(c_gaps_batch_out_unnorm[0], axis=-1))
+            print('\nc_train_batch_gaps_pred')
+            print(tf.squeeze(l2_gaps_pred_unnorm[0], axis=-1))
+            plt.plot(tf.squeeze(c_gaps_batch_out_unnorm[0], axis=-1), 'bo-')
+            plt.plot(tf.squeeze(l2_gaps_pred_unnorm[0], axis=-1), 'r*-')
+            name_plot = os.path.join(plot_dir_l2_trn, 'epoch_' + str(epoch))
+            plt.savefig(name_plot+'.png')
+            plt.close()
 
-            #print('\ntrain_batch_gaps_out')
-            #print(tf.squeeze(gaps_batch_out_unnorm[0][0], axis=-1))
-            #print('\ntrain_batch_gaps_pred')
-            #print(tf.squeeze(l1_gaps_pred_unnorm[0][0], axis=-1))
-            #plt.plot(tf.squeeze(gaps_batch_out_unnorm[0][0], axis=-1), 'bo-')
-            #plt.plot(tf.squeeze(l1_gaps_pred_unnorm[0][0], axis=-1), 'r*-')
-            #plt.show()
-            #plt.close()
+            print('\ntrain_batch_gaps_out')
+            print(tf.squeeze(gaps_batch_out_unnorm[0][0], axis=-1))
+            print('\ntrain_batch_gaps_pred')
+            print(tf.squeeze(l1_gaps_pred_unnorm[0][0], axis=-1))
+            plt.plot(tf.squeeze(gaps_batch_out_unnorm[0][0], axis=-1), 'bo-')
+            plt.plot(tf.squeeze(l1_gaps_pred_unnorm[0][0], axis=-1), 'r*-')
+            name_plot = os.path.join(plot_dir_l1_trn, 'epoch_' + str(epoch))
+            plt.savefig(name_plot+'.png')
+            plt.close()
 
 
         grads = tape.gradient(loss, model.trainable_weights)
@@ -478,3 +496,15 @@ for idx in range(len(best_inp_tru_gaps)):
 
     plt.savefig(name_plot+'.png')
     plt.close()
+
+#ipdb.set_trace()
+print('\n train_losses')
+print(train_losses)
+print('\n train_c_losses')
+print(train_c_losses)
+#plt.plot(train_losses, 'bo-')
+#plt.show()
+#plt.close()
+#plt.plot(train_c_losses, 'bo-')
+#plt.show()
+#plt.close()
