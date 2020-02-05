@@ -30,7 +30,7 @@ block_size = 1
 block_size_sec = 3600.0 * block_size
 decoder_length = 5
 use_marks = False
-use_intensity = False
+use_intensity = True
 data = reader_hierarchical.get_preprocessed_data(block_size, decoder_length)
 num_categories = data['num_categories']
 num_sequences = data['num_sequences']
@@ -278,15 +278,14 @@ for epoch in range(epochs):
         train_gap_metric(gaps_batch_out, l1_gaps_pred)
 
         # Log every 200 batches.
-        if step % 200 == 0:
         #    print(tf.squeeze(c_gaps_batch_out, axis=-1))
         #    print(tf.squeeze(l2_gaps_pred, axis=-1))
-            print('Training loss (for one batch) at step %s: %s %s %s %s' \
-                    % (step, float(loss), float(mark_loss), float(c_gap_loss), float(gap_loss)))
-            print('Seen so far: %s samples' % ((step + 1) * batch_size))
+        print('Training loss (for one batch) at step %s: %s %s %s %s' \
+                % (step, float(loss), float(mark_loss), float(c_gap_loss), float(gap_loss)))
+        #print('Seen so far: %s events' % ((step + 1) * BPTT))
 
-        model.reset_states() # Reset RNN state after 
-                             # a sequence is finished
+    model.reset_states() # Reset RNN state after 
+                         # a sequence is finished
 
     if use_marks:
         train_mark_acc = train_mark_metric.result()

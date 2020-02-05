@@ -20,6 +20,7 @@ def read_data(filename):
 
     marks = np.array([event[0] for event in data_sorted])
     times = np.array([event[1] for event in data_sorted])
+    times = times-times[0] # Shift all timestamps to start with zero
     return marks, times
 
 def split_data(data, num_chops):

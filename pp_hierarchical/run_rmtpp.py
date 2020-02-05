@@ -3,8 +3,10 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 import collections
 import matplotlib.pyplot as plt
 import numpy as np
+import math
 from bisect import bisect_right
 import os, sys
+import ipdb
 
 import tensorflow as tf
 from tensorflow import keras
@@ -29,7 +31,7 @@ block_size = 1 # Number of hours in a block
 block_size_sec = 3600.0 * block_size
 decoder_length = 5
 use_marks = False
-use_intensity = False
+use_intensity = True
 
 data = reader_rmtpp.get_preprocessed_data(block_size, decoder_length)
 num_categories = data['num_categories']
@@ -209,6 +211,7 @@ for epoch in range(epochs):
             gap_loss = gap_loss_fn(gaps_batch_out, gaps_pred)
             loss = mark_loss + gap_loss
 
+
         grads = tape.gradient(loss, model.trainable_weights)
         optimizer.apply_gradients(zip(grads, model.trainable_weights))
 
@@ -218,15 +221,14 @@ for epoch in range(epochs):
         train_gap_metric(gaps_batch_out, gaps_pred)
 
         # Log every 200 batches.
-        if step % 200 == 0:
         #    print(tf.squeeze(gaps_batch_out, axis=-1))
         #    print(tf.squeeze(gaps_pred, axis=-1))
-            print('Training loss (for one batch) at step %s: %s %s %s' \
-                    % (step, float(loss), float(mark_loss), float(gap_loss)))
-            print('Seen so far: %s samples' % ((step + 1) * batch_size))
+        print('Training loss (for one batch) at step %s: %s %s %s' \
+                % (step, float(loss), float(mark_loss), float(gap_loss)))
+        #print('Seen so far: %s events' % ((step + 1) * BPTT))
 
-        model.rnn_layer.reset_states() # Reset RNN state after 
-                                       # a sequence is finished
+    model.rnn_layer.reset_states() # Reset RNN state after
+                                   # a sequence is finished
 
     if use_marks:
         train_mark_acc = train_mark_metric.result()

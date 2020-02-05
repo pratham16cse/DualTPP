@@ -4,12 +4,14 @@ import collections
 import matplotlib.pyplot as plt
 import numpy as np
 import ipdb
+import math
 
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
 
 
+one_by = tf.math.reciprocal_no_nan
 ETH = 10.0
 
 class InverseTransformSampling(layers.Layer):
@@ -19,7 +21,7 @@ class InverseTransformSampling(layers.Layer):
     D, WT = inputs
     u = tf.ones_like(D) * tf.range(0.0, 1.0, 1/500)
     c = -tf.exp(D)
-    val = (1.0/WT) * tf.math.log((WT/c) * tf.math.log(1.0 - u) + 1)
+    val = one_by(WT) * tf.math.log(WT * one_by(c) * tf.math.log(1.0 - u) + 1)
     val = tf.reduce_mean(val, axis=-1, keepdims=True)
     return val
 
@@ -37,8 +39,8 @@ class NegativeLogLikelihood(tf.keras.losses.Loss):
         log_lambda_ = (self.D + (gaps_true * self.WT))
         lambda_ = tf.exp(tf.minimum(ETH, log_lambda_), name='lambda_')
         log_f_star = (log_lambda_
-                      + (1.0 / self.WT) * tf.exp(tf.minimum(ETH, self.D))
-                      - (1.0 / self.WT) * lambda_)
+                      + one_by(self.WT) * tf.exp(tf.minimum(ETH, self.D))
+                      - one_by(self.WT) * lambda_)
 
         return -log_f_star
 
@@ -95,6 +97,7 @@ class RMTPP(tf.keras.Model):
             self.marks_logits = self.marks_output_layer(self.hidden_states)
         else:
             self.marks_logits = None
+
         if self.use_intensity:
             self.WT = self.WT_layer(self.hidden_states)
             self.gaps_pred = self.gaps_output_layer((self.D, self.WT))
@@ -108,7 +111,7 @@ class RMTPP(tf.keras.Model):
             self.gaps_pred = self.gaps_pred * tf.expand_dims(mask, axis=-1)
             self.D = self.D * tf.expand_dims(mask, axis=-1)
             if self.use_intensity:
-                self.WT = self.WT * mask
+                self.WT = self.WT * tf.expand_dims(mask, axis=-1)
 
         return self.marks_logits, self.gaps_pred, self.D, self.WT
 
@@ -126,10 +129,10 @@ class FeedForward(layers.Layer):
                                  activation=tf.sigmoid,
                                  name='st_l2')
     def call(self, inputs):
-        #st_1 = self.st_l1(inputs)
-        #st_2 = self.st_l2(st_1)
+        st_1 = self.st_l1(inputs)
+        st_2 = self.st_l2(st_1)
 
-        return inputs #TODO return transformed states
+        return st_2 #TODO return transformed states
 
 class HierarchicalRNN(tf.keras.Model):
     def __init__(self,
