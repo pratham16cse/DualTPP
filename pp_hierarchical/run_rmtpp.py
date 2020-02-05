@@ -21,7 +21,7 @@ import reader_rmtpp
 import models
                     
 epochs = 100
-patience = 30
+patience = 20
 
 batch_size = 2
 BPTT = 20

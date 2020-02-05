@@ -158,10 +158,11 @@ def get_train_input_output(c_data, data, dec_len):
     c_times_out = [np.array(x[2:]) for x in c_times]
 
     gaps = np.array(times[1:]) - np.array(times[:-1])
-    gaps_in = [[np.array(gaps[idx:idx+train_dec_len]) for idx in idxes[:-2]] for idxes in l1_idxes]
-    times_in = [[np.array(times[idx+1:idx+1+train_dec_len]) for idx in idxes[1:-1]] for idxes in l1_idxes]
+    gaps_in = [[np.array(gaps[idx-1:idx-1+train_dec_len]) for idx in idxes[1:-1]] for idxes in l1_idxes]
+    times_in = [[np.array(times[idx:idx+train_dec_len]) for idx in idxes[1:-1]] for idxes in l1_idxes]
     gaps_out = [[np.array(gaps[idx:idx+train_dec_len]) for idx in idxes[1:-1]] for idxes in l1_idxes]
-    times_out = [[np.array(times[idx+1:idx+1+train_dec_len]) for idx in idxes[2:]] for idxes in l1_idxes]
+    times_out = [[np.array(times[idx+1:idx+1+train_dec_len]) for idx in idxes[1:-1]] for idxes in l1_idxes]
+    #ipdb.set_trace()
 
     #print(len(c_marks_in), len(c_marks_out),
     #      len(c_gaps_in), len(c_gaps_out),
@@ -425,7 +426,6 @@ def get_preprocessed_(c_data, data, block_size, decoder_length):
                                                         c_dev_times_out,
                                                         c_dev_seqmask_out))
 
-
     c_test_seqmask_in, _ = reader_rmtpp.get_seq_mask(c_test_gaps_in)
     c_test_seqmask_out, _ = reader_rmtpp.get_seq_mask(c_test_gaps_out)
     test_seqmask_in, _ = reader_rmtpp.get_seq_mask(test_gaps_in)
@@ -456,7 +456,7 @@ def get_preprocessed_(c_data, data, block_size, decoder_length):
                                                          c_test_times_in,
                                                          c_test_seqmask_in,
                                                          c_test_gaps_out,
-                                                         c_dev_times_out,
+                                                         c_test_times_out,
                                                          c_test_seqmask_out))
 
 

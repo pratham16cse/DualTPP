@@ -112,6 +112,25 @@ class RMTPP(tf.keras.Model):
 
         return self.marks_logits, self.gaps_pred, self.D, self.WT
 
+
+class FeedForward(layers.Layer):
+    def __init__(self,
+                 hidden_layer_size,
+                 name='FeedForward',
+                 **kwargs):
+        super(FeedForward, self).__init__(name=name, **kwargs)
+        self.st_l1 = layers.Dense(hidden_layer_size,
+                                 activation=tf.sigmoid,
+                                 name='st_l1')
+        self.st_l2 = layers.Dense(hidden_layer_size,
+                                 activation=tf.sigmoid,
+                                 name='st_l2')
+    def call(self, inputs):
+        #st_1 = self.st_l1(inputs)
+        #st_2 = self.st_l2(st_1)
+
+        return inputs #TODO return transformed states
+
 class HierarchicalRNN(tf.keras.Model):
     def __init__(self,
                  num_categories,
@@ -130,12 +149,7 @@ class HierarchicalRNN(tf.keras.Model):
         self.l2_rnn = RMTPP(num_categories, embed_size, hidden_layer_size,
                             use_marks=use_marks,
                             use_intensity=use_intensity)
-        self.state_transform_l1 = layers.Dense(hidden_layer_size,
-                                               activation=tf.sigmoid,
-                                               name='state_transform_l1')
-        self.state_transform_l2 = layers.Dense(hidden_layer_size,
-                                               activation=tf.tanh,
-                                               name='state_transform_l2')
+        self.ff = FeedForward(hidden_layer_size)
 
     def call(self, inputs, l2_gaps=None, l1_gaps=None,
              l2_mask=None, l1_mask=None,
@@ -158,7 +172,7 @@ class HierarchicalRNN(tf.keras.Model):
 
         #self.state_transform_1 = self.state_transform_l1(self.l2_rnn.hidden_states)
         #self.state_transformed = self.state_transform_l2(self.state_transform_1)
-        self.state_transformed = self.l2_rnn.hidden_states
+        self.state_transformed = self.ff(self.l2_rnn.hidden_states)
         #TODO Make use of state_transformed in the simulation
 
         if l1_gaps is not None and debug:
@@ -408,10 +422,14 @@ class SimulateHierarchicalRNN:
         #ipdb.set_trace()
         l1_begin_idxes, l1_end_idxes =  np.zeros(N, dtype=int), np.zeros(N, dtype=int)
         pred_idxes = -1.0 * np.ones(N)
+        simul_step = 0
+
+        #ipdb.set_trace()
         l1_gaps_inputs = l2_gaps_pred / 10.0 #TODO Can we do better here?
         #l1_gaps_inputs = tf.expand_dims(l1_gaps_inputs, axis=-1)
-        simul_step = 0
-        l1_rnn_init_state =  l2_hidden_states[-2]
+
+        # Transform hidden state of layer 2 rnn using ff
+        l1_rnn_init_state =  model.ff(l2_hidden_states[-2])
 
         while any(l1_times_pred[-1]<t_b_plus) or any(pred_idxes<decoder_length):
 
@@ -444,6 +462,7 @@ class SimulateHierarchicalRNN:
             simul_step += 1
 
         l1_gaps_pred = tf.squeeze(tf.squeeze(tf.squeeze(tf.stack(l1_gaps_pred, axis=1), axis=-1), axis=-1), axis=-1)
+        self.all_l1_gaps_pred = l1_gaps_pred
         l1_idxes = tf.expand_dims(tf.constant(l1_begin_idxes, dtype=tf.int32), axis=-1) + tf.expand_dims(tf.range(decoder_length, dtype=tf.int32), axis=0)
         l1_gaps_pred = tf.gather(l1_gaps_pred, l1_idxes, batch_dims=1)
         l1_gaps_pred = tf.expand_dims(l1_gaps_pred, axis=-1)
