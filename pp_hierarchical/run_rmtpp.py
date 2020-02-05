@@ -7,6 +7,7 @@ import math
 from bisect import bisect_right
 import os, sys
 import ipdb
+import time
 
 import tensorflow as tf
 from tensorflow import keras
@@ -43,6 +44,7 @@ best_dev_gap_error = np.inf
 best_test_gap_error = np.inf
 best_dev_mark_acc = np.inf
 best_test_mark_acc = np.inf
+best_epoch = 0
 
 # ----- Start: Load dev_dataset ----- #
 # dynamic_block_size = data['dev_normalizer_d']
@@ -180,6 +182,9 @@ SAVE_DIR = './plots/rmtpp/'
 os.makedirs(SAVE_DIR, exist_ok=True)
 cntr = 0
 cntr = len(next(os.walk(SAVE_DIR))[1])
+
+train_losses = list()
+inference_times = list()
 # Iterate over epochs.
 for epoch in range(epochs):
     print('Start of epoch %d' % (epoch,))
@@ -210,6 +215,7 @@ for epoch in range(epochs):
                 gap_loss_fn = models.NegativeLogLikelihood(D, WT)
             gap_loss = gap_loss_fn(gaps_batch_out, gaps_pred)
             loss = mark_loss + gap_loss
+            train_losses.append(gap_loss.numpy())
 
 
         grads = tape.gradient(loss, model.trainable_weights)
@@ -244,8 +250,6 @@ for epoch in range(epochs):
 
         for dev_step, (dev_marks_in, dev_gaps_in, dev_times_in, dev_seqmask_in) \
                 in enumerate(dev_dataset):
-            # Sample offset for dev and test
-
 
             print(dev_gaps_in.shape, dev_seqmask_in.shape, dev_marks_in.shape)
             dev_marks_logits, dev_gaps_pred, _, _ = model(dev_gaps_in,
@@ -271,10 +275,9 @@ for epoch in range(epochs):
                                             marks_in=dev_marks_pred_last)
         model.rnn_layer.reset_states()
 
+        start_time = time.time()
         for test_step, (test_marks_in, test_gaps_in, test_times_in, test_seqmask_in) \
                 in enumerate(test_dataset):
-            # Sample offset for test and test
-
 
             test_marks_logits, test_gaps_pred, _, _ = model(test_gaps_in,
                                                             test_seqmask_in,
@@ -298,6 +301,8 @@ for epoch in range(epochs):
                                               decoder_length,
                                               marks_in=test_marks_pred_last)
         model.rnn_layer.reset_states()
+        end_time = time.time()
+        inference_times.append(end_time-start_time)
 
         #print(dev_marks_out, 'dev_marks_out')
         #print(np.argmax(dev_marks_logits, axis=-1), 'dev_marks_preds')
@@ -371,6 +376,7 @@ for epoch in range(epochs):
             best_test_gap_error = test_gap_err
             best_dev_mark_acc = dev_mark_acc
             best_test_mark_acc = test_mark_acc
+            best_epoch = epoch + 1
 
             best_true_gaps_plot = dev_gaps_out.numpy()
             best_pred_gaps_plot = dev_gaps_pred.numpy()
@@ -383,10 +389,11 @@ for epoch in range(epochs):
 
         model.rnn_layer.reset_states()
 
-print('Best Dev mark acc and gap err over epoch: %s, %s' \
+print('Best Dev mark acc and gap err: %s, %s' \
         % (float(best_dev_mark_acc), float(best_dev_gap_error)))
-print('Best Test mark acc and gap err over epoch: %s, %s' \
+print('Best Test mark acc and gap err: %s, %s' \
         % (float(best_test_mark_acc), float(best_test_gap_error)))
+print('Best epoch:', best_epoch)
 
 SAVE_DIR = './joint_plots/rmtpp/'
 os.makedirs(SAVE_DIR, exist_ok=True)
@@ -417,3 +424,7 @@ for idx in range(len(best_inp_tru_gaps)):
 
     plt.savefig(name_plot+'.png')
     plt.close()
+
+print('\n train_losses')
+print(train_losses)
+print('\n average inference time:', np.mean(inference_times))

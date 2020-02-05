@@ -6,6 +6,7 @@ import numpy as np
 from bisect import bisect_right
 import os, sys
 import ipdb
+import time
 
 import tensorflow as tf
 from tensorflow import keras
@@ -45,6 +46,7 @@ best_dev_gap_error = np.inf
 best_test_gap_error = np.inf
 best_dev_mark_acc = np.inf
 best_test_mark_acc = np.inf
+best_epoch = 0
 
 # ----- Start: Load dev_dataset ----- #
 c_dev_dataset = data['c_dev_dataset']
@@ -186,6 +188,7 @@ os.makedirs(plot_dir_l1_trn, exist_ok=True)
 
 train_c_losses = list()
 train_losses = list()
+inference_times = list()
 # Iterate over epochs.
 for epoch in range(epochs):
     print('Start of epoch %d' % (epoch,))
@@ -330,6 +333,7 @@ for epoch in range(epochs):
                                              decoder_length)
         model.reset_states()
 
+        start_time = time.time()
         for test_step, (c_test_marks_in, c_test_gaps_in, c_test_times_in, c_test_seqmask_in,
                         c_test_gaps_out, c_dev_times_out, c_test_seqmask_out) \
                 in enumerate(c_test_dataset):
@@ -359,6 +363,8 @@ for epoch in range(epochs):
                                               c_test_t_b_plus,
                                               decoder_length)
         model.reset_states()
+        end_time = time.time()
+        inference_times.append(end_time-start_time)
 
         #print(dev_marks_out, 'dev_marks_out')
         #print(np.argmax(dev_marks_logits, axis=-1), 'dev_marks_preds')
@@ -445,6 +451,7 @@ for epoch in range(epochs):
             best_test_gap_error = test_gap_err
             best_dev_mark_acc = dev_mark_acc
             best_test_mark_acc = test_mark_acc
+            best_epoch = epoch + 1
 
             best_true_gaps_plot = dev_gaps_out.numpy()
             best_pred_gaps_plot = dev_gaps_pred.numpy()
@@ -461,10 +468,11 @@ for epoch in range(epochs):
             % (float(c_train_gap_err)))
     c_train_gap_metric.reset_states()
 
-print('Best Dev mark acc and gap err over epoch: %s, %s' \
+print('Best Dev mark acc, gap err: %s, %s' \
         % (float(best_dev_mark_acc), float(best_dev_gap_error)))
-print('Best Test mark acc and gap err over epoch: %s, %s' \
+print('Best Test mark acc and gap err: %s, %s' \
         % (float(best_test_mark_acc), float(best_test_gap_error)))
+print('Best epoch:', best_epoch)
 
 SAVE_DIR = './joint_plots/hierarchical/'
 os.makedirs(SAVE_DIR, exist_ok=True)
@@ -501,6 +509,7 @@ print('\n train_losses')
 print(train_losses)
 print('\n train_c_losses')
 print(train_c_losses)
+print('\n average infernece time:', np.mean(inference_times))
 #plt.plot(train_losses, 'bo-')
 #plt.show()
 #plt.close()
