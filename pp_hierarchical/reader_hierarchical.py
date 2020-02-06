@@ -524,7 +524,7 @@ def get_preprocessed_(c_data, data, block_size, decoder_length):
         }
 
 def get_preprocessed_data(block_size, decoder_length):
-    marks, times = reader_rmtpp.read_data('sin.txt')
+    marks, times = reader_rmtpp.read_data('testdata.txt')
     c_marks, c_times, level_1_idxes = get_compound_events((marks, times), K=10)
     #marks, times = split_data((marks, times), 7)
     

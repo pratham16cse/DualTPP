@@ -73,17 +73,20 @@ class RMTPP(tf.keras.Model):
             self.WT_layer = layers.Dense(1, activation=tf.nn.softplus, name='WT_layer')
             self.gaps_output_layer = InverseTransformSampling()
 
-    def call(self, gaps, mask=None, marks=None, initial_state=None):
+    def call(self, gaps, mask=None, marks=None, time_features=None, initial_state=None):
         if self.use_marks:
             self.marks_embd = self.embedding_layer(marks)
         #    mask = self.embedding_layer.compute_mask(marks)
         #else:
         #    mask = tf.not_equal(gaps, tf.zeros_like(gaps))
         self.gaps = gaps
+        self.time_features = time_features
+
         if self.use_marks:
-            rnn_inputs = tf.concat([self.marks_embd, self.gaps], axis=-1)
+            rnn_inputs = tf.concat([self.marks_embd, self.gaps, self.time_features], axis=-1)
         else:
-            rnn_inputs = self.gaps
+            rnn_inputs = tf.concat([self.gaps, self.time_features], axis=-1)
+
         self.hidden_states, self.final_state \
                 = self.rnn_layer(rnn_inputs,
                                  initial_state=initial_state,
@@ -208,9 +211,10 @@ class HierarchicalRNN(tf.keras.Model):
 
 class SimulateRMTPP:
     def simulate(self, model, times, gaps_in, block_begin_ts, t_b_plus,
-                 decoder_length, marks_in=None):
+                 decoder_length, normalizers, initial_timestamp=0.0, marks_in=None):
     
         marks_logits, gaps_pred = list(), list()
+        normalizer_d, normalizer_a = normalizers
         times_pred = list()
         last_times_pred = tf.squeeze(times + gaps_in, axis=-1)
         times_pred.append(last_times_pred)
@@ -219,7 +223,10 @@ class SimulateRMTPP:
         begin_idxes, end_idxes = np.zeros(N, dtype=int), np.zeros(N, dtype=int)
         simul_step = 0
         while any(times_pred[-1]<t_b_plus) or any(pred_idxes<decoder_length):
-            step_marks_logits, step_gaps_pred, _, _ = model(gaps_in, marks_in)
+            time_features = (tf.expand_dims(last_times_pred, axis=1) - normalizer_a) * normalizer_d
+            time_features = time_features + initial_timestamp
+            time_features = (time_features // 3600) % 24
+            step_marks_logits, step_gaps_pred, _, _ = model(gaps_in, marks = marks_in, time_features = time_features)
             if marks_in is not None:
                 step_marks_pred = tf.argmax(step_marks_logits, axis=-1) + 1
             else:
