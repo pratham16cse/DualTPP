@@ -111,6 +111,15 @@ def get_time_features_for_data(data):
     time_feature = (times_in // 3600) % 24
     return time_feature
 
+def get_sec_time_features_for_data(data):
+    times_in = data
+    time_feature_minute = (times_in // 60) % 60
+    time_feature_seconds = (times_in) % 60
+
+    time_feature = (time_feature_minute * 60.0) + time_feature_seconds
+    time_feature = time_feature / 3600.0
+    return time_feature
+
 
 def get_hour_of_day_ts(ts):
     ''' Returns timestamp at the beginning of the hour'''
@@ -320,6 +329,10 @@ def get_preprocessed_(data, block_size, decoder_length, initial_timestamp):
 
     (train_time_feature) \
             = get_time_features_for_data((train_times_in+initial_timestamp))
+    (train_time_feature_minute) \
+            = get_sec_time_features_for_data((train_times_in+initial_timestamp))
+
+    train_time_feature += train_time_feature_minute
 
     (train_marks_in, train_gaps_in, train_times_in, train_seqmask_in,
      train_marks_out, train_gaps_out, train_times_out, train_seqmask_out, train_time_feature) \
@@ -369,6 +382,10 @@ def get_preprocessed_(data, block_size, decoder_length, initial_timestamp):
 
     (dev_time_feature) \
             = get_time_features_for_data((dev_times_in+initial_timestamp))
+    (dev_time_feature_minute) \
+            = get_sec_time_features_for_data((dev_times_in+initial_timestamp))
+
+    dev_time_feature += dev_time_feature_minute
 
 
     (dev_gaps_in_norm, dev_gaps_out_norm,
@@ -393,6 +410,10 @@ def get_preprocessed_(data, block_size, decoder_length, initial_timestamp):
     print('test_times_in', test_times_in)
     (test_time_feature) \
             = get_time_features_for_data((test_times_in+initial_timestamp))
+    (test_time_feature_minute) \
+            = get_sec_time_features_for_data((test_times_in+initial_timestamp))
+    test_time_feature += test_time_feature_minute
+
     print('test_time_feature', test_time_feature)
 
     (test_gaps_in_norm, test_gaps_out_norm,
