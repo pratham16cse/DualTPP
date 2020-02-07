@@ -531,7 +531,7 @@ def get_preprocessed_(c_data, data, block_size, decoder_length, normalization):
 
 def get_preprocessed_data(dataset_path, block_size, decoder_length,
                           normalization, compound_event_size):
-    marks, times = reader_rmtpp.read_data(dataset_path)
+    marks, times, initial_timestamp = reader_rmtpp.read_data(dataset_path)
     c_marks, c_times, level_1_idxes \
             = get_compound_events((marks, times), K=compound_event_size)
     data_hierarchical = get_preprocessed_((c_marks, c_times, level_1_idxes),

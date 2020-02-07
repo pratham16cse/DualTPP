@@ -283,6 +283,9 @@ def run(args):
         print('Training mark acc and gap err over epoch: %s, %s' \
                 % (float(train_mark_acc), float(train_gap_err)))
 
+        ############################################################################
+        # Starting prediction with simulator
+
         if epoch > patience-1:
 
             for dev_step, (c_dev_marks_in, c_dev_gaps_in, c_dev_times_in, c_dev_seqmask_in,
@@ -298,19 +301,46 @@ def run(args):
                     dev_marks_pred_last = dev_marks_pred[:, -1:]
                 else:
                     dev_marks_pred_last = None
-                #ipdb.set_trace()
 
+                second_last_gaps_pred = tf.gather(dev_l2_gaps_pred, c_dev_seq_lens-2, batch_dims=1)
+                last_gaps_pred = tf.gather(dev_l2_gaps_pred, c_dev_seq_lens-1, batch_dims=1)
+                last_times_in = tf.gather(c_dev_times_in, c_dev_seq_lens-1, batch_dims=1)
+        
                 dev_simulator = models.SimulateHierarchicalRNN()
-                dev_gaps_pred \
-                        = dev_simulator.simulate(model,
-                                                 c_dev_times_in,
-                                                 dev_l2_gaps_pred,
+                all_l2_dev_gaps_pred, last_times_pred, before_tb_gaps_pred, _, _, before_tb_hidden_state, _ \
+                                               = dev_simulator.simulator(model.l2_rnn,
+                                                 last_times_in,
+                                                 last_gaps_pred,
                                                  c_dev_seq_lens,
                                                  dev_begin_tss,
-                                                 dev_t_b_plus,
                                                  c_dev_t_b_plus,
-                                                 decoder_length)
+                                                 c_dev_t_b_plus,
+                                                 decoder_length,
+                                                 2,
+                                                 second_last_gaps_pred,)
+                
+                #TODO Process l2 gaps to l1  gaps
+                # before_tb_gaps_pred
+
+                last_gaps_pred = before_tb_gaps_pred / 10.0
+                l1_rnn_init_state =  model.ff(before_tb_hidden_state)
+
+                all_l1_dev_gaps_pred, last_times_pred, before_tb_gaps_pred, dev_gaps_pred, _, _, simulation_count \
+                                               = dev_simulator.simulator(model.l1_rnn,
+                                                 last_times_pred,
+                                                 last_gaps_pred,
+                                                 0,
+                                                 dev_begin_tss,
+                                                 dev_t_b_plus,
+                                                 dev_t_b_plus,
+                                                 decoder_length,
+                                                 1,
+                                                 initial_state=l1_rnn_init_state)
+
             model.reset_states()
+            ipdb.set_trace()
+
+            ############################################################################
 
             start_time = time.time()
             for test_step, (c_test_marks_in, c_test_gaps_in, c_test_times_in, c_test_seqmask_in,
@@ -361,6 +391,85 @@ def run(args):
             dev_gap_metric.reset_states()
             test_gap_metric.reset_states()
 
+
+        # if epoch > patience-1:
+
+        #     for dev_step, (c_dev_marks_in, c_dev_gaps_in, c_dev_times_in, c_dev_seqmask_in,
+        #                    c_dev_gaps_out, c_dev_times_out, c_dev_seqmask_out) \
+        #             in enumerate(c_dev_dataset):
+
+        #         (dev_l2_marks_logits, dev_l2_gaps_pred, _, _,
+        #          _, _, _, _) \
+        #                 = model(None, c_dev_gaps_in, c_dev_seqmask_in)
+
+        #         if use_marks:
+        #             dev_marks_pred = tf.argmax(dev_marks_logits, axis=-1) + 1
+        #             dev_marks_pred_last = dev_marks_pred[:, -1:]
+        #         else:
+        #             dev_marks_pred_last = None
+        #         #ipdb.set_trace()
+
+        #         dev_simulator = models.SimulateHierarchicalRNN()
+        #         dev_gaps_pred \
+        #                 = dev_simulator.simulate(model,
+        #                                          c_dev_times_in,
+        #                                          dev_l2_gaps_pred,
+        #                                          c_dev_seq_lens,
+        #                                          dev_begin_tss,
+        #                                          dev_t_b_plus,
+        #                                          c_dev_t_b_plus,
+        #                                          decoder_length)
+        #     model.reset_states()
+
+        #     start_time = time.time()
+        #     for test_step, (c_test_marks_in, c_test_gaps_in, c_test_times_in, c_test_seqmask_in,
+        #                     c_test_gaps_out, c_dev_times_out, c_test_seqmask_out) \
+        #             in enumerate(c_test_dataset):
+
+        #         (test_l2_marks_logits, test_l2_gaps_pred, _, _,
+        #          _, _, _, _) \
+        #                 = model(None, c_test_gaps_in, c_test_seqmask_in)
+
+        #         if use_marks:
+        #             test_marks_pred = tf.argmax(test_marks_logits, axis=-1) + 1
+        #             test_marks_pred_last = test_marks_pred[:, -1:]
+        #         else:
+        #             test_marks_pred_last = None
+
+        #         test_simulator = models.SimulateHierarchicalRNN()
+        #         test_gaps_pred \
+        #                 = test_simulator.simulate(model,
+        #                                           c_test_times_in,
+        #                                           test_l2_gaps_pred,
+        #                                           c_test_seq_lens,
+        #                                           test_begin_tss,
+        #                                           test_t_b_plus,
+        #                                           c_test_t_b_plus,
+        #                                           decoder_length)
+        #     model.reset_states()
+        #     end_time = time.time()
+        #     inference_times.append(end_time-start_time)
+
+        #     if use_marks:
+        #         dev_mark_metric(dev_marks_out, dev_marks_logits)
+        #         test_mark_metric(test_marks_out, test_marks_logits)
+        #         dev_mark_acc = dev_mark_metric.result()
+        #         test_mark_acc = test_mark_metric.result()
+        #         dev_mark_metric.reset_states()
+        #         test_mark_metric.reset_states()
+        #     else:
+        #         dev_mark_acc, test_mark_acc = 0.0, 0.0
+
+        #     dev_gaps_pred = (dev_gaps_pred - dev_normalizer_a) * dev_normalizer_d
+        #     test_gaps_pred = (test_gaps_pred - test_normalizer_a) * test_normalizer_d
+
+        #     dev_gap_metric(dev_gaps_out[:, 1:], dev_gaps_pred[:, 1:])
+        #     test_gap_metric(test_gaps_out[:, 1:], test_gaps_pred[:, 1:])
+        #     dev_gap_err = dev_gap_metric.result()
+        #     test_gap_err = test_gap_metric.result()
+        #     dev_gap_metric.reset_states()
+        #     test_gap_metric.reset_states()
+
             if args.verbose:
                 print('\ndev_gaps_pred')
                 print(tf.squeeze(dev_gaps_pred[:, 1:], axis=-1))
@@ -373,7 +482,8 @@ def run(args):
                 os.makedirs(plot_dir_l2, exist_ok=True)
                 name_plot = os.path.join(plot_dir_l2, 'epoch_' + str(epoch))
 
-                all_c_dev_gaps_pred = dev_simulator.all_l2_gaps_pred
+                all_c_dev_gaps_pred = tf.squeeze(all_l2_dev_gaps_pred, axis=-1)
+                # all_c_dev_gaps_pred = dev_simulator.all_l2_gaps_pred
                 all_c_dev_gaps_pred = (all_c_dev_gaps_pred) * tf.expand_dims(c_dev_normalizer_d, axis=1)
 
                 plt.plot(tf.squeeze(c_dev_gaps_out[1], axis=-1), 'bo-')
