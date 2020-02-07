@@ -301,7 +301,7 @@ def get_compound_events(data, K=1):
 
     return c_marks, c_times, level_1_idxes
 
-def get_preprocessed_(c_data, data, block_size, decoder_length):
+def get_preprocessed_(c_data, data, block_size, decoder_length, normalization):
     c_marks, c_times, level_1_idxes = c_data
     marks, times = data
     num_categories = len(np.unique(marks))
@@ -356,11 +356,13 @@ def get_preprocessed_(c_data, data, block_size, decoder_length):
 
     (train_gaps_in_norm, train_gaps_out_norm,
      train_normalizer_d, train_normalizer_a) \
-            = get_normalized_dataset((train_gaps_in, train_gaps_out))
+            = get_normalized_dataset((train_gaps_in, train_gaps_out),
+                                     normalization=normalization)
 
     (c_train_gaps_in_norm, c_train_gaps_out_norm,
      c_train_normalizer_d, c_train_normalizer_a) \
-            = get_normalized_dataset((c_train_gaps_in, c_train_gaps_out))
+            = get_normalized_dataset((c_train_gaps_in, c_train_gaps_out),
+                                     normalization=normalization)
 
     c_train_dataset = tf.data.Dataset.from_tensor_slices((c_train_marks_in,
                                                           c_train_gaps_in_norm,
@@ -412,11 +414,13 @@ def get_preprocessed_(c_data, data, block_size, decoder_length):
 
     (dev_gaps_in_norm, dev_gaps_out_norm,
      dev_normalizer_d, dev_normalizer_a) \
-            = get_normalized_dataset((dev_gaps_in, dev_gaps_out))
+            = get_normalized_dataset((dev_gaps_in, dev_gaps_out),
+                                     normalization=normalization)
 
     (c_dev_gaps_in_norm, c_dev_gaps_out_norm,
      c_dev_normalizer_d, c_dev_normalizer_a) \
-            = get_normalized_dataset((c_dev_gaps_in, c_dev_gaps_out))
+            = get_normalized_dataset((c_dev_gaps_in, c_dev_gaps_out),
+                                     normalization=normalization)
 
     c_dev_dataset = tf.data.Dataset.from_tensor_slices((c_dev_marks_in,
                                                         c_dev_gaps_in_norm,
@@ -445,11 +449,13 @@ def get_preprocessed_(c_data, data, block_size, decoder_length):
 
     (test_gaps_in_norm, test_gaps_out_norm,
      test_normalizer_d, test_normalizer_a) \
-            = get_normalized_dataset((test_gaps_in, test_gaps_out))
+            = get_normalized_dataset((test_gaps_in, test_gaps_out),
+                                     normalization=normalization)
 
     (c_test_gaps_in_norm, c_test_gaps_out_norm,
      c_test_normalizer_d, c_test_normalizer_a) \
-            = get_normalized_dataset((c_test_gaps_in, c_test_gaps_out))
+            = get_normalized_dataset((c_test_gaps_in, c_test_gaps_out),
+                                     normalization=normalization)
 
     c_test_dataset = tf.data.Dataset.from_tensor_slices((c_test_marks_in,
                                                          c_test_gaps_in_norm,
@@ -523,33 +529,17 @@ def get_preprocessed_(c_data, data, block_size, decoder_length):
 
         }
 
-def get_preprocessed_data(block_size, decoder_length):
-    marks, times = reader_rmtpp.read_data('sin.txt')
-    c_marks, c_times, level_1_idxes = get_compound_events((marks, times), K=10)
-    #marks, times = split_data((marks, times), 7)
-    
-    block_size_sec = block_size * 3600.0
-
+def get_preprocessed_data(dataset_path, block_size, decoder_length,
+                          normalization, compound_event_size):
+    marks, times = reader_rmtpp.read_data(dataset_path)
+    c_marks, c_times, level_1_idxes \
+            = get_compound_events((marks, times), K=compound_event_size)
     data_hierarchical = get_preprocessed_((c_marks, c_times, level_1_idxes),
                                           (marks, times),
                                           block_size,
-                                          decoder_length)
-
-    # ----- Start: create compound events ----- #
-    #c_train_times_in = get_compound_times(train_times_in, K=10)
-    #c_dev_times_in = get_compound_times(dev_times_in, K=10)
-    #c_test_times_in = get_compound_times(test_times_in, K=10)
-    #c_marks, c_times = get_compound_events((marks, times), K=10)
-    #data_level_2 = get_preprocessed_level((c_marks, c_times),
-    #                                      (marks, times), 2,
-    #                                      block_size, decoder_length)
-
-    #assert data_level_1['num_sequences'] == data_level_2['num_sequences']
-    # ----- End: create compound events ----- #
-
+                                          decoder_length,
+                                          normalization)
     return data_hierarchical
-
-
 
 def main():
     for dataset in ['Delhi']:#['barca', 'Delhi', 'jaya', 'Movie', 'Fight', 'Verdict', 'Trump']:

@@ -240,27 +240,7 @@ def get_seq_mask(sequences):
     seq_mask = tf.sequence_mask(seq_lens, dtype=tf.float32)
     return seq_mask, seq_lens
 
-def get_compound_events(data, K=1):
-    def most_frequent(arr):
-        lst = arr.tolist()
-        return max(set(lst), key=lst.count)
-
-    marks, times = data
-    c_marks, c_times = list(), list()
-    #for m_seq, t_seq in zip(marks, times):
-    #    c_t_seq = [t_seq[i:i+K][-1] for i in range(0, len(t_seq), K)]
-    #    c_times.append(c_t_seq)
-    #    c_m_seq = [most_frequent(m_seq[i:i+K]) for i in range(0, len(m_seq), K)]
-    #    c_marks.append(c_m_seq)
-    #    #TODO Instead of returning most frequent marker, return the simplex of marks
-
-    c_times = np.array([times[i:i+K][-1] for i in range(0, len(times), K)])
-    c_marks = np.array([most_frequent(marks[i:i+K]) for i in range(0, len(marks), K)])
-    #TODO Instead of returning most frequent marker, return the simplex of marks
-
-    return c_marks, c_times
-
-def get_preprocessed_(data, block_size, decoder_length):
+def get_preprocessed_(data, block_size, decoder_length, normalization):
     marks, times = data
     num_categories = len(np.unique(marks))
 
@@ -295,7 +275,8 @@ def get_preprocessed_(data, block_size, decoder_length):
 
     (train_gaps_in_norm, train_gaps_out_norm,
      train_normalizer_d, train_normalizer_a) \
-            = get_normalized_dataset((train_gaps_in, train_gaps_out))
+            = get_normalized_dataset((train_gaps_in, train_gaps_out),
+                                     normalization=normalization)
 
     train_dataset = tf.data.Dataset.from_tensor_slices((train_marks_in,
                                                         train_gaps_in_norm,
@@ -332,7 +313,8 @@ def get_preprocessed_(data, block_size, decoder_length):
 
     (dev_gaps_in_norm, dev_gaps_out_norm,
      dev_normalizer_d, dev_normalizer_a) \
-            = get_normalized_dataset((dev_gaps_in, dev_gaps_out))
+            = get_normalized_dataset((dev_gaps_in, dev_gaps_out),
+                                     normalization=normalization)
 
     dev_dataset = tf.data.Dataset.from_tensor_slices((dev_marks_in,
                                                       dev_gaps_in_norm,
@@ -419,28 +401,10 @@ def get_preprocessed_(data, block_size, decoder_length):
 
         }
 
-def get_preprocessed_data(block_size, decoder_length):
-    marks, times = read_data('sin.txt')
-    # '../pp_seq2seq/data/DataSetForSeq2SeqPP/Delhi.txt'
-    #marks, times = split_data((marks, times), 7)
-    
-    block_size_sec = block_size * 3600.0
-
-    data = get_preprocessed_((marks, times), block_size, decoder_length)
-
-    # ----- Start: create compound events ----- #
-    #c_train_times_in = get_compound_times(train_times_in, K=10)
-    #c_dev_times_in = get_compound_times(dev_times_in, K=10)
-    #c_test_times_in = get_compound_times(test_times_in, K=10)
-    #c_marks, c_times = get_compound_events((marks, times), K=10)
-    #data_level_2 = get_preprocessed_level((c_marks, c_times), 2, block_size, decoder_length)
-
-    #assert data_level_1['num_sequences'] == data_level_2['num_sequences']
-    # ----- End: create compound events ----- #
-
+def get_preprocessed_data(dataset_path, block_size, decoder_length, normalization):
+    marks, times = read_data(dataset_path)
+    data = get_preprocessed_((marks, times), block_size, decoder_length, normalization)
     return data
-
-
 
 def main():
     for dataset in ['Delhi']:#['barca', 'Delhi', 'jaya', 'Movie', 'Fight', 'Verdict', 'Trump']:
