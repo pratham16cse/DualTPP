@@ -35,7 +35,7 @@ parser.add_argument('--decoder_length', type=int, default=5,
                     help='Number of events to predict in the prediction range')
 parser.add_argument('--compound_event_size', type=int, default=10,
                     help='Number of simple events in a compound event')
-parser.add_argument('--learning_rate', type=int, default=1e-2,
+parser.add_argument('--learning_rate', type=float, default=1e-2,
                     help='Learning rate for the training algorithm')
 
 parser.add_argument('--generate_plots', action='store_true',

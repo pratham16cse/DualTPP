@@ -16,6 +16,7 @@ from tensorflow.keras import layers
 import reader_rmtpp
 import models
 
+
 #epochs = 100
 #patience = 20
 #
@@ -47,6 +48,7 @@ def run(args):
     num_categories = data['num_categories']
     num_sequences = data['num_sequences']
 
+    initial_timestamp = data['initial_timestamp']
     train_dataset = data['train_dataset']
 
     best_dev_gap_error = np.inf
@@ -64,7 +66,7 @@ def run(args):
     dev_gaps_out = data['dev_gaps_out']
     dev_times_out = data['dev_times_out']
     dev_begin_tss = data['dev_begin_tss']
-    dev_offsets = tf.random.uniform(shape=(num_sequences, 1)) * 0. * block_size
+    dev_offsets = tf.random.uniform(shape=(num_sequences, 1)) * 3600. * block_size
     dev_t_b_plus = dev_begin_tss + dev_offsets
 
     if args.verbose:
@@ -159,15 +161,10 @@ def run(args):
 
     # ----- End: Load dev_dataset ----- #
 
-    tile_shape = dev_gaps_out.get_shape().as_list()
-    tile_shape[0] = tile_shape[2] = 1
-    dev_normalizer_d = tf.tile(tf.expand_dims(dev_normalizer_d, axis=1), tile_shape)
-    dev_normalizer_a = tf.tile(tf.expand_dims(dev_normalizer_a, axis=1), tile_shape)
-    tile_shape = test_gaps_out.get_shape().as_list()
-    tile_shape[0] = tile_shape[2] = 1
-    test_normalizer_d = tf.tile(tf.expand_dims(test_normalizer_d, axis=1), tile_shape)
-    test_normalizer_a = tf.tile(tf.expand_dims(test_normalizer_a, axis=1), tile_shape)
-
+    dev_normalizer_d = tf.expand_dims(dev_normalizer_d, axis=1)
+    dev_normalizer_a = tf.expand_dims(dev_normalizer_a, axis=1)
+    test_normalizer_d = tf.expand_dims(test_normalizer_d, axis=1)
+    test_normalizer_a = tf.expand_dims(test_normalizer_a, axis=1)
 
     #train_dataset = train_dataset.batch(BPTT, drop_remainder=True).map(reader_rmtpp.transpose)
     train_dataset = train_dataset.batch(BPTT, drop_remainder=False).map(reader_rmtpp.transpose)
@@ -214,14 +211,16 @@ def run(args):
 
         # Iterate over the batches of the dataset.
         for step, (marks_batch_in, gaps_batch_in, times_batch_in, seqmask_batch_in,
-                   marks_batch_out, gaps_batch_out, times_batch_out, seqmask_batch_out) \
+                   marks_batch_out, gaps_batch_out, times_batch_out, seqmask_batch_out,
+                   train_time_features) \
                            in enumerate(train_dataset):
 
             with tf.GradientTape() as tape:
 
                 marks_logits, gaps_pred, D, WT = model(gaps_batch_in,
                                                        seqmask_batch_in,
-                                                       marks_batch_in)
+                                                       marks_batch_in,
+                                                       train_time_features)
 
                 # Compute the loss for this minibatch.
                 if use_marks:
@@ -261,13 +260,16 @@ def run(args):
 
         if epoch > patience-1:
 
-            for dev_step, (dev_marks_in, dev_gaps_in, dev_times_in, dev_seqmask_in) \
+            for dev_step, (dev_marks_in, dev_gaps_in,
+                           dev_times_in, dev_seqmask_in,
+                           dev_time_feature) \
                     in enumerate(dev_dataset):
 
                 print(dev_gaps_in.shape, dev_seqmask_in.shape, dev_marks_in.shape)
                 dev_marks_logits, dev_gaps_pred, _, _ = model(dev_gaps_in,
                                                               dev_seqmask_in,
-                                                              dev_marks_in)
+                                                              dev_marks_in,
+                                                              dev_time_feature)
                 if use_marks:
                     dev_marks_pred = tf.argmax(dev_marks_logits, axis=-1) + 1
                     dev_marks_pred_last = dev_marks_pred[:, -1:]
@@ -288,16 +290,21 @@ def run(args):
                                                 dev_begin_tss,
                                                 dev_t_b_plus,
                                                 decoder_length,
+                                                normalizers=(dev_normalizer_d, dev_normalizer_a),
+                                                initial_timestamp=initial_timestamp,
                                                 marks_in=dev_marks_pred_last)
             model.rnn_layer.reset_states()
 
             start_time = time.time()
-            for test_step, (test_marks_in, test_gaps_in, test_times_in, test_seqmask_in) \
+            for test_step, (test_marks_in, test_gaps_in,
+                            test_times_in, test_seqmask_in,
+                            test_time_feature) \
                     in enumerate(test_dataset):
 
                 test_marks_logits, test_gaps_pred, _, _ = model(test_gaps_in,
                                                                 test_seqmask_in,
-                                                                test_marks_in)
+                                                                test_marks_in,
+                                                                test_time_feature)
                 if use_marks:
                     test_marks_pred = tf.argmax(test_marks_logits, axis=-1) + 1
                     test_marks_pred_last = test_marks_pred[:, -1:]
@@ -318,6 +325,8 @@ def run(args):
                                                   test_begin_tss,
                                                   test_t_b_plus,
                                                   decoder_length,
+                                                  normalizers=(test_normalizer_d, test_normalizer_a),
+                                                  initial_timestamp=initial_timestamp,
                                                   marks_in=test_marks_pred_last)
             model.rnn_layer.reset_states()
             end_time = time.time()

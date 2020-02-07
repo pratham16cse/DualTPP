@@ -52,15 +52,27 @@ class RMTPP(tf.keras.Model):
                  name='RMTPP',
                  use_marks=True,
                  use_intensity=True,
+                 use_time_embed=True,
                  **kwargs):
         super(RMTPP, self).__init__(name=name, **kwargs)
         self.use_marks = use_marks
         self.use_intensity = use_intensity
+        self.use_time_embed = use_time_embed
+        time_embed_size = 10
 
         if self.use_marks:
             self.embedding_layer = layers.Embedding(num_categories+1, embed_size,
                                                     mask_zero=False,
                                                     name='marks_embedding')
+        if self.use_time_embed:
+            self.time_feature_embedding_layer = layers.Embedding(25, time_embed_size,
+                                                    mask_zero=False,
+                                                    name='time_feature_embedding')
+        else:
+            self.time_features_layer = layers.Dense(time_embed_size, 
+                                                    activation='sigmoid',
+                                                    name='time_features_layer')
+
         self.rnn_layer = layers.GRU(hidden_layer_size, return_sequences=True,
                                     return_state=True, stateful=True,
                                     name='GRU_Layer')
@@ -73,19 +85,25 @@ class RMTPP(tf.keras.Model):
             self.WT_layer = layers.Dense(1, activation=tf.nn.softplus, name='WT_layer')
             self.gaps_output_layer = InverseTransformSampling()
 
-    def call(self, gaps, mask, marks=None, initial_state=None):
+    def call(self, gaps, mask, marks=None, time_features=None, initial_state=None):
         ''' Forward pass of the RMTPP model'''
 
         # Gather input for the rnn
         if self.use_marks:
             self.marks_embd = self.embedding_layer(marks)
+
+        if self.use_time_embed:
+            time_features = tf.round(time_features)
+            time_features = tf.squeeze(time_features, axis=2)
+            self.time_features = self.time_feature_embedding_layer(time_features)
+        else:
+            self.time_features = self.time_features_layer(time_features)
         self.gaps = gaps
         if self.use_marks:
-            rnn_inputs = tf.concat([self.marks_embd, self.gaps], axis=-1)
+            rnn_inputs = tf.concat([self.marks_embd, self.gaps, self.time_features], axis=-1)
         else:
-            rnn_inputs = self.gaps
+            rnn_inputs = tf.concat([self.gaps, self.time_features], axis=-1)
 
-        # rnn forward pass
         self.hidden_states, self.final_state \
                 = self.rnn_layer(rnn_inputs,
                                  initial_state=initial_state,
@@ -93,6 +111,7 @@ class RMTPP(tf.keras.Model):
 
         # Generate D, WT, and gaps_pred
         self.D = self.D_layer(self.hidden_states)
+
         if self.use_marks:
             self.marks_logits = self.marks_output_layer(self.hidden_states)
         else:
@@ -111,6 +130,7 @@ class RMTPP(tf.keras.Model):
         self.D = self.D * tf.expand_dims(mask, axis=-1)
         if self.use_intensity:
             self.WT = self.WT * tf.expand_dims(mask, axis=-1)
+
 
         return self.marks_logits, self.gaps_pred, self.D, self.WT
 
@@ -209,9 +229,10 @@ class HierarchicalRNN(tf.keras.Model):
 
 class SimulateRMTPP:
     def simulate(self, model, times, gaps_in, block_begin_ts, t_b_plus,
-                 decoder_length, marks_in=None):
+                 decoder_length, normalizers, initial_timestamp=0.0, marks_in=None):
     
         marks_logits, gaps_pred = list(), list()
+        normalizer_d, normalizer_a = normalizers
         times_pred = list()
         last_times_pred = tf.squeeze(times + gaps_in, axis=-1)
         times_pred.append(last_times_pred)
@@ -221,7 +242,20 @@ class SimulateRMTPP:
         simul_step = 0
         mask = np.squeeze(np.ones_like(gaps_in), axis=-1)
         while any(times_pred[-1]<t_b_plus) or any(pred_idxes<decoder_length):
-            step_marks_logits, step_gaps_pred, _, _ = model(gaps_in, tf.constant(mask), marks_in)
+
+            last_times_pred_unnorm = (tf.expand_dims(last_times_pred, axis=1) - normalizer_a) * normalizer_d
+            last_times_pred_unnorm = last_times_pred_unnorm + initial_timestamp
+            time_features = (last_times_pred_unnorm // 3600) % 24
+            
+            time_feature_minute = (last_times_pred_unnorm // 60) % 60
+            time_feature_seconds = (last_times_pred_unnorm) % 60
+
+            time_features += ((time_feature_minute * 60.0) + time_feature_seconds) / 3600.0
+
+            step_marks_logits, step_gaps_pred, _, _ \
+                    = model(gaps_in, tf.constant(mask), marks=marks_in,
+                            time_features=time_features)
+
             if marks_in is not None:
                 step_marks_pred = tf.argmax(step_marks_logits, axis=-1) + 1
             else:

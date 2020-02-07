@@ -10,6 +10,17 @@ from tensorflow import keras
 from tensorflow.keras import layers
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 
+def timestampToTime(timestamp):
+    #t = time.strftime("%Y %m %d %H %M %S", time.localtime(timestamp)).split(' ')
+    t = time.strftime("%m %d %H %M %S", time.gmtime(timestamp)).split(' ')
+    t = [int(i) for i in t]
+    return t
+
+def getTheHour(timestamp):
+    if timestamp == 0:
+        return 0
+    return timestampToTime(timestamp)[2]
+
 def read_data(filename):
     with open(filename, 'r') as f:
         data = list()
@@ -20,8 +31,9 @@ def read_data(filename):
 
     marks = np.array([event[0] for event in data_sorted])
     times = np.array([event[1] for event in data_sorted])
+    initial_timestamp = times[0]
     times = times-times[0] # Shift all timestamps to start with zero
-    return marks, times
+    return marks, times, initial_timestamp
 
 def split_data(data, num_chops):
     marks, times = data
@@ -83,6 +95,31 @@ def get_normalized_dataset(data, normalization='average', max_offset=0.0):
     avg_gaps_norm_out = tf.stack(avg_gaps_norm_out, axis=0)
 
     return avg_gaps_norm_in, avg_gaps_norm_out, normalizer_d, normalizer_a
+
+def get_time_features(data):
+
+    train_times_in, dev_times_in, test_times_in = data
+
+    train_time_feature = tf.py_function(func=getTheHour, inp=[train_times_in], Tout=tf.float32)
+    dev_time_feature = tf.py_function(func=getTheHour, inp=[dev_times_in], Tout=tf.float32)
+    test_time_feature = tf.py_function(func=getTheHour, inp=[test_times_in], Tout=tf.float32)
+
+    return train_time_feature, dev_time_feature, test_time_feature
+
+def get_time_features_for_data(data):
+    times_in = data
+    time_feature = (times_in // 3600) % 24
+    return time_feature
+
+def get_sec_time_features_for_data(data):
+    times_in = data
+    time_feature_minute = (times_in // 60) % 60
+    time_feature_seconds = (times_in) % 60
+
+    time_feature = (time_feature_minute * 60.0) + time_feature_seconds
+    time_feature = time_feature / 3600.0
+    return time_feature
+
 
 def get_hour_of_day_ts(ts):
     ''' Returns timestamp at the beginning of the hour'''
@@ -209,9 +246,10 @@ def create_train_dev_test_split(data, block_size, decoder_length):
             test_marks, test_times,
             dev_begin_tss, test_begin_tss)
 
-def transpose(m_in, g_in, t_in, sm_in, m_out, g_out, t_out, sm_out):
+def transpose(m_in, g_in, t_in, sm_in, m_out, g_out, t_out, sm_out, time_feature):
     return tf.transpose(m_in), tf.transpose(g_in, [1, 0, 2]), tf.transpose(t_in, [1, 0, 2]), tf.transpose(sm_in), \
-            tf.transpose(m_out), tf.transpose(g_out, [1, 0, 2]), tf.transpose(t_out, [1, 0, 2]), tf.transpose(sm_out)
+            tf.transpose(m_out), tf.transpose(g_out, [1, 0, 2]), tf.transpose(t_out, [1, 0, 2]), tf.transpose(sm_out), \
+            tf.transpose(time_feature, [1, 0, 2])
 
 def get_padded_dataset(data):
     marks_in, gaps_in, times_in, marks_out, gaps_out, times_out = data
@@ -240,7 +278,7 @@ def get_seq_mask(sequences):
     seq_mask = tf.sequence_mask(seq_lens, dtype=tf.float32)
     return seq_mask, seq_lens
 
-def get_preprocessed_(data, block_size, decoder_length, normalization):
+def get_preprocessed_(data, block_size, decoder_length, normalization, initial_timestamp):
     marks, times = data
     num_categories = len(np.unique(marks))
 
@@ -268,16 +306,27 @@ def get_preprocessed_(data, block_size, decoder_length, normalization):
      train_seq_lens) \
             = get_padded_dataset((train_marks_in, train_gaps_in, train_times_in,
                                   train_marks_out, train_gaps_out, train_times_out))
+
+    (train_time_feature) \
+            = get_time_features_for_data((train_times_in+initial_timestamp))
+    (train_time_feature_minute) \
+            = get_sec_time_features_for_data((train_times_in+initial_timestamp))
+
+    train_time_feature += train_time_feature_minute
+
     (train_marks_in, train_gaps_in, train_times_in, train_seqmask_in,
-     train_marks_out, train_gaps_out, train_times_out, train_seqmask_out) \
+     train_marks_out, train_gaps_out, train_times_out, train_seqmask_out, train_time_feature) \
             = transpose(train_marks_in, train_gaps_in, train_times_in, train_seqmask_in,
-                        train_marks_out, train_gaps_out, train_times_out, train_seqmask_out)
+                        train_marks_out, train_gaps_out, train_times_out, train_seqmask_out,
+                        train_time_feature)
 
     (train_gaps_in_norm, train_gaps_out_norm,
      train_normalizer_d, train_normalizer_a) \
             = get_normalized_dataset((train_gaps_in, train_gaps_out),
                                      normalization=normalization)
 
+    print('train_time_feature', train_time_feature)
+    print('train_times_in', train_times_in)
     train_dataset = tf.data.Dataset.from_tensor_slices((train_marks_in,
                                                         train_gaps_in_norm,
                                                         train_times_in,
@@ -285,7 +334,8 @@ def get_preprocessed_(data, block_size, decoder_length, normalization):
                                                         train_marks_out,
                                                         train_gaps_out_norm,
                                                         train_times_out,
-                                                        train_seqmask_out))
+                                                        train_seqmask_out,
+                                                        train_time_feature))
 
     (dev_marks_in, dev_gaps_in, dev_times_in,
      dev_marks_out, dev_gaps_out, dev_times_out,
@@ -311,6 +361,14 @@ def get_preprocessed_(data, block_size, decoder_length, normalization):
             = get_padded_dataset((dev_marks_in, dev_gaps_in, dev_times_in,
                                   dev_marks_out, dev_gaps_out, dev_times_out))
 
+    (dev_time_feature) \
+            = get_time_features_for_data((dev_times_in+initial_timestamp))
+    (dev_time_feature_minute) \
+            = get_sec_time_features_for_data((dev_times_in+initial_timestamp))
+
+    dev_time_feature += dev_time_feature_minute
+
+
     (dev_gaps_in_norm, dev_gaps_out_norm,
      dev_normalizer_d, dev_normalizer_a) \
             = get_normalized_dataset((dev_gaps_in, dev_gaps_out),
@@ -319,7 +377,8 @@ def get_preprocessed_(data, block_size, decoder_length, normalization):
     dev_dataset = tf.data.Dataset.from_tensor_slices((dev_marks_in,
                                                       dev_gaps_in_norm,
                                                       dev_times_in,
-                                                      dev_seqmask_in))
+                                                      dev_seqmask_in,
+                                                      dev_time_feature))
 
     test_seqmask_in, _ = get_seq_mask(test_gaps_in)
     test_seqmask_out, _ = get_seq_mask(test_gaps_out)
@@ -330,6 +389,15 @@ def get_preprocessed_(data, block_size, decoder_length, normalization):
             = get_padded_dataset((test_marks_in, test_gaps_in, test_times_in,
                                   test_marks_out, test_gaps_out, test_times_out))
 
+    print('test_times_in', test_times_in)
+    (test_time_feature) \
+            = get_time_features_for_data((test_times_in+initial_timestamp))
+    (test_time_feature_minute) \
+            = get_sec_time_features_for_data((test_times_in+initial_timestamp))
+    test_time_feature += test_time_feature_minute
+
+    print('test_time_feature', test_time_feature)
+
     (test_gaps_in_norm, test_gaps_out_norm,
      test_normalizer_d, test_normalizer_a) \
             = get_normalized_dataset((test_gaps_in, test_gaps_out))
@@ -337,7 +405,8 @@ def get_preprocessed_(data, block_size, decoder_length, normalization):
     test_dataset = tf.data.Dataset.from_tensor_slices((test_marks_in,
                                                        test_gaps_in_norm,
                                                        test_times_in,
-                                                       test_seqmask_in))
+                                                       test_seqmask_in,
+                                                       test_time_feature))
 
     #print('Train In')
     #print(tf.squeeze(tf.transpose(train_times_in, [1, 0, 2]), axis=-1).numpy().tolist()[0])
@@ -383,6 +452,7 @@ def get_preprocessed_(data, block_size, decoder_length, normalization):
         'train_seqmask_out': train_seqmask_out,
         'dev_seqmask_out': dev_seqmask_out,
         'test_seqmask_out': test_seqmask_out,
+        'initial_timestamp': initial_timestamp,
 
         'train_gaps_in_norm': train_gaps_in_norm,
         'train_gaps_out_norm': train_gaps_out_norm,
@@ -402,8 +472,9 @@ def get_preprocessed_(data, block_size, decoder_length, normalization):
         }
 
 def get_preprocessed_data(dataset_path, block_size, decoder_length, normalization):
-    marks, times = read_data(dataset_path)
-    data = get_preprocessed_((marks, times), block_size, decoder_length, normalization)
+    marks, times, initial_timestamp = read_data(dataset_path)
+    data = get_preprocessed_((marks, times), block_size, decoder_length,
+                             normalization, initial_timestamp)
     return data
 
 def main():
