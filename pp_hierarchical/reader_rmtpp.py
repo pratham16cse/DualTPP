@@ -31,9 +31,8 @@ def read_data(filename):
 
     marks = np.array([event[0] for event in data_sorted])
     times = np.array([event[1] for event in data_sorted])
-    initial_timestamp = times[0]
     times = times-times[0] # Shift all timestamps to start with zero
-    return marks, times, initial_timestamp
+    return marks, times
 
 def split_data(data, num_chops):
     marks, times = data
@@ -108,18 +107,15 @@ def get_time_features(data):
 
 def get_time_features_for_data(data):
     times_in = data
-    time_feature = (times_in // 3600) % 24
-    return time_feature
-
-def get_sec_time_features_for_data(data):
-    times_in = data
+    time_feature_hour = (times_in // 3600) % 24
     time_feature_minute = (times_in // 60) % 60
     time_feature_seconds = (times_in) % 60
 
-    time_feature = (time_feature_minute * 60.0) + time_feature_seconds
+    time_feature = (time_feature_hour * 3600.0 
+                 + time_feature_minute * 60.0
+                 + time_feature_seconds)
     time_feature = time_feature / 3600.0
     return time_feature
-
 
 def get_hour_of_day_ts(ts):
     ''' Returns timestamp at the beginning of the hour'''
@@ -278,7 +274,7 @@ def get_seq_mask(sequences):
     seq_mask = tf.sequence_mask(seq_lens, dtype=tf.float32)
     return seq_mask, seq_lens
 
-def get_preprocessed_(data, block_size, decoder_length, normalization, initial_timestamp):
+def get_preprocessed_(data, block_size, decoder_length, normalization):
     marks, times = data
     num_categories = len(np.unique(marks))
 
@@ -308,11 +304,7 @@ def get_preprocessed_(data, block_size, decoder_length, normalization, initial_t
                                   train_marks_out, train_gaps_out, train_times_out))
 
     (train_time_feature) \
-            = get_time_features_for_data((train_times_in+initial_timestamp))
-    (train_time_feature_minute) \
-            = get_sec_time_features_for_data((train_times_in+initial_timestamp))
-
-    train_time_feature += train_time_feature_minute
+            = get_time_features_for_data((train_times_in))
 
     (train_marks_in, train_gaps_in, train_times_in, train_seqmask_in,
      train_marks_out, train_gaps_out, train_times_out, train_seqmask_out, train_time_feature) \
@@ -362,12 +354,7 @@ def get_preprocessed_(data, block_size, decoder_length, normalization, initial_t
                                   dev_marks_out, dev_gaps_out, dev_times_out))
 
     (dev_time_feature) \
-            = get_time_features_for_data((dev_times_in+initial_timestamp))
-    (dev_time_feature_minute) \
-            = get_sec_time_features_for_data((dev_times_in+initial_timestamp))
-
-    dev_time_feature += dev_time_feature_minute
-
+            = get_time_features_for_data((dev_times_in))
 
     (dev_gaps_in_norm, dev_gaps_out_norm,
      dev_normalizer_d, dev_normalizer_a) \
@@ -391,10 +378,7 @@ def get_preprocessed_(data, block_size, decoder_length, normalization, initial_t
 
     print('test_times_in', test_times_in)
     (test_time_feature) \
-            = get_time_features_for_data((test_times_in+initial_timestamp))
-    (test_time_feature_minute) \
-            = get_sec_time_features_for_data((test_times_in+initial_timestamp))
-    test_time_feature += test_time_feature_minute
+            = get_time_features_for_data((test_times_in))
 
     print('test_time_feature', test_time_feature)
 
@@ -452,7 +436,6 @@ def get_preprocessed_(data, block_size, decoder_length, normalization, initial_t
         'train_seqmask_out': train_seqmask_out,
         'dev_seqmask_out': dev_seqmask_out,
         'test_seqmask_out': test_seqmask_out,
-        'initial_timestamp': initial_timestamp,
 
         'train_gaps_in_norm': train_gaps_in_norm,
         'train_gaps_out_norm': train_gaps_out_norm,
@@ -472,9 +455,9 @@ def get_preprocessed_(data, block_size, decoder_length, normalization, initial_t
         }
 
 def get_preprocessed_data(dataset_path, block_size, decoder_length, normalization):
-    marks, times, initial_timestamp = read_data(dataset_path)
+    marks, times = read_data(dataset_path)
     data = get_preprocessed_((marks, times), block_size, decoder_length,
-                             normalization, initial_timestamp)
+                             normalization)
     return data
 
 def main():

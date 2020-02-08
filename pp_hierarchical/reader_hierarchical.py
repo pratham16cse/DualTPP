@@ -232,8 +232,10 @@ def create_train_dev_test_split(data, block_size, decoder_length):
 
 def transpose(c_m_in, c_g_in, c_t_in, c_sm_in,
               c_m_out, c_g_out, c_t_out, c_sm_out,
+              c_f_in,
               g_in, t_in, sm_in,
-              g_out, t_out, sm_out):
+              g_out, t_out, sm_out,
+              f_in):
     print(c_m_in.shape, c_g_in.shape, c_t_in.shape, c_sm_in.shape,
           c_m_out.shape, c_g_out.shape, c_t_out.shape, sm_in.shape,
           g_out.shape, t_out.shape)
@@ -241,10 +243,12 @@ def transpose(c_m_in, c_g_in, c_t_in, c_sm_in,
             tf.transpose(c_t_in, [1, 0, 2]), tf.transpose(c_sm_in),
             tf.transpose(c_m_out), tf.transpose(c_g_out, [1, 0, 2]),
             tf.transpose(c_t_out, [1, 0, 2]), tf.transpose(c_sm_out),
+            tf.transpose(c_f_in, [1, 0, 2]),
             tf.transpose(g_in, [1, 0, 2, 3]), tf.transpose(t_in, [1, 0, 2, 3]),
             tf.transpose(sm_in),
             tf.transpose(g_out, [1, 0, 2, 3]), tf.transpose(t_out, [1, 0, 2, 3]),
-            tf.transpose(sm_out))
+            tf.transpose(sm_out),
+            tf.transpose(f_in, [1, 0, 2, 3]))
 
 def get_padded_dataset(data):
     (c_marks_in, c_gaps_in, c_times_in,
@@ -345,14 +349,23 @@ def get_preprocessed_(c_data, data, block_size, decoder_length, normalization):
                                   train_gaps_in, train_times_in,
                                   train_gaps_out, train_times_out))
 
+    (c_train_time_feature) \
+            = reader_rmtpp.get_time_features_for_data((c_train_times_in))
+    (train_time_feature) \
+            = reader_rmtpp.get_time_features_for_data((train_times_in))
+
     (c_train_marks_in, c_train_gaps_in, c_train_times_in, c_train_seqmask_in,
      c_train_marks_out, c_train_gaps_out, c_train_times_out, c_train_seqmask_out,
+     c_train_time_feature,
      train_gaps_in, train_times_in, train_seqmask_in,
-     train_gaps_out, train_times_out, train_seqmask_out) \
+     train_gaps_out, train_times_out, train_seqmask_out,
+     train_time_feature) \
             = transpose(c_train_marks_in, c_train_gaps_in, c_train_times_in, c_train_seqmask_in,
                         c_train_marks_out, c_train_gaps_out, c_train_times_out, c_train_seqmask_out,
+                        c_train_time_feature,
                         train_gaps_in, train_times_in, train_seqmask_in,
-                        train_gaps_out, train_times_out, train_seqmask_out)
+                        train_gaps_out, train_times_out, train_seqmask_out,
+                        train_time_feature)
 
     (train_gaps_in_norm, train_gaps_out_norm,
      train_normalizer_d, train_normalizer_a) \
@@ -372,12 +385,14 @@ def get_preprocessed_(c_data, data, block_size, decoder_length, normalization):
                                                           c_train_gaps_out_norm,
                                                           c_train_times_out,
                                                           c_train_seqmask_out,
+                                                          c_train_time_feature,
                                                           train_gaps_in_norm,
                                                           train_times_in,
                                                           train_seqmask_in,
                                                           train_gaps_out_norm,
                                                           train_times_out,
-                                                          train_seqmask_out))
+                                                          train_seqmask_out,
+                                                          train_time_feature))
 
     (c_dev_marks_in, c_dev_gaps_in, c_dev_times_in,
      c_dev_marks_out, c_dev_gaps_out, c_dev_times_out,
@@ -406,11 +421,17 @@ def get_preprocessed_(c_data, data, block_size, decoder_length, normalization):
             = reader_rmtpp.get_padded_dataset((c_dev_marks_in, c_dev_gaps_in, c_dev_times_in,
                                                c_dev_marks_out, c_dev_gaps_out, c_dev_times_out))
 
+    (c_dev_time_feature) \
+            = reader_rmtpp.get_time_features_for_data((c_dev_times_in))
+
     (dev_marks_in, dev_gaps_in, dev_times_in,
      dev_marks_out, dev_gaps_out, dev_times_out,
      dev_seq_lens) \
             = reader_rmtpp.get_padded_dataset((dev_marks_in, dev_gaps_in, dev_times_in,
                                                dev_marks_out, dev_gaps_out, dev_times_out))
+
+    (dev_time_feature) \
+            = reader_rmtpp.get_time_features_for_data((dev_times_in))
 
     (dev_gaps_in_norm, dev_gaps_out_norm,
      dev_normalizer_d, dev_normalizer_a) \
@@ -428,7 +449,8 @@ def get_preprocessed_(c_data, data, block_size, decoder_length, normalization):
                                                         c_dev_seqmask_in,
                                                         c_dev_gaps_out,
                                                         c_dev_times_out,
-                                                        c_dev_seqmask_out))
+                                                        c_dev_seqmask_out,
+                                                        c_dev_time_feature))
 
     c_test_seqmask_in, _ = reader_rmtpp.get_seq_mask(c_test_gaps_in)
     c_test_seqmask_out, _ = reader_rmtpp.get_seq_mask(c_test_gaps_out)
@@ -441,11 +463,17 @@ def get_preprocessed_(c_data, data, block_size, decoder_length, normalization):
             = reader_rmtpp.get_padded_dataset((c_test_marks_in, c_test_gaps_in, c_test_times_in,
                                                c_test_marks_out, c_test_gaps_out, c_test_times_out))
 
+    (c_test_time_feature) \
+            = reader_rmtpp.get_time_features_for_data((c_test_times_in))
+
     (test_marks_in, test_gaps_in, test_times_in,
      test_marks_out, test_gaps_out, test_times_out,
      test_seq_lens) \
             = reader_rmtpp.get_padded_dataset((test_marks_in, test_gaps_in, test_times_in,
                                                test_marks_out, test_gaps_out, test_times_out))
+
+    (test_time_feature) \
+           = reader_rmtpp.get_time_features_for_data((test_times_in))
 
     (test_gaps_in_norm, test_gaps_out_norm,
      test_normalizer_d, test_normalizer_a) \
@@ -463,7 +491,8 @@ def get_preprocessed_(c_data, data, block_size, decoder_length, normalization):
                                                          c_test_seqmask_in,
                                                          c_test_gaps_out,
                                                          c_test_times_out,
-                                                         c_test_seqmask_out))
+                                                         c_test_seqmask_out,
+                                                         c_test_time_feature))
 
 
     return {

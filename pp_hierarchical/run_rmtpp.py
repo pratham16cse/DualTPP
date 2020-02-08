@@ -8,6 +8,7 @@ from bisect import bisect_right
 import os, sys
 import ipdb
 import time
+import datetime
 
 import tensorflow as tf
 from tensorflow import keras
@@ -48,7 +49,6 @@ def run(args):
     num_categories = data['num_categories']
     num_sequences = data['num_sequences']
 
-    initial_timestamp = data['initial_timestamp']
     train_dataset = data['train_dataset']
 
     best_dev_gap_error = np.inf
@@ -97,7 +97,7 @@ def run(args):
     dev_normalizer_a = data['dev_normalizer_a']
     print(dev_offsets, dev_normalizer_d)
     dev_offsets_sec_norm = dev_offsets/dev_normalizer_d + dev_normalizer_a
-    dev_t_b_plus = dev_begin_tss + dev_offsets_sec_norm
+    #dev_t_b_plus = dev_begin_tss + dev_offsets_sec_norm
 
     if args.verbose:
         print('\n dev_begin_tss')
@@ -149,17 +149,17 @@ def run(args):
     test_normalizer_a = data['test_normalizer_a']
     print(test_offsets, test_normalizer_d)
     test_offsets_sec_norm = test_offsets/test_normalizer_d + test_normalizer_a
-    test_t_b_plus = test_begin_tss + test_offsets_sec_norm
+    #test_t_b_plus = test_begin_tss + test_offsets_sec_norm
 
     if args.verbose:
         print('\n test_begin_tss')
-        print(dev_begin_tss)
-        print('\n dev_offsets_sec_norm')
-        print(dev_offsets_sec_norm)
-        print('\n dev_t_b_plus')
-        print(dev_t_b_plus)
+        print(test_begin_tss)
+        print('\n test_offsets_sec_norm')
+        print(test_offsets_sec_norm)
+        print('\n test_t_b_plus')
+        print(test_t_b_plus)
 
-    # ----- End: Load dev_dataset ----- #
+    # ----- End: Load test_dataset ----- #
 
     dev_normalizer_d = tf.expand_dims(dev_normalizer_d, axis=1)
     dev_normalizer_a = tf.expand_dims(dev_normalizer_a, axis=1)
@@ -203,6 +203,16 @@ def run(args):
     else:
         print("Initializing from scratch.")
 
+    # Create summary writers
+    current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    train_log_dir = os.path.join(args.output_dir, 'logs', current_time + '/train')
+    dev_log_dir = os.path.join(args.output_dir, 'logs', current_time + '/dev')
+    test_log_dir = os.path.join(args.output_dir, 'logs', current_time + '/test')
+    train_summary_writer = tf.summary.create_file_writer(train_log_dir)
+    dev_summary_writer = tf.summary.create_file_writer(dev_log_dir)
+    test_summary_writer = tf.summary.create_file_writer(test_log_dir)
+    global_step = 0
+
     train_losses = list()
     inference_times = list()
     # Iterate over epochs.
@@ -219,8 +229,8 @@ def run(args):
 
                 marks_logits, gaps_pred, D, WT = model(gaps_batch_in,
                                                        seqmask_batch_in,
-                                                       marks_batch_in,
-                                                       train_time_features)
+                                                       train_time_features,
+                                                       marks_batch_in)
 
                 # Compute the loss for this minibatch.
                 if use_marks:
@@ -231,8 +241,11 @@ def run(args):
                     gap_loss_fn = models.NegativeLogLikelihood(D, WT)
                 gap_loss = gap_loss_fn(gaps_batch_out, gaps_pred)
                 loss = mark_loss + gap_loss
-                train_losses.append(gap_loss.numpy())
-
+                train_losses.append(loss.numpy())
+                with train_summary_writer.as_default():
+                    tf.summary.scalar('gap_loss', gap_loss, step=global_step)
+                    tf.summary.scalar('mark_loss', mark_loss, step=global_step)
+                    tf.summary.scalar('loss', loss, step=global_step)
 
             grads = tape.gradient(loss, model.trainable_weights)
             optimizer.apply_gradients(zip(grads, model.trainable_weights))
@@ -244,6 +257,8 @@ def run(args):
 
             print('Training loss (for one batch) at step %s: %s %s %s' \
                     % (step, float(loss), float(mark_loss), float(gap_loss)))
+
+            global_step += 1
 
         model.rnn_layer.reset_states() # Reset RNN state after
                                        # a sequence is finished
@@ -268,8 +283,8 @@ def run(args):
                 print(dev_gaps_in.shape, dev_seqmask_in.shape, dev_marks_in.shape)
                 dev_marks_logits, dev_gaps_pred, _, _ = model(dev_gaps_in,
                                                               dev_seqmask_in,
-                                                              dev_marks_in,
-                                                              dev_time_feature)
+                                                              dev_time_feature,
+                                                              dev_marks_in)
                 if use_marks:
                     dev_marks_pred = tf.argmax(dev_marks_logits, axis=-1) + 1
                     dev_marks_pred_last = dev_marks_pred[:, -1:]
@@ -291,7 +306,6 @@ def run(args):
                                                 dev_t_b_plus,
                                                 decoder_length,
                                                 normalizers=(dev_normalizer_d, dev_normalizer_a),
-                                                initial_timestamp=initial_timestamp,
                                                 marks_in=dev_marks_pred_last)
             model.rnn_layer.reset_states()
 
@@ -303,8 +317,8 @@ def run(args):
 
                 test_marks_logits, test_gaps_pred, _, _ = model(test_gaps_in,
                                                                 test_seqmask_in,
-                                                                test_marks_in,
-                                                                test_time_feature)
+                                                                test_time_feature,
+                                                                test_marks_in)
                 if use_marks:
                     test_marks_pred = tf.argmax(test_marks_logits, axis=-1) + 1
                     test_marks_pred_last = test_marks_pred[:, -1:]
@@ -326,7 +340,6 @@ def run(args):
                                                   test_t_b_plus,
                                                   decoder_length,
                                                   normalizers=(test_normalizer_d, test_normalizer_a),
-                                                  initial_timestamp=initial_timestamp,
                                                   marks_in=test_marks_pred_last)
             model.rnn_layer.reset_states()
             end_time = time.time()
@@ -343,14 +356,20 @@ def run(args):
                 dev_mark_acc, test_mark_acc = 0.0, 0.0
 
 
-            dev_gaps_pred = (dev_gaps_pred - dev_normalizer_a) * dev_normalizer_d
-            test_gaps_pred = (test_gaps_pred - test_normalizer_a) * test_normalizer_d
+            #dev_gaps_pred = (dev_gaps_pred - dev_normalizer_a) * dev_normalizer_d
+            #test_gaps_pred = (test_gaps_pred - test_normalizer_a) * test_normalizer_d
 
             dev_gap_metric(dev_gaps_out[:, 1:], dev_gaps_pred[:, 1:])
             test_gap_metric(test_gaps_out[:, 1:], test_gaps_pred[:, 1:])
 
             dev_gap_err = dev_gap_metric.result()
             test_gap_err = test_gap_metric.result()
+            with dev_summary_writer.as_default():
+                tf.summary.scalar('dev_gap_err', dev_gap_err, step=epoch)
+            with test_summary_writer.as_default():
+                tf.summary.scalar('test_gap_err', test_gap_err, step=epoch)
+                #TODO Add marks summary later
+
             dev_gap_metric.reset_states()
             test_gap_metric.reset_states()
 
