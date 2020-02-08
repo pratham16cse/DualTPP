@@ -41,6 +41,8 @@ def run(args):
     use_intensity = args.use_intensity
     normalization = args.normalization
 
+    hidden_layer_size = args.hidden_layer_size
+
     block_size_sec = 3600.0 * block_size
 
 
@@ -185,7 +187,8 @@ def run(args):
     test_mark_metric = tf.keras.metrics.SparseCategoricalAccuracy()
     test_gap_metric = tf.keras.metrics.MeanAbsoluteError()
 
-    model = models.RMTPP(num_categories, 8, 32, use_marks=use_marks,
+    model = models.RMTPP(num_categories, 8, hidden_layer_size,
+                         use_marks=use_marks,
                          use_intensity=use_intensity)
 
     optimizer = keras.optimizers.Adam(learning_rate=args.learning_rate)
@@ -471,3 +474,11 @@ def run(args):
         print('\n train_losses')
         print(train_losses)
         print('\n average inference time:', np.mean(inference_times))
+
+
+    return {
+            'best_dev_gap_error': float(best_dev_gap_error.numpy()),
+            'best_test_gap_error': float(best_test_gap_error.numpy()),
+            'best_epoch': best_epoch,
+            'average_inference_time': np.mean(inference_times),
+           }

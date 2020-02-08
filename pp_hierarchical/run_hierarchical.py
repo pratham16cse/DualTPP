@@ -41,6 +41,7 @@ def run(args):
     normalization = args.normalization
     compound_event_size = args.compound_event_size
 
+    hidden_layer_size = args.hidden_layer_size
 
     data = reader_hierarchical.get_preprocessed_data(dataset_path, block_size,
                                                      decoder_length,
@@ -162,7 +163,8 @@ def run(args):
 
     c_train_gap_metric = tf.keras.metrics.MeanAbsoluteError()
 
-    model = models.HierarchicalRNN(num_categories, 8, 32, use_marks=use_marks,
+    model = models.HierarchicalRNN(num_categories, 8, hidden_layer_size,
+                                   use_marks=use_marks,
                                    use_intensity=use_intensity)
 
     optimizer = keras.optimizers.Adam(learning_rate=args.learning_rate)
@@ -508,3 +510,11 @@ def run(args):
         print('\n train_c_losses')
         print(train_c_losses)
         print('\n average infernece time:', np.mean(inference_times))
+
+
+    return {
+            'best_dev_gap_error': float(best_dev_gap_error.numpy()),
+            'best_test_gap_error': float(best_test_gap_error.numpy()),
+            'best_epoch': best_epoch,
+            'average_inference_time': np.mean(inference_times),
+           }

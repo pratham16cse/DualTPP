@@ -196,16 +196,19 @@ class HierarchicalRNN(tf.keras.Model):
                  name='HierarchicalRNN',
                  use_marks=True,
                  use_intensity=True,
+                 use_time_embed=True,
                  **kwargs):
         super(HierarchicalRNN, self).__init__(name=name, **kwargs)
         self.use_marks = use_marks
         self.use_intensity = use_intensity
         self.l1_rnn = RMTPP(num_categories, embed_size, hidden_layer_size,
                             use_marks=use_marks,
-                            use_intensity=use_intensity)
+                            use_intensity=use_intensity,
+                            use_time_embed=use_time_embed)
         self.l2_rnn = RMTPP(num_categories, embed_size, hidden_layer_size,
                             use_marks=use_marks,
-                            use_intensity=use_intensity)
+                            use_intensity=use_intensity,
+                            use_time_embed=use_time_embed)
         self.ff = FeedForward(hidden_layer_size)
 
     def call(self, l2_gaps, l2_mask, l2_time_features,
