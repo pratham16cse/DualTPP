@@ -26,6 +26,16 @@ import models
 #use_marks = False
 #use_intensity = True
 
+def compute_actual_event_in_range(t_b_plus, t_e_plus, times_out):
+    times_out_indices_tb = [bisect_right(t_out, t_b) for t_out, t_b in zip(times_out, t_b_plus)]
+    times_out_indices_te = [bisect_right(t_out, t_e) for t_out, t_e in zip(times_out, t_e_plus)]
+
+    actual_event_count = [times_out_indices_te[idx] - times_out_indices_tb[idx] for idx in range(len(t_b_plus))]
+    times_out_indices = [times_out_indices_tb[idx] + tf.range(times_out_indices_te[idx]-times_out_indices_tb[idx]) for idx in range(len(t_b_plus))]
+    actual_times_out = [tf.gather(times_out[idx], times_out_indices[idx], batch_dims=0).numpy() for idx in range(len(t_b_plus))]
+
+    return actual_event_count, actual_times_out
+
 
 def run(args):
     tf.random.set_seed(args.seed)
@@ -121,6 +131,11 @@ def run(args):
     test_offsets = tf.random.uniform(shape=(num_sequences, 1)) * 3600. * block_size
     test_t_b_plus = test_begin_tss + test_offsets
 
+    sample_hours = 5
+    dev_offsets_t_e = tf.random.uniform(shape=(num_sequences, 1)) * 60. * sample_hours # Sampling offsets for t_e_+
+    dev_offsets_sec_norm_t_e = dev_offsets_t_e/dev_normalizer_d + dev_normalizer_a
+    dev_t_e_plus = dev_t_b_plus + dev_offsets_sec_norm_t_e
+
     if args.verbose:
         print('\n test_begin_tss')
         for d in test_begin_tss.numpy().tolist():
@@ -131,6 +146,8 @@ def run(args):
         print('\n test_t_b_plus')
         for d in test_t_b_plus.numpy().tolist():
             print('{0:.15f}'.format(d[0]))
+
+    event_bw_range_tb_te = compute_actual_event_in_range(dev_t_b_plus, dev_t_e_plus, dev_times_out)
 
     test_times_out_indices = [bisect_right(test_t_out, t_b) for test_t_out, t_b in zip(test_times_out, test_t_b_plus)]
     test_times_out_indices = tf.minimum(test_times_out_indices, test_seq_lens_out-decoder_length+1)
@@ -283,7 +300,10 @@ def run(args):
                                                dev_seq_lens-1,
                                                batch_dims=1)
                 dev_simulator = models.SimulateRMTPP()
-                dev_marks_logits, dev_gaps_pred \
+
+
+                # Query 1
+                dev_marks_logits, dev_gaps_pred, _, _, _, _ \
                         = dev_simulator.simulate(model,
                                                 last_dev_times_in,
                                                 last_dev_gaps_pred,
@@ -293,6 +313,76 @@ def run(args):
                                                 normalizers=(dev_normalizer_d, dev_normalizer_a),
                                                 initial_timestamp=initial_timestamp,
                                                 marks_in=dev_marks_pred_last)
+
+                # #Query 2 and 3
+                # dev_marks_logits, dev_gaps_pred, last_dev_time_pred, last_dev_gaps_pred, _, _ \
+                #         = dev_simulator.simulate(model,
+                #                                 last_dev_times_in,
+                #                                 last_dev_gaps_pred,
+                #                                 dev_begin_tss,
+                #                                 dev_t_b_plus,
+                #                                 decoder_length,
+                #                                 normalizers=(dev_normalizer_d, dev_normalizer_a),
+                #                                 initial_timestamp=initial_timestamp,
+                #                                 marks_in=dev_marks_pred_last)
+
+                # dev_marks_logits, dev_gaps_pred, _, _, all_times_pred, simul_count \
+                #         = dev_simulator.simulate(model,
+                #                                 last_dev_time_pred,
+                #                                 last_dev_gaps_pred,
+                #                                 dev_begin_tss,
+                #                                 dev_t_e_plus,
+                #                                 decoder_length,
+                #                                 normalizers=(dev_normalizer_d, dev_normalizer_a),
+                #                                 initial_timestamp=initial_timestamp,
+                #                                 marks_in=None)
+
+                # print('Events between t_b_plus and t_e_plus are at:', all_times_pred.numpy())
+                # print('Number of events between t_b_plus and t_e_plus are:', simul_count)
+                # print('Actual count of events:', event_bw_range_tb_te[0])
+
+
+                # print('dev_t_b_plus', dev_t_b_plus)
+                # print('dev_t_e_plus', dev_t_e_plus)
+
+                #Query 4
+                # dev_marks_logits, dev_gaps_pred, _, _ = model(dev_gaps_in,
+                #                                           dev_seqmask_in,
+                #                                           dev_marks_in,
+                #                                           dev_time_feature)
+                # if use_marks:
+                #     dev_marks_pred = tf.argmax(dev_marks_logits, axis=-1) + 1
+                #     dev_marks_pred_last = dev_marks_pred[:, -1:]
+                # else:
+                #     dev_marks_pred_last = None
+
+                # last_dev_times_in = tf.gather(dev_times_in,
+                #                               dev_seq_lens-1,
+                #                               batch_dims=1)
+                # last_dev_gaps_pred = tf.gather(dev_gaps_pred,
+                #                                dev_seq_lens-1,
+                #                                batch_dims=1)
+
+                # last_dev_time_inp_pivot = last_dev_time_pred
+                # last_dev_gaps_inp_pivot = last_dev_gaps_pred
+                # while cnt>10:
+                    
+                #     dev_marks_logits, _, _, _, _, simul_count \
+                #             = dev_simulator.simulate(model,
+                #                                     last_dev_times_in,
+                #                                     last_dev_gaps_pred,
+                #                                     dev_begin_tss,
+                #                                     dev_t_b_plus,
+                #                                     decoder_length,
+                #                                     normalizers=(dev_normalizer_d, dev_normalizer_a),
+                #                                     initial_timestamp=initial_timestamp,
+                #                                     marks_in=dev_marks_pred_last)
+
+
+
+                #     cnt-=1
+
+
             model.rnn_layer.reset_states()
 
             start_time = time.time()
@@ -318,7 +408,7 @@ def run(args):
                                                test_seq_lens-1,
                                                batch_dims=1)
                 test_simulator = models.SimulateRMTPP()
-                test_marks_logits, test_gaps_pred \
+                test_marks_logits, test_gaps_pred, _, _, _, _ \
                         = test_simulator.simulate(model,
                                                   last_test_times_in,
                                                   last_test_gaps_pred,

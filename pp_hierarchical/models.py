@@ -290,11 +290,26 @@ class SimulateRMTPP:
                                 zip(marks_logits, begin_idxes, end_idxes)]
             marks_logits = tf.stack(marks_logits, axis=0)
         gaps_pred = tf.squeeze(tf.stack(gaps_pred, axis=1), axis=2)
+
+        last_gaps_pred = [t_l[b_idx:b_idx+1] for t_l, b_idx in \
+                            zip(gaps_pred, begin_idxes)]
+        last_gaps_pred = tf.stack(last_gaps_pred, axis=0)
+
         gaps_pred = [t_l[b_idx:e_idx] for t_l, b_idx, e_idx in \
                             zip(gaps_pred, begin_idxes, end_idxes)]
         gaps_pred = tf.stack(gaps_pred, axis=0)
-    
-        return marks_logits, gaps_pred
+        
+        times_pred = tf.squeeze(tf.stack(times_pred, axis=1), axis=2)
+
+        all_times_pred = times_pred
+
+        times_pred = [t_l[b_idx:b_idx+1] for t_l, b_idx in \
+                            zip(times_pred, begin_idxes)]
+        times_pred = tf.stack(times_pred, axis=0)
+        
+        times_pred = tf.expand_dims(times_pred, axis=-1)
+
+        return marks_logits, gaps_pred, times_pred, last_gaps_pred, all_times_pred, begin_idxes
 
 
 class SimulateHierarchicalRNN:
@@ -321,7 +336,9 @@ class SimulateHierarchicalRNN:
         times_pred.append(last_times_pred)
 
         #TODO:
-        hidden_states.append(model_rnn.hidden_states[:, -2])
+        # ipdb.set_trace()
+        if model_rnn.hidden_states.shape[1]>1:
+            hidden_states.append(model_rnn.hidden_states[:, -2])
 
         if second_last_gaps_pred is not None:
             gaps_pred.append(second_last_gaps_pred)
@@ -362,23 +379,30 @@ class SimulateHierarchicalRNN:
         gaps_pred = tf.squeeze(tf.stack(gaps_pred, axis=1), axis=2)
         self.all_gaps_pred = gaps_pred # all predicted gaps from start to end of simulation
 
+        # ipdb.set_trace()
+
         decoder_range_idxes = tf.expand_dims(tf.constant(begin_idxes-1, dtype=tf.int32), axis=-1) + tf.expand_dims(tf.range(decoder_length, dtype=tf.int32), axis=0)
-        # tb_te_range_idxes = tf.expand_dims(tf.constant(begin_idxes, dtype=tf.int32), axis=-1) + tf.expand_dims(tf.range(decoder_length, dtype=tf.int32), axis=0)
+
+        if layer==1:
+            decoder_range_idxes=decoder_range_idxes-1; 
+
+        # tb_te_range_idxes = tf.expand_dims(tf.constant(begin_idxes, dtype=tf.int32), axis=-1) + tf.expand_dims(tf.range(end_idxes - begin_idxes, dtype=tf.int32), axis=0)
         after_tb_gaps_pred_till_decoder_len = tf.gather(gaps_pred, decoder_range_idxes, batch_dims=1)
         after_tb_gaps_pred_till_te = None
         before_tb_gaps_pred = tf.gather(gaps_pred, tf.expand_dims(begin_idxes-2, axis=-1), batch_dims=1)
         number_of_simulation = end_idxes
 
-        gaps_pred = tf.expand_dims(gaps_pred, axis=-1)
+        all_gaps_pred = tf.expand_dims(gaps_pred, axis=-1)
 
         all_times_pred = tf.squeeze(tf.stack(times_pred, axis=1), axis=-1)
         times_pred = tf.gather(all_times_pred, tf.expand_dims(begin_idxes, axis=-1), batch_dims=1)
         times_pred = tf.expand_dims(times_pred, axis=-1)
+        self.all_times_pred = all_times_pred
 
         before_tb_hidden_state = hidden_states[-2]
 
         # ipdb.set_trace()
-        return gaps_pred, times_pred, before_tb_gaps_pred, after_tb_gaps_pred_till_decoder_len, \
+        return all_gaps_pred, times_pred, before_tb_gaps_pred, after_tb_gaps_pred_till_decoder_len, \
                after_tb_gaps_pred_till_te, before_tb_hidden_state, end_idxes
 
 
