@@ -8,7 +8,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('dataset_name', type=str, help='dataset_name')
 parser.add_argument('alg_name', type=str, help='alg_name')
 parser.add_argument('dataset_path', type=str, help='Path to the raw dataset file')
-parser.add_argument('alg_path', type=str, help='Path to the code')
+#parser.add_argument('alg_path', type=str, help='Path to the code')
 
 parser.add_argument('--output_dir', type=str,
                     help='Path to store all raw outputs, checkpoints, \
