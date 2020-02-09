@@ -1,3 +1,4 @@
+import sys
 import argparse
 import json
 import os
@@ -5,6 +6,8 @@ from itertools import product
 from argparse import Namespace
 import ipdb
 import copy
+from joblib import Parallel, delayed
+from operator import itemgetter
 
 import run_rmtpp
 import run_hierarchical
@@ -65,7 +68,10 @@ args = parser.parse_args()
 results = list()
 best_result_idx = 0
 param_names, param_values = zip(*hparams[args.alg_name].items())
-for idx, param_vals in enumerate(product(*param_values)):
+
+orig_stdout = sys.stdout
+
+def run_config(param_vals):
     args_vars_config = copy.deepcopy(vars(args))
     for name, val in zip(param_names, param_vals):
         args_vars_config[name] = val
@@ -81,6 +87,10 @@ for idx, param_vals in enumerate(product(*param_values)):
     args_config = Namespace(**args_vars_config)
     print(args_config)
     print(args)
+    os.makedirs(args_config.output_dir)
+    f = open(os.path.join(args_config.output_dir, 'print_dump'), 'w')
+    sys.stdout = f
+
     if args.alg_name in ['rmtpp']:
         result = run_rmtpp.run(args_config)
     elif args.alg_name in ['hierarchical']:
@@ -91,19 +101,24 @@ for idx, param_vals in enumerate(product(*param_values)):
         result[name] = val
     print('\n Result:')
     print(result)
-    results.append(result)
-
-    if result['best_test_gap_error'] < results[best_result_idx]['best_test_gap_error']:
-        best_result_idx = idx
-
     with open(os.path.join(args_config.output_dir, 'result.json'), 'w') as fp:
         result_json = json.dumps(result, indent=4)
         fp.write(result_json)
 
-    print('-------------------------------------')
+    sys.stdout = orig_stdout
+    f.close()
 
-print('\n best_results')
+    return result
+
+
+param_vals_list = product(*param_values)
+results = Parallel(n_jobs=-1, backend="threading")(map(delayed(run_config), param_vals_list))
+
+dev_gap_errors = [result['best_dev_gap_error'] for result in results]
+best_result_idx, _ = max(enumerate(dev_gap_errors), key=itemgetter(1))
+print(best_result_idx)
 best_result = results[best_result_idx]
+print('\n best_results')
 print(best_result)
 
 with open(os.path.join(args.output_dir, 'best_result.json'), 'w') as fp:
