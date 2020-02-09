@@ -45,6 +45,13 @@ def process_query_1(model, arguments, params, extra_args):
     else:
         dev_marks_pred_last = None
 
+    # ipdb.set_trace()
+    # #TODO: Dev sequence lens cant be 1 but it is one in some case like in delhi dataset.
+    # if any(c_dev_seq_lens==1):
+    #     second_last_gaps_pred = None
+    # else:
+    #     second_last_gaps_pred = tf.gather(dev_l2_gaps_pred, c_dev_seq_lens-2, batch_dims=1)
+
     second_last_gaps_pred = tf.gather(dev_l2_gaps_pred, c_dev_seq_lens-2, batch_dims=1)
     last_gaps_pred = tf.gather(dev_l2_gaps_pred, c_dev_seq_lens-1, batch_dims=1)
     last_times_in = tf.gather(c_dev_times_in, c_dev_seq_lens-1, batch_dims=1)
@@ -131,7 +138,7 @@ def process_query_2(model, arguments, params, extra_args):
                                      dev_begin_tss,
                                      dev_t_b_plus,
                                      dev_t_b_plus,
-                                     decoder_length,
+                                     0,
                                      1,
                                      initial_state=l1_rnn_init_state)
 
@@ -143,11 +150,13 @@ def process_query_2(model, arguments, params, extra_args):
                                      dev_begin_tss,
                                      dev_t_e_plus,
                                      dev_t_e_plus,
-                                     decoder_length,
+                                     0,
                                      1,
                                      initial_state=l1_rnn_init_state)
 
-    return (all_l1_dev_gaps_pred, dev_simulator.simulator.all_times_pred)
+    all_gaps_pred = tf.squeeze(all_l1_dev_gaps_pred, axis=-1)
+
+    return (all_gaps_pred, dev_simulator.all_times_pred, simulation_count)
 
 # def process_query_3(model, arguments, params, extra_args):
 #     (c_dev_marks_in, c_dev_gaps_in, c_dev_times_in, c_dev_seqmask_in,
@@ -300,6 +309,8 @@ def process_query_2(model, arguments, params, extra_args):
 def query_processor(query, model, arguments, params, extra_args):
     if query == 1:
             return process_query_1(model, arguments, params, extra_args)
+    if query == 2:
+            return process_query_2(model, arguments, params, extra_args)
     return None
 
 
@@ -416,14 +427,10 @@ def run(args):
 
     # ----- End: Load test_dataset ----- #
 
-    tile_shape = dev_gaps_out.get_shape().as_list()
-    tile_shape[0] = tile_shape[2] = 1
-    dev_normalizer_d = tf.tile(tf.expand_dims(dev_normalizer_d, axis=1), tile_shape)
-    dev_normalizer_a = tf.tile(tf.expand_dims(dev_normalizer_a, axis=1), tile_shape)
-    tile_shape = test_gaps_out.get_shape().as_list()
-    tile_shape[0] = tile_shape[2] = 1
-    test_normalizer_d = tf.tile(tf.expand_dims(test_normalizer_d, axis=1), tile_shape)
-    test_normalizer_a = tf.tile(tf.expand_dims(test_normalizer_a, axis=1), tile_shape)
+    dev_normalizer_d = tf.expand_dims(dev_normalizer_d, axis=1)
+    dev_normalizer_a = tf.expand_dims(dev_normalizer_a, axis=1)
+    test_normalizer_d = tf.expand_dims(test_normalizer_d, axis=1)
+    test_normalizer_a = tf.expand_dims(test_normalizer_a, axis=1)
 
     c_train_dataset = c_train_dataset.batch(BPTT, drop_remainder=False).map(reader_hierarchical.transpose)
 
@@ -584,9 +591,22 @@ def run(args):
                 extra_args = (c_dev_seq_lens, c_dev_t_b_plus, c_dev_t_e_plus,
                               dev_t_b_plus, dev_t_e_plus, decoder_length, dev_begin_tss)
 
-                query_result = query_processor(1, model, arguments, params, extra_args)
+                query = 1
 
-                (dev_gaps_pred, all_l2_dev_gaps_pred) = query_result
+                if query == 1:
+                    query_result = query_processor(1, model, arguments, params, extra_args)
+                    (dev_gaps_pred, all_l2_dev_gaps_pred) = query_result
+
+                elif query == 2:
+                    query_result = query_processor(2, model, arguments, params, extra_args)
+                    (dev_gaps_pred, all_l2_dev_gaps_pred, total_number_of_events_in_range) = query_result
+
+                    print('dev_gaps_pred', dev_gaps_pred)
+                    print('all_l2_dev_gaps_pred', all_l2_dev_gaps_pred)
+                    print('total_number_of_events_in_range', total_number_of_events_in_range)
+
+                    print('dev_t_b_plus', dev_t_b_plus)
+                    print('dev_t_e_plus', dev_t_e_plus)
 
 
                 # (dev_l2_marks_logits, dev_l2_gaps_pred, _, _,
@@ -684,6 +704,8 @@ def run(args):
             model.reset_states()
             end_time = time.time()
             inference_times.append(end_time-start_time)
+
+            #############################################################################
 
             if use_marks:
                 dev_mark_metric(dev_marks_out, dev_marks_logits)

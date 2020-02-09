@@ -42,7 +42,7 @@ parser.add_argument('--learning_rate', type=float, default=1e-2,
 
 parser.add_argument('--generate_plots', action='store_true',
                     help='Generate dev and test plots, both per epochs \
-                          and after training', default=True)
+                          and after training', default=False)
 
 group = parser.add_mutually_exclusive_group()
 group.add_argument('-v', '--verbose', action='store_true')

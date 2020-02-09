@@ -321,7 +321,7 @@ def run(args):
                 #                                 last_dev_gaps_pred,
                 #                                 dev_begin_tss,
                 #                                 dev_t_b_plus,
-                #                                 decoder_length,
+                #                                 0,
                 #                                 normalizers=(dev_normalizer_d, dev_normalizer_a),
                 #                                 initial_timestamp=initial_timestamp,
                 #                                 marks_in=dev_marks_pred_last)
@@ -332,12 +332,12 @@ def run(args):
                 #                                 last_dev_gaps_pred,
                 #                                 dev_begin_tss,
                 #                                 dev_t_e_plus,
-                #                                 decoder_length,
+                #                                 0,
                 #                                 normalizers=(dev_normalizer_d, dev_normalizer_a),
                 #                                 initial_timestamp=initial_timestamp,
                 #                                 marks_in=None)
 
-                # print('Events between t_b_plus and t_e_plus are at:', all_times_pred.numpy())
+                # print('Events between t_b_plus and t_e_plus are at:', all_times_pred.numpy().tolist())
                 # print('Number of events between t_b_plus and t_e_plus are:', simul_count)
                 # print('Actual count of events:', event_bw_range_tb_te[0])
 
@@ -422,6 +422,8 @@ def run(args):
             end_time = time.time()
             inference_times.append(end_time-start_time)
 
+
+###################################################################################
             if use_marks:
                 dev_mark_metric(dev_marks_out, dev_marks_logits)
                 test_mark_metric(test_marks_out, test_marks_logits)

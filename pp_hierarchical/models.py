@@ -323,16 +323,27 @@ class SimulateHierarchicalRNN:
         #TODO (Code Review by PD)
         #There is problem with the prediction of gaps for decoder length.
 
+
         hidden_states = list()
         gaps_pred = list()
         times_pred = list()
 
         N = len(last_gaps_pred)
 
+        mask = np.squeeze(np.ones_like(last_gaps_pred), axis=-1)
+
+        if second_last_gaps_pred is None:
+            _, step_gaps_pred, _, _ \
+                     = model_rnn(last_gaps_pred, tf.constant(mask), initial_state)
+
+            second_last_gaps_pred, last_gaps_pred = last_gaps_pred, step_gaps_pred
+
         begin_idxes, end_idxes =  np.zeros(N, dtype=int), np.zeros(N, dtype=int)
         pred_idxes = -1.0 * np.ones(N)
+        end_pred_idxes = -1.0 * np.ones(N)
 
-        last_times_pred = tf.squeeze(last_times_in + last_gaps_pred, axis=-1)
+        # last_times_pred = tf.squeeze(last_times_in + last_gaps_pred, axis=-1)
+        last_times_pred = tf.squeeze(last_times_in, axis=-1)
         times_pred.append(last_times_pred)
 
         #TODO:
@@ -344,24 +355,23 @@ class SimulateHierarchicalRNN:
             gaps_pred.append(second_last_gaps_pred)
         gaps_inputs = last_gaps_pred
 
-        simul_step = 0
-        mask = np.squeeze(np.ones_like(gaps_inputs), axis=-1)
+        simul_step = 1
 
         # ipdb.set_trace()
-        while any(times_pred[-1]<t_b_plus) or any(pred_idxes<decoder_length) or any(times_pred[-1]<t_e_plus):
+        while any(times_pred[-1]<t_b_plus) or any(end_pred_idxes<decoder_length) or any(times_pred[-1]<t_e_plus):
 
             #print('layer', layer, 'simul_step:', simul_step)
             prev_hidden_state = model_rnn.hidden_states[:, -1]
 
             _, step_gaps_pred, _, _ \
-                     = model_rnn(gaps_inputs, tf.constant(mask), initial_state)
+                     = model_rnn(gaps_inputs, tf.constant(mask))
 
             hidden_states.append(prev_hidden_state)
             gaps_pred.append(gaps_inputs)
+            last_times_pred = times_pred[-1] + tf.squeeze(gaps_inputs, axis=-1)
             gaps_inputs = step_gaps_pred
-            last_times_pred = times_pred[-1] + tf.squeeze(step_gaps_pred, axis=-1)
             times_pred.append(last_times_pred)
-            initial_state = model_rnn.hidden_states[:, -1]
+            # initial_state = model_rnn.hidden_states[:, -1]
 
             for ex_id, (t_pred, t_b, t_e) in enumerate(zip(times_pred[-1], t_b_plus, t_e_plus)):
                 if t_pred > t_b:
@@ -369,33 +379,35 @@ class SimulateHierarchicalRNN:
                     if pred_idxes[ex_id] == 0:
                         begin_idxes[ex_id] = simul_step
                 if t_pred > t_e:
+                    end_pred_idxes[ex_id] += 1
                     if end_idxes[ex_id] == 0:
                         end_idxes[ex_id] = simul_step
-                    else:
+                    if end_pred_idxes[ex_id] == decoder_length:
                         mask[ex_id] = 0.
 
             simul_step += 1
 
         gaps_pred = tf.squeeze(tf.stack(gaps_pred, axis=1), axis=2)
         self.all_gaps_pred = gaps_pred # all predicted gaps from start to end of simulation
+        #self.all_gaps_pred includes one non predicted gaps
 
         # ipdb.set_trace()
 
-        decoder_range_idxes = tf.expand_dims(tf.constant(begin_idxes-1, dtype=tf.int32), axis=-1) + tf.expand_dims(tf.range(decoder_length, dtype=tf.int32), axis=0)
+        decoder_range_idxes = tf.expand_dims(tf.constant(begin_idxes, dtype=tf.int32), axis=-1) + tf.expand_dims(tf.range(decoder_length, dtype=tf.int32), axis=0)
 
-        if layer==1:
-            decoder_range_idxes=decoder_range_idxes-1; 
-
+        # ipdb.set_trace()
         # tb_te_range_idxes = tf.expand_dims(tf.constant(begin_idxes, dtype=tf.int32), axis=-1) + tf.expand_dims(tf.range(end_idxes - begin_idxes, dtype=tf.int32), axis=0)
         after_tb_gaps_pred_till_decoder_len = tf.gather(gaps_pred, decoder_range_idxes, batch_dims=1)
         after_tb_gaps_pred_till_te = None
-        before_tb_gaps_pred = tf.gather(gaps_pred, tf.expand_dims(begin_idxes-2, axis=-1), batch_dims=1)
+        # ipdb.set_trace()
+        before_tb_gaps_pred = tf.gather(gaps_pred, tf.expand_dims(begin_idxes-1, axis=-1), batch_dims=1)
         number_of_simulation = end_idxes
 
         all_gaps_pred = tf.expand_dims(gaps_pred, axis=-1)
 
+        # ipdb.set_trace()
         all_times_pred = tf.squeeze(tf.stack(times_pred, axis=1), axis=-1)
-        times_pred = tf.gather(all_times_pred, tf.expand_dims(begin_idxes, axis=-1), batch_dims=1)
+        times_pred = tf.gather(all_times_pred, tf.expand_dims(begin_idxes-1, axis=-1), batch_dims=1)
         times_pred = tf.expand_dims(times_pred, axis=-1)
         self.all_times_pred = all_times_pred
 
@@ -418,7 +430,7 @@ class SimulateHierarchicalRNN:
         l2_times_pred = list()
         # TODO Make sure that second last l2_gaps_pred, l2_times_pred and l2_hidden_states are being tracked by l2_idxes
         N = len(c_gaps_pred)
-        l2_idxes = np.ones(N, dtype=int) * -1
+        l2_idxes = np.ones(N, dtype=int) * 0
 
         l2_second_last_gaps_pred = tf.gather(c_gaps_pred, c_seq_lens-2, batch_dims=1)
         #l2_second_last_times_in = tf.gather(c_times_in, c_seq_lens-2, batch_dims=1)
@@ -431,6 +443,7 @@ class SimulateHierarchicalRNN:
         l2_times_pred.append(l2_last_times_pred)
 
         l2_hidden_states.append(model.l2_rnn.hidden_states[:, -2])
+        l2_hidden_states.append(model.l2_rnn.hidden_states[:, -1])
         l2_gaps_pred.append(l2_second_last_gaps_pred)
         l2_gaps_inputs = l2_last_gaps_pred
         simul_step = 0
@@ -440,13 +453,12 @@ class SimulateHierarchicalRNN:
 
             #print('layer 2 simul_step:', simul_step)
 
-            prev_hidden_state = model.l2_rnn.hidden_states[:, -1]
-
             #(_, step_l2_gaps_pred, _, _, _, _, _, _) \
             #        = model(None, l2_gaps=l2_gaps_inputs)
             _, step_l2_gaps_pred, _, _ \
                      = model.l2_rnn(l2_gaps_inputs, tf.constant(l2_mask))
 
+            prev_hidden_state = model.l2_rnn.hidden_states[:, -1]
             l2_hidden_states.append(prev_hidden_state)
             l2_gaps_pred.append(l2_gaps_inputs)
             l2_gaps_inputs = step_l2_gaps_pred
@@ -454,7 +466,7 @@ class SimulateHierarchicalRNN:
             l2_times_pred.append(l2_last_times_pred)
 
             for ex_id, (l2_t_pred, c_t_b) in enumerate(zip(l2_times_pred[-1], c_t_b_plus)):
-                if l2_t_pred >= c_t_b and l2_idxes[ex_id] == -1:
+                if l2_t_pred >= c_t_b and l2_mask[ex_id] == 1:
                     l2_idxes[ex_id] = len(l2_hidden_states)-2
                     l2_mask[ex_id] = 0.
 
@@ -463,6 +475,7 @@ class SimulateHierarchicalRNN:
         #l2_gaps_pred = tf.stack(l2_gaps_pred, axis=0)
         l2_gaps_pred = tf.squeeze(tf.stack(l2_gaps_pred, axis=1), axis=2)
         self.all_l2_gaps_pred = l2_gaps_pred # all predicted gaps from start to end of simulation
+        # ipdb.set_trace()
         l2_idxes = tf.expand_dims(l2_idxes, axis=-1)
         l2_gaps_pred = tf.gather(l2_gaps_pred, l2_idxes, batch_dims=1)
         all_l2_times_pred = tf.squeeze(tf.stack(l2_times_pred, axis=1), axis=-1)
