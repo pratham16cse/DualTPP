@@ -259,6 +259,7 @@ class HierarchicalRNN(tf.keras.Model):
         else:
             self.l1_marks_logits, self.l1_gaps_pred = None, None
             self.l2_D, self.l2_WT = None, None
+            self.l1_D, self.l1_WT = None, None
 
         return (self.l2_marks_logits, self.l2_gaps_pred, self.l2_D, self.l2_WT,
                 self.l1_marks_logits, self.l1_gaps_pred, self.l1_D, self.l1_WT)
@@ -429,7 +430,7 @@ class SimulateHierarchicalRNN:
         # Transform hidden state of layer 2 rnn using ff
         l1_rnn_init_state =  model.ff(l2_hidden_states[-2])
 
-        model.l1_rnn.reset_states()
+        #model.l1_rnn.reset_states()
         while any(l1_times_pred[-1]<t_b_plus) or any(pred_idxes<decoder_length):
 
             # print('layer 1 simul_step:', simul_step)

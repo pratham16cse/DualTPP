@@ -33,6 +33,9 @@ parser.add_argument('--use_intensity', action='store_true',
 parser.add_argument('--use_time_embed', action='store_true',
                     help='Discretize and embed hour-of-day features')
 
+#parser.add_argument('--training_mode', action='store_true',
+#                    help='Enables training mode. If false, only inference \
+#                          is performed')
 parser.add_argument('--output_dir', type=str,
                     help='Path to store all raw outputs, checkpoints, \
                           summaries, and plots')
@@ -71,8 +74,9 @@ param_names, param_values = zip(*hparams[args.alg_name].items())
 
 orig_stdout = sys.stdout
 
-def run_config(param_vals):
+def run_config(param_vals, training_mode):
     args_vars_config = copy.deepcopy(vars(args))
+    args_vars_config['training_mode'] = training_mode
     for name, val in zip(param_names, param_vals):
         args_vars_config[name] = val
 
@@ -82,14 +86,21 @@ def run_config(param_vals):
 
     args_vars_config['output_dir'] \
             = os.path.join(args_vars_config['output_dir'], param_dir)
-
+    if training_mode==1.:
+        args_vars_config['output_dir'] \
+                = os.path.join(args_vars_config['output_dir'], 'train')
+    else:
+        args_vars_config['output_dir'] \
+                = os.path.join(args_vars_config['output_dir'], 'eval')
     print(args_vars_config['output_dir'])
+
+    os.makedirs(args_vars_config['output_dir'], exist_ok=True)
+    f = open(os.path.join(args_vars_config['output_dir'], 'print_dump'), 'w')
+    args_vars_config['outfile'] = f
+
     args_config = Namespace(**args_vars_config)
     print(args_config)
     print(args)
-    os.makedirs(args_config.output_dir)
-    f = open(os.path.join(args_config.output_dir, 'print_dump'), 'w')
-    sys.stdout = f
 
     if args.alg_name in ['rmtpp']:
         result = run_rmtpp.run(args_config)
@@ -105,17 +116,31 @@ def run_config(param_vals):
         result_json = json.dumps(result, indent=4)
         fp.write(result_json)
 
-    sys.stdout = orig_stdout
     f.close()
 
     return result
 
 
 param_vals_list = product(*param_values)
-results = Parallel(n_jobs=-1, backend="threading")(map(delayed(run_config), param_vals_list))
+param_vals_list = [param_vals for param_vals in param_vals_list]
+
+# Training
+print('\n Starting Training. . .')
+training_mode_list = [1.] * len(param_vals_list)
+for param_vals, training_mode in zip(param_vals_list, training_mode_list):
+    print(param_vals, training_mode)
+results = Parallel(n_jobs=1, backend="threading")(delayed(run_config)(param_vals, training_mode) for param_vals, training_mode in zip(param_vals_list, training_mode_list))
+print('\n Finished Training. . .')
+
+
+# Inference
+print('\n Starting Inference. . .')
+training_mode_list = [0.] * len(param_vals_list)
+results = Parallel(n_jobs=1, backend="threading")(delayed(run_config)(param_vals, training_mode) for param_vals, training_mode in zip(param_vals_list, training_mode_list))
+print('\n Finished Inference. . .')
 
 dev_gap_errors = [result['best_dev_gap_error'] for result in results]
-best_result_idx, _ = max(enumerate(dev_gap_errors), key=itemgetter(1))
+best_result_idx, _ = min(enumerate(dev_gap_errors), key=itemgetter(1))
 print(best_result_idx)
 best_result = results[best_result_idx]
 print('\n best_results')

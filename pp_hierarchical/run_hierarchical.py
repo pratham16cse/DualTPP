@@ -28,6 +28,9 @@ import models
 
 
 def run(args):
+
+    if not args.training_mode:
+        args.epochs = 1
     tf.random.set_seed(args.seed)
     dataset_path = args.dataset_path
 
@@ -56,11 +59,6 @@ def run(args):
     train_normalizer_d = data['train_normalizer_d']
     train_normalizer_a = data['train_normalizer_a']
 
-    best_dev_gap_error = np.inf
-    best_test_gap_error = np.inf
-    best_dev_mark_acc = np.inf
-    best_test_mark_acc = np.inf
-    best_epoch = 0
 
     # ----- Start: Load dev_dataset ----- #
     c_dev_dataset = data['c_dev_dataset']
@@ -75,6 +73,8 @@ def run(args):
     dev_times_out = data['dev_times_out']
     dev_begin_tss = data['dev_begin_tss']
     dev_offsets = tf.random.uniform(shape=(num_sequences, 1)) * 3600. * block_size # Sampling offsets
+    if args.training_mode:
+        dev_offsets = tf.zeros_like(dev_offsets)
     dev_t_b_plus = dev_begin_tss + dev_offsets
     dev_times_out_indices = [bisect_right(dev_t_out, t_b) for dev_t_out, t_b \
                                 in zip(dev_times_out, dev_t_b_plus)]
@@ -110,6 +110,8 @@ def run(args):
     test_times_out = data['test_times_out']
     test_begin_tss = data['test_begin_tss']
     test_offsets = tf.random.uniform(shape=(num_sequences, 1)) * 3600. * block_size # Sampling offsets
+    if args.training_mode:
+        test_offsets = tf.zeros_like(test_offsets)
     test_t_b_plus = test_begin_tss + test_offsets
     test_times_out_indices = [bisect_right(test_t_out, t_b) for test_t_out, t_b \
                                 in zip(test_times_out, test_t_b_plus)]
@@ -178,9 +180,9 @@ def run(args):
                                          max_to_keep=1)
     ckpt.restore(manager.latest_checkpoint)
     if manager.latest_checkpoint:
-        print("Restored from {}".format(manager.latest_checkpoint))
+        print("Restored from {}".format(manager.latest_checkpoint), file=args.outfile)
     else:
-        print("Initializing from scratch.")
+        print("Initializing from scratch.", file=args.outfile)
 
     # Create summary writers
     current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -192,119 +194,130 @@ def run(args):
     test_summary_writer = tf.summary.create_file_writer(test_log_dir)
     global_step = 0
 
+    best_dev_gap_error = np.inf
+    best_test_gap_error = np.inf
+    best_dev_mark_acc = np.inf
+    best_test_mark_acc = np.inf
+    best_epoch = 0
+
     train_c_losses = list()
     train_losses = list()
     inference_times = list()
     # Iterate over epochs.
     for epoch in range(epochs):
-        print('Start of epoch %d' % (epoch,))
+        print('Start of epoch %d' % (epoch,), file=args.outfile)
 
         # Iterate over the batches of the dataset.
-        for step, (c_marks_batch_in, c_gaps_batch_in, c_times_batch_in, c_seqmask_batch_in,
-                   c_marks_batch_out, c_gaps_batch_out, c_times_batch_out, c_seqmask_batch_out,
-                   c_batch_time_feature,
-                   gaps_batch_in, times_batch_in, seqmask_batch_in,
-                   gaps_batch_out, times_batch_out, seqmask_batch_out,
-                   batch_time_feature) \
-                           in enumerate(c_train_dataset):
+        if args.training_mode:
+            for step, (c_marks_batch_in, c_gaps_batch_in, c_times_batch_in, c_seqmask_batch_in,
+                       c_marks_batch_out, c_gaps_batch_out, c_times_batch_out, c_seqmask_batch_out,
+                       c_batch_time_feature,
+                       gaps_batch_in, times_batch_in, seqmask_batch_in,
+                       gaps_batch_out, times_batch_out, seqmask_batch_out,
+                       batch_time_feature) \
+                               in enumerate(c_train_dataset):
 
-            with tf.GradientTape() as tape:
+                with tf.GradientTape() as tape:
 
-                (l2_marks_logits, l2_gaps_pred, l2_D, l2_WT,
-                 l1_marks_logits, l1_gaps_pred, l1_D, l1_WT) \
-                        = model(c_gaps_batch_in, c_seqmask_batch_in, c_batch_time_feature,
-                                gaps_batch_in, seqmask_batch_in, batch_time_feature)
+                    (l2_marks_logits, l2_gaps_pred, l2_D, l2_WT,
+                     l1_marks_logits, l1_gaps_pred, l1_D, l1_WT) \
+                            = model(c_gaps_batch_in, c_seqmask_batch_in, c_batch_time_feature,
+                                    gaps_batch_in, seqmask_batch_in, batch_time_feature)
 
-                # Apply mask on l1_gaps_pred
-                l1_gaps_pred = l1_gaps_pred * tf.expand_dims(tf.expand_dims(c_seqmask_batch_in, axis=-1), axis=-1)
-                #TODO Compute MASKED-losses manually instead of using tf helper functions
+                    # Apply mask on l1_gaps_pred
+                    l1_gaps_pred = l1_gaps_pred * tf.expand_dims(tf.expand_dims(c_seqmask_batch_in, axis=-1), axis=-1)
+                    #TODO Compute MASKED-losses manually instead of using tf helper functions
 
-                # Compute the loss for this minibatch.
+                    # Compute the loss for this minibatch.
+                    if use_marks:
+                        mark_loss = mark_loss_fn(marks_batch_out, marks_logits)
+                    else:
+                        mark_loss = 0.0
+                    if use_intensity:
+                        c_gap_loss_fn = models.NegativeLogLikelihood(l2_D, l2_WT)
+                        gap_loss_fn = models.NegativeLogLikelihood(l1_D, l1_WT)
+                    c_gap_loss = c_gap_loss_fn(c_gaps_batch_out, l2_gaps_pred)
+                    gap_loss = gap_loss_fn(gaps_batch_out, l1_gaps_pred)
+                    loss = mark_loss + c_gap_loss + gap_loss
+                    train_losses.append(gap_loss.numpy())
+                    train_c_losses.append(c_gap_loss.numpy())
+                    with train_summary_writer.as_default():
+                        tf.summary.scalar('c_gap_loss', c_gap_loss, step=global_step)
+                        tf.summary.scalar('gap_loss', gap_loss, step=global_step)
+                        tf.summary.scalar('mark_loss', mark_loss, step=global_step)
+                        tf.summary.scalar('loss', loss, step=global_step)
+
+                c_train_gap_metric(c_gaps_batch_out, l2_gaps_pred)
+                c_train_gap_err = c_train_gap_metric.result()
+
+                grads = tape.gradient(loss, model.trainable_weights)
+                optimizer.apply_gradients(zip(grads, model.trainable_weights))
+
+                # TODO Make sure that padding is considered during evaluation
                 if use_marks:
-                    mark_loss = mark_loss_fn(marks_batch_out, marks_logits)
-                else:
-                    mark_loss = 0.0
-                if use_intensity:
-                    c_gap_loss_fn = models.NegativeLogLikelihood(l2_D, l2_WT)
-                    gap_loss_fn = models.NegativeLogLikelihood(l1_D, l1_WT)
-                c_gap_loss = c_gap_loss_fn(c_gaps_batch_out, l2_gaps_pred)
-                gap_loss = gap_loss_fn(gaps_batch_out, l1_gaps_pred)
-                loss = mark_loss + c_gap_loss + gap_loss
-                train_losses.append(gap_loss.numpy())
-                train_c_losses.append(c_gap_loss.numpy())
-                with train_summary_writer.as_default():
-                    tf.summary.scalar('c_gap_loss', c_gap_loss, step=global_step)
-                    tf.summary.scalar('gap_loss', gap_loss, step=global_step)
-                    tf.summary.scalar('mark_loss', mark_loss, step=global_step)
-                    tf.summary.scalar('loss', loss, step=global_step)
+                    train_mark_metric(marks_batch_out, marks_logits)
+                train_gap_metric(gaps_batch_out, l1_gaps_pred)
 
-            c_train_gap_metric(c_gaps_batch_out, l2_gaps_pred)
-            c_train_gap_err = c_train_gap_metric.result()
+                print('Training loss (for one batch) at step %s: %s %s %s %s' \
+                        % (step, float(loss), float(mark_loss), float(c_gap_loss), float(gap_loss)), file=args.outfile)
 
-            grads = tape.gradient(loss, model.trainable_weights)
-            optimizer.apply_gradients(zip(grads, model.trainable_weights))
+                # ----- Training nowcasting plots for layer 2 and layer 1 ----- #
+                # For testdata:
+                #   c_train_normalizer_d: 66.709526
+                #   train_normalizer_d: 6.667143
+                # For sin data:
+                #   c_train_normalizer_d: 104.655846
+                #   train_normalizer_d: 10.457432
+                #c_gaps_batch_out_unnorm = (c_gaps_batch_out) * 104.655846
+                #l2_gaps_pred_unnorm = (l2_gaps_pred) * 104.655846
+                #gaps_batch_out_unnorm = (gaps_batch_out) * 10.457432
+                #l1_gaps_pred_unnorm = (l1_gaps_pred) * 10.457432
 
-            # TODO Make sure that padding is considered during evaluation
+                #if epoch > patience-1:
+                #    print('\nc_train_batch_gaps_out')
+                #    print(tf.squeeze(c_gaps_batch_out_unnorm[0], axis=-1))
+                #    print('\nc_train_batch_gaps_pred')
+                #    print(tf.squeeze(l2_gaps_pred_unnorm[0], axis=-1))
+                #    plt.plot(tf.squeeze(c_gaps_batch_out_unnorm[0], axis=-1), 'bo-')
+                #    plt.plot(tf.squeeze(l2_gaps_pred_unnorm[0], axis=-1), 'r*-')
+                #    plot_dir_l2_trn = os.path.join(args.output_dir, 'plots_l2_trn', 'trn_plots')
+                #    os.makedirs(plot_dir_l2_trn, exist_ok=True)
+                #    name_plot = os.path.join(plot_dir_l2_trn, 'epoch_' + str(epoch))
+                #    plt.savefig(name_plot+'.png')
+                #    plt.close()
+
+                #    print('\ntrain_batch_gaps_out')
+                #    print(tf.squeeze(gaps_batch_out_unnorm[0][0], axis=-1))
+                #    print('\ntrain_batch_gaps_pred')
+                #    print(tf.squeeze(l1_gaps_pred_unnorm[0][0], axis=-1))
+                #    plt.plot(tf.squeeze(gaps_batch_out_unnorm[0][0], axis=-1), 'bo-')
+                #    plt.plot(tf.squeeze(l1_gaps_pred_unnorm[0][0], axis=-1), 'r*-')
+                #    plot_dir_l1_trn = os.path.join(args.output_dir, 'plots_l1_trn', 'trn_plots')
+                #    os.makedirs(plot_dir_l1_trn, exist_ok=True)
+                #    name_plot = os.path.join(plot_dir_l1_trn, 'epoch_' + str(epoch))
+                #    plt.savefig(name_plot+'.png')
+                #    plt.close()
+
+                global_step += 1
+
+            model.reset_states() # Reset RNN state after 
+                                 # a sequence is finished
+
             if use_marks:
-                train_mark_metric(marks_batch_out, marks_logits)
-            train_gap_metric(gaps_batch_out, l1_gaps_pred)
+                train_mark_acc = train_mark_metric.result()
+                train_mark_metric.reset_states()
+            else:
+                train_mark_acc = 0.0
+            train_gap_err = train_gap_metric.result()
+            train_gap_metric.reset_states()
+            print('Training mark acc and gap err over epoch: %s, %s' \
+                    % (float(train_mark_acc), float(train_gap_err)), file=args.outfile)
 
-            print('Training loss (for one batch) at step %s: %s %s %s %s' \
-                    % (step, float(loss), float(mark_loss), float(c_gap_loss), float(gap_loss)))
+            print('l2_train gap err over epoch: %s' \
+                    % (float(c_train_gap_err)), file=args.outfile)
+            c_train_gap_metric.reset_states()
 
-            # ----- Training nowcasting plots for layer 2 and layer 1 ----- #
-            # For testdata:
-            #   c_train_normalizer_d: 66.709526
-            #   train_normalizer_d: 6.667143
-            # For sin data:
-            #   c_train_normalizer_d: 104.655846
-            #   train_normalizer_d: 10.457432
-            #c_gaps_batch_out_unnorm = (c_gaps_batch_out) * 104.655846
-            #l2_gaps_pred_unnorm = (l2_gaps_pred) * 104.655846
-            #gaps_batch_out_unnorm = (gaps_batch_out) * 10.457432
-            #l1_gaps_pred_unnorm = (l1_gaps_pred) * 10.457432
-
-            #if epoch > patience-1:
-            #    print('\nc_train_batch_gaps_out')
-            #    print(tf.squeeze(c_gaps_batch_out_unnorm[0], axis=-1))
-            #    print('\nc_train_batch_gaps_pred')
-            #    print(tf.squeeze(l2_gaps_pred_unnorm[0], axis=-1))
-            #    plt.plot(tf.squeeze(c_gaps_batch_out_unnorm[0], axis=-1), 'bo-')
-            #    plt.plot(tf.squeeze(l2_gaps_pred_unnorm[0], axis=-1), 'r*-')
-            #    plot_dir_l2_trn = os.path.join(args.output_dir, 'plots_l2_trn', 'trn_plots')
-            #    os.makedirs(plot_dir_l2_trn, exist_ok=True)
-            #    name_plot = os.path.join(plot_dir_l2_trn, 'epoch_' + str(epoch))
-            #    plt.savefig(name_plot+'.png')
-            #    plt.close()
-
-            #    print('\ntrain_batch_gaps_out')
-            #    print(tf.squeeze(gaps_batch_out_unnorm[0][0], axis=-1))
-            #    print('\ntrain_batch_gaps_pred')
-            #    print(tf.squeeze(l1_gaps_pred_unnorm[0][0], axis=-1))
-            #    plt.plot(tf.squeeze(gaps_batch_out_unnorm[0][0], axis=-1), 'bo-')
-            #    plt.plot(tf.squeeze(l1_gaps_pred_unnorm[0][0], axis=-1), 'r*-')
-            #    plot_dir_l1_trn = os.path.join(args.output_dir, 'plots_l1_trn', 'trn_plots')
-            #    os.makedirs(plot_dir_l1_trn, exist_ok=True)
-            #    name_plot = os.path.join(plot_dir_l1_trn, 'epoch_' + str(epoch))
-            #    plt.savefig(name_plot+'.png')
-            #    plt.close()
-
-            global_step += 1
-
-        model.reset_states() # Reset RNN state after 
-                             # a sequence is finished
-
-        if use_marks:
-            train_mark_acc = train_mark_metric.result()
-            train_mark_metric.reset_states()
-        else:
-            train_mark_acc = 0.0
-        train_gap_err = train_gap_metric.result()
-        train_gap_metric.reset_states()
-        print('Training mark acc and gap err over epoch: %s, %s' \
-                % (float(train_mark_acc), float(train_gap_err)))
-
-        if epoch > patience-1:
+        if epoch > patience-1 or args.training_mode==0.0:
 
             for dev_step, (c_dev_marks_in, c_dev_gaps_in, c_dev_times_in, c_dev_seqmask_in,
                            c_dev_gaps_out, c_dev_times_out, c_dev_seqmask_out, c_dev_time_feature) \
@@ -394,10 +407,10 @@ def run(args):
             test_gap_metric.reset_states()
 
             if args.verbose:
-                print('\ndev_gaps_pred')
-                print(tf.squeeze(dev_gaps_pred[:, 1:], axis=-1))
-                print('\ndev_gaps_out')
-                print(tf.squeeze(dev_gaps_out[:, 1:], axis=-1))
+                print('\ndev_gaps_pred', file=args.outfile)
+                print(tf.squeeze(dev_gaps_pred[:, 1:], axis=-1), file=args.outfile)
+                print('\ndev_gaps_out', file=args.outfile)
+                print(tf.squeeze(dev_gaps_out[:, 1:], axis=-1), file=args.outfile)
 
             if args.generate_plots:
                 # ----- Dev nowcasting plots for layer 2 ----- #
@@ -456,7 +469,7 @@ def run(args):
                 best_epoch = epoch + 1
 
                 save_path = manager.save()
-                print("Saved checkpoint for epoch %s" % (epoch))
+                print("Saved checkpoint for epoch %s" % (epoch), file=args.outfile)
 
                 if args.generate_plots:
                     best_true_gaps_plot = dev_gaps_out.numpy()
@@ -464,21 +477,17 @@ def run(args):
                     best_inp_tru_gaps = dev_gaps_in_unnorm
 
             print('Dev mark acc and gap err over epoch: %s, %s' \
-                    % (float(dev_mark_acc), float(dev_gap_err)))
+                    % (float(dev_mark_acc), float(dev_gap_err)), file=args.outfile)
             print('Test mark acc and gap err over epoch: %s, %s' \
-                    % (float(test_mark_acc), float(test_gap_err)))
-
-        print('l2_train gap err over epoch: %s' \
-                % (float(c_train_gap_err)))
-        c_train_gap_metric.reset_states()
+                    % (float(test_mark_acc), float(test_gap_err)), file=args.outfile)
 
     print('Best Dev mark acc, gap err: %s, %s' \
-            % (float(best_dev_mark_acc), float(best_dev_gap_error)))
+            % (float(best_dev_mark_acc), float(best_dev_gap_error)), file=args.outfile)
     print('Best Test mark acc and gap err: %s, %s' \
-            % (float(best_test_mark_acc), float(best_test_gap_error)))
-    print('Best epoch:', best_epoch)
+            % (float(best_test_mark_acc), float(best_test_gap_error)), file=args.outfile)
+    print('Best epoch:', best_epoch, file=args.outfile)
 
-    if args.generate_plots:
+    if args.generate_plots and args.training_mode==0.0:
         plot_dir = os.path.join(args.output_dir, 'joint_plots', 'dev_plots_')
         os.makedirs(plot_dir, exist_ok=True)
 
@@ -505,11 +514,11 @@ def run(args):
             plt.close()
 
     if args.verbose:
-        print('\n train_losses')
-        print(train_losses)
-        print('\n train_c_losses')
-        print(train_c_losses)
-        print('\n average infernece time:', np.mean(inference_times))
+        print('\n train_losses', file=args.outfile)
+        print(train_losses, file=args.outfile)
+        print('\n train_c_losses', file=args.outfile)
+        print(train_c_losses, file=args.outfile)
+        print('\n average infernece time:', np.mean(inference_times), file=args.outfile)
 
 
     return {
