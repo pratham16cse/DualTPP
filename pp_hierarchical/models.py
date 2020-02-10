@@ -354,7 +354,7 @@ class SimulateHierarchicalRNN:
         l2_times_pred = list()
         # TODO Make sure that second last l2_gaps_pred, l2_times_pred and l2_hidden_states are being tracked by l2_idxes
         N = len(c_gaps_pred)
-        l2_idxes = np.ones(N, dtype=int) * -1
+        l2_idxes = np.ones(N, dtype=int) * 0
 
         l2_second_last_gaps_pred = tf.gather(c_gaps_pred, c_seq_lens-2, batch_dims=1)
         l2_second_last_gaps_pred = tf.squeeze(l2_second_last_gaps_pred, axis=1)
@@ -372,6 +372,7 @@ class SimulateHierarchicalRNN:
         l2_times_pred.append(l2_last_times_pred)
 
         l2_hidden_states.append(model.l2_rnn.hidden_states[:, -2])
+        l2_hidden_states.append(model.l2_rnn.hidden_states[:, -1])
         l2_gaps_pred.append(l2_second_last_gaps_pred_unnorm)
         l2_gaps_inputs = l2_last_gaps_pred
         simul_step = 0
@@ -382,13 +383,13 @@ class SimulateHierarchicalRNN:
 
             #print('layer 2 simul_step:', simul_step)
 
-            prev_hidden_state = model.l2_rnn.hidden_states[:, -1]
 
             #(_, step_l2_gaps_pred, _, _, _, _, _, _) \
             #        = model(None, l2_gaps=l2_gaps_inputs)
             _, step_l2_gaps_pred, _, _ \
                      = model.l2_rnn(l2_gaps_inputs, tf.constant(l2_mask), time_features)
 
+            prev_hidden_state = model.l2_rnn.hidden_states[:, -1]
             l2_hidden_states.append(prev_hidden_state)
             l2_gaps_pred.append(l2_gaps_inputs * c_normalizer_d)
             l2_gaps_inputs = step_l2_gaps_pred
@@ -398,7 +399,7 @@ class SimulateHierarchicalRNN:
             time_features = reader_rmtpp.get_time_features_for_data((l2_times_pred[-1]))
 
             for ex_id, (l2_t_pred, c_t_b) in enumerate(zip(l2_times_pred[-1], c_t_b_plus)):
-                if l2_t_pred >= c_t_b and l2_idxes[ex_id] == -1:
+                if l2_t_pred >= c_t_b and l2_mask[ex_id] == 1.:
                     l2_idxes[ex_id] = len(l2_hidden_states)-2
                     l2_mask[ex_id] = 0.
 

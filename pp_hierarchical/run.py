@@ -129,14 +129,14 @@ print('\n Starting Training. . .')
 training_mode_list = [1.] * len(param_vals_list)
 for param_vals, training_mode in zip(param_vals_list, training_mode_list):
     print(param_vals, training_mode)
-results = Parallel(n_jobs=1, backend="threading")(delayed(run_config)(param_vals, training_mode) for param_vals, training_mode in zip(param_vals_list, training_mode_list))
+results = Parallel(n_jobs=-1)(delayed(run_config)(param_vals, training_mode) for param_vals, training_mode in zip(param_vals_list, training_mode_list))
 print('\n Finished Training. . .')
 
 
 # Inference
 print('\n Starting Inference. . .')
 training_mode_list = [0.] * len(param_vals_list)
-results = Parallel(n_jobs=1, backend="threading")(delayed(run_config)(param_vals, training_mode) for param_vals, training_mode in zip(param_vals_list, training_mode_list))
+results = Parallel(n_jobs=-1)(delayed(run_config)(param_vals, training_mode) for param_vals, training_mode in zip(param_vals_list, training_mode_list))
 print('\n Finished Inference. . .')
 
 dev_gap_errors = [result['best_dev_gap_error'] for result in results]
