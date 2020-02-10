@@ -290,6 +290,7 @@ class SimulateRMTPP:
                                 zip(marks_logits, begin_idxes, end_idxes)]
             marks_logits = tf.stack(marks_logits, axis=0)
         gaps_pred = tf.squeeze(tf.stack(gaps_pred, axis=1), axis=2)
+        self.all_gaps_pred = gaps_pred
 
         last_gaps_pred = [t_l[b_idx:b_idx+1] for t_l, b_idx in \
                             zip(gaps_pred, begin_idxes)]

@@ -14,7 +14,7 @@ from tensorflow.keras import layers
 
 import reader_hierarchical
 import models
-
+from dtw import dtw
 #epochs = 100
 #patience = 20
 #
@@ -320,8 +320,25 @@ def compute_actual_event_in_range(t_b_plus, t_e_plus, times_out):
     actual_event_count = [times_out_indices_te[idx] - times_out_indices_tb[idx] for idx in range(len(t_b_plus))]
     times_out_indices = [times_out_indices_tb[idx] + tf.range(times_out_indices_te[idx]-times_out_indices_tb[idx]) for idx in range(len(t_b_plus))]
     actual_times_out = [tf.gather(times_out[idx], times_out_indices[idx], batch_dims=0).numpy() for idx in range(len(t_b_plus))]
+    actual_gaps_out = [actual_times_out[idx][1:]-actual_times_out[idx][:-1] for idx in range(len(t_b_plus))]
 
-    return actual_event_count, actual_times_out
+    return actual_event_count, actual_times_out, actual_gaps_out
+
+def DTW(time_preds, time_true):
+
+    clipped_time_true = time_true#[:, :seq_limit]
+
+    euclidean_norm = lambda x, y: np.abs(x - y)
+    distance = 0
+    for time_preds_, clipped_time_true_ in zip(time_preds, clipped_time_true):
+        #TODO This is not right way
+        if np.shape(clipped_time_true_)[0] == 0:
+            clipped_time_true_ = np.array([0.0]).reshape(-1, 1)
+        d, cost_matrix, acc_cost_matrix, path = dtw(time_preds_, clipped_time_true_, dist=euclidean_norm)
+        distance += d
+    distance = distance / len(clipped_time_true)
+
+    return distance
 
 def run(args):
     tf.random.set_seed(args.seed)
@@ -613,15 +630,34 @@ def run(args):
 
                 elif query == 2:
                     query_result = query_processor(2, model, arguments, params, extra_args)
-                    (dev_gaps_pred, all_l2_dev_gaps_pred, total_number_of_events_in_range) = query_result
+                    (dev_gaps_pred, all_times_pred_in_range, total_number_of_events_in_range) = query_result
 
-                    print('dev_gaps_pred', dev_gaps_pred)
-                    print('all_l2_dev_gaps_pred', all_l2_dev_gaps_pred)
+                    # print('dev_gaps_pred', dev_gaps_pred)
+                    # print('all_times_pred_in_range', all_times_pred_in_range)
+
+                    total_number_of_events_in_range = np.array(total_number_of_events_in_range)
+                    actual_event_count = np.array(event_bw_range_tb_te[0])
+                    error_in_event_count = np.mean((total_number_of_events_in_range-actual_event_count)**2)
+
                     print('total_number_of_events_in_range', total_number_of_events_in_range)
-                    print('Actual count of events:', event_bw_range_tb_te[0])
+                    print('Actual count of events:', actual_event_count)
+                    # print('dev_t_b_plus', dev_t_b_plus)
+                    # print('dev_t_e_plus', dev_t_e_plus)
 
-                    print('dev_t_b_plus', dev_t_b_plus)
-                    print('dev_t_e_plus', dev_t_e_plus)
+                    actual_dev_event_in_range = event_bw_range_tb_te[1]
+                    actual_dev_gaps_in_range = event_bw_range_tb_te[2]
+
+                    dev_gaps_pred_in_range = (dev_gaps_pred[:, 1:] - dev_normalizer_a) * dev_normalizer_d
+                    dev_gaps_pred_in_range = dev_gaps_pred_in_range.numpy()
+
+                    dev_gaps_pred_in_range = [np.trim_zeros(dev_gaps_pred_in_range[idx], 'b') for idx in range(len(dev_t_b_plus))]
+                    dtw_cost_in_range = DTW(dev_gaps_pred_in_range, actual_dev_gaps_in_range)
+
+                    # print('actual_dev_event_in_range', actual_dev_event_in_range)
+                    # print('dev_gaps_pred_in_range', dev_gaps_pred_in_range)
+                    # print('actual_dev_gaps_in_range', actual_dev_gaps_in_range)
+                    print('dtw_cost_in_range', dtw_cost_in_range)
+                    print('error_in_event_count', error_in_event_count)
 
 
                 # (dev_l2_marks_logits, dev_l2_gaps_pred, _, _,

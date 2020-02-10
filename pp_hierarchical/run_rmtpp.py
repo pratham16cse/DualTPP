@@ -8,6 +8,7 @@ from bisect import bisect_right
 import os, sys
 import ipdb
 import time
+from dtw import dtw
 
 import tensorflow as tf
 from tensorflow import keras
@@ -26,6 +27,7 @@ import models
 #use_marks = False
 #use_intensity = True
 
+
 def compute_actual_event_in_range(t_b_plus, t_e_plus, times_out):
     times_out_indices_tb = [bisect_right(t_out, t_b) for t_out, t_b in zip(times_out, t_b_plus)]
     times_out_indices_te = [bisect_right(t_out, t_e) for t_out, t_e in zip(times_out, t_e_plus)]
@@ -33,9 +35,27 @@ def compute_actual_event_in_range(t_b_plus, t_e_plus, times_out):
     actual_event_count = [times_out_indices_te[idx] - times_out_indices_tb[idx] for idx in range(len(t_b_plus))]
     times_out_indices = [times_out_indices_tb[idx] + tf.range(times_out_indices_te[idx]-times_out_indices_tb[idx]) for idx in range(len(t_b_plus))]
     actual_times_out = [tf.gather(times_out[idx], times_out_indices[idx], batch_dims=0).numpy() for idx in range(len(t_b_plus))]
+    actual_gaps_out = [actual_times_out[idx][1:]-actual_times_out[idx][:-1] for idx in range(len(t_b_plus))]
 
-    return actual_event_count, actual_times_out
+    return actual_event_count, actual_times_out, actual_gaps_out
 
+def DTW(time_preds, time_true):
+
+    clipped_time_true = time_true#[:, :seq_limit]
+
+    euclidean_norm = lambda x, y: np.abs(x - y)
+    distance = 0
+    for time_preds_, clipped_time_true_ in zip(time_preds, clipped_time_true):
+        #TODO This is not right way
+        if np.shape(time_preds_)[0] == 0:
+            time_preds_ = np.array([0.0]).reshape(-1, 1)
+        if np.shape(clipped_time_true_)[0] == 0:
+            clipped_time_true_ = np.array([0.0]).reshape(-1, 1)
+        d, cost_matrix, acc_cost_matrix, path = dtw(time_preds_, clipped_time_true_, dist=euclidean_norm)
+        distance += d
+    distance = distance / len(clipped_time_true)
+
+    return distance
 
 def run(args):
     tf.random.set_seed(args.seed)
@@ -316,7 +336,7 @@ def run(args):
                                                 marks_in=dev_marks_pred_last)
 
                 # #Query 2 and 3
-                # dev_marks_logits, dev_gaps_pred, last_dev_time_pred, last_dev_gaps_pred, _, _ \
+                # _, _, last_dev_time_pred, last_dev_gaps_pred, _, _ \
                 #         = dev_simulator.simulate(model,
                 #                                 last_dev_times_in,
                 #                                 last_dev_gaps_pred,
@@ -327,7 +347,7 @@ def run(args):
                 #                                 initial_timestamp=initial_timestamp,
                 #                                 marks_in=dev_marks_pred_last)
 
-                # dev_marks_logits, dev_gaps_pred, _, _, all_times_pred, simul_count \
+                # _, _, _, _, all_times_pred, simul_count \
                 #         = dev_simulator.simulate(model,
                 #                                 last_dev_time_pred,
                 #                                 last_dev_gaps_pred,
@@ -338,13 +358,33 @@ def run(args):
                 #                                 initial_timestamp=initial_timestamp,
                 #                                 marks_in=None)
 
-                # print('Events between t_b_plus and t_e_plus are at:', all_times_pred.numpy().tolist())
-                # print('Number of events between t_b_plus and t_e_plus are:', simul_count)
-                # print('Actual count of events:', event_bw_range_tb_te[0])
+                # # print('Events between t_b_plus and t_e_plus are at:', all_times_pred.numpy().tolist())
+                # # print('Number of events between t_b_plus and t_e_plus are:', simul_count)
 
+                # total_number_of_events_in_range = np.array(simul_count)
+                # actual_event_count = np.array(event_bw_range_tb_te[0])
+                # error_in_event_count = np.mean((total_number_of_events_in_range-actual_event_count)**2)
 
-                # print('dev_t_b_plus', dev_t_b_plus)
-                # print('dev_t_e_plus', dev_t_e_plus)
+                # print('total_number_of_events_in_range', total_number_of_events_in_range)
+                # print('Actual count of events:', actual_event_count)
+                # # print('dev_t_b_plus', dev_t_b_plus)
+                # # print('dev_t_e_plus', dev_t_e_plus)
+
+                # actual_dev_event_in_range = event_bw_range_tb_te[1]
+                # actual_dev_gaps_in_range = event_bw_range_tb_te[2]
+                # dev_gaps_pred = dev_simulator.all_gaps_pred
+
+                # dev_gaps_pred_in_range = (dev_gaps_pred[:, 1:] - dev_normalizer_a) * dev_normalizer_d
+                # dev_gaps_pred_in_range = dev_gaps_pred_in_range.numpy()
+
+                # dev_gaps_pred_in_range = [np.trim_zeros(dev_gaps_pred_in_range[idx], 'b') for idx in range(len(dev_t_b_plus))]
+                # dtw_cost_in_range = DTW(dev_gaps_pred_in_range, actual_dev_gaps_in_range)
+
+                # # print('actual_dev_event_in_range', actual_dev_event_in_range)
+                # # print('dev_gaps_pred_in_range', dev_gaps_pred_in_range)
+                # # print('actual_dev_gaps_in_range', actual_dev_gaps_in_range)
+                # print('dtw_cost_in_range', dtw_cost_in_range)
+                # print('error_in_event_count', error_in_event_count)
 
                 #Query 4
                 # dev_marks_logits, dev_gaps_pred, _, _ = model(dev_gaps_in,
