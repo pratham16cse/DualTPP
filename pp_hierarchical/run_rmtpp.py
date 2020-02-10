@@ -78,6 +78,10 @@ def run(args):
     dev_begin_tss = data['dev_begin_tss']
     dev_offsets = tf.random.uniform(shape=(num_sequences, 1)) * 3600. * block_size
     dev_t_b_plus = dev_begin_tss + dev_offsets
+    sample_hours = 5
+    dev_offsets_t_e = tf.random.uniform(shape=(num_sequences, 1)) * 60. * sample_hours # Sampling offsets for t_e_+
+    dev_t_e_plus = dev_t_b_plus + dev_offsets_t_e
+    event_bw_range_tb_te = compute_actual_event_in_range(dev_t_b_plus, dev_t_e_plus, dev_times_out)
 
     if args.verbose:
         print('\n dev_begin_tss')
@@ -131,8 +135,6 @@ def run(args):
     test_offsets = tf.random.uniform(shape=(num_sequences, 1)) * 3600. * block_size
     test_t_b_plus = test_begin_tss + test_offsets
 
-    sample_hours = 5
-    dev_offsets_t_e = tf.random.uniform(shape=(num_sequences, 1)) * 60. * sample_hours # Sampling offsets for t_e_+
     dev_offsets_sec_norm_t_e = dev_offsets_t_e/dev_normalizer_d + dev_normalizer_a
     dev_t_e_plus = dev_t_b_plus + dev_offsets_sec_norm_t_e
 
@@ -147,7 +149,6 @@ def run(args):
         for d in test_t_b_plus.numpy().tolist():
             print('{0:.15f}'.format(d[0]))
 
-    event_bw_range_tb_te = compute_actual_event_in_range(dev_t_b_plus, dev_t_e_plus, dev_times_out)
 
     test_times_out_indices = [bisect_right(test_t_out, t_b) for test_t_out, t_b in zip(test_times_out, test_t_b_plus)]
     test_times_out_indices = tf.minimum(test_times_out_indices, test_seq_lens_out-decoder_length+1)

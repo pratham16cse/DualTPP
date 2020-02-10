@@ -313,6 +313,15 @@ def query_processor(query, model, arguments, params, extra_args):
             return process_query_2(model, arguments, params, extra_args)
     return None
 
+def compute_actual_event_in_range(t_b_plus, t_e_plus, times_out):
+    times_out_indices_tb = [bisect_right(t_out, t_b) for t_out, t_b in zip(times_out, t_b_plus)]
+    times_out_indices_te = [bisect_right(t_out, t_e) for t_out, t_e in zip(times_out, t_e_plus)]
+
+    actual_event_count = [times_out_indices_te[idx] - times_out_indices_tb[idx] for idx in range(len(t_b_plus))]
+    times_out_indices = [times_out_indices_tb[idx] + tf.range(times_out_indices_te[idx]-times_out_indices_tb[idx]) for idx in range(len(t_b_plus))]
+    actual_times_out = [tf.gather(times_out[idx], times_out_indices[idx], batch_dims=0).numpy() for idx in range(len(t_b_plus))]
+
+    return actual_event_count, actual_times_out
 
 def run(args):
     tf.random.set_seed(args.seed)
@@ -362,6 +371,11 @@ def run(args):
     dev_begin_tss = data['dev_begin_tss']
     dev_offsets = tf.random.uniform(shape=(num_sequences, 1)) * 3600. * block_size # Sampling offsets
     dev_t_b_plus = dev_begin_tss + dev_offsets
+    sample_hours = 5
+    dev_offsets_t_e = tf.random.uniform(shape=(num_sequences, 1)) * 60. * sample_hours # Sampling offsets for t_e_+
+    dev_t_e_plus = dev_t_b_plus + dev_offsets_t_e
+    event_bw_range_tb_te = compute_actual_event_in_range(dev_t_b_plus, dev_t_e_plus, dev_times_out)
+
     dev_times_out_indices = [bisect_right(dev_t_out, t_b) for dev_t_out, t_b \
                                 in zip(dev_times_out, dev_t_b_plus)]
     dev_times_out_indices = tf.minimum(dev_times_out_indices, dev_seq_lens_out-decoder_length+1)
@@ -604,6 +618,7 @@ def run(args):
                     print('dev_gaps_pred', dev_gaps_pred)
                     print('all_l2_dev_gaps_pred', all_l2_dev_gaps_pred)
                     print('total_number_of_events_in_range', total_number_of_events_in_range)
+                    print('Actual count of events:', event_bw_range_tb_te[0])
 
                     print('dev_t_b_plus', dev_t_b_plus)
                     print('dev_t_e_plus', dev_t_e_plus)
