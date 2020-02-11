@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from bisect import bisect_right
 import os, sys
-import ipdb
+#import ipdb
 import time
 import datetime
 
@@ -181,9 +181,9 @@ def run(args):
                                          max_to_keep=1)
     ckpt.restore(manager.latest_checkpoint)
     if manager.latest_checkpoint:
-        print("Restored from {}".format(manager.latest_checkpoint), file=args.outfile)
+        print("Restored from {}".format(manager.latest_checkpoint))
     else:
-        print("Initializing from scratch.", file=args.outfile)
+        print("Initializing from scratch.")
 
     # Create summary writers
     current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -206,7 +206,7 @@ def run(args):
     inference_times = list()
     # Iterate over epochs.
     for epoch in range(epochs):
-        print('Start of epoch %d' % (epoch,), file=args.outfile)
+        print('Start of epoch %d' % (epoch,))
 
         # Iterate over the batches of the dataset.
         if args.training_mode:
@@ -260,7 +260,7 @@ def run(args):
                 train_gap_metric(gaps_batch_out, l1_gaps_pred)
 
                 print('Training loss (for one batch) at step %s: %s %s %s %s' \
-                        % (step, float(loss), float(mark_loss), float(c_gap_loss), float(gap_loss)), file=args.outfile)
+                        % (step, float(loss), float(mark_loss), float(c_gap_loss), float(gap_loss)))
 
                 # ----- Training nowcasting plots for layer 2 and layer 1 ----- #
                 # For testdata:
@@ -312,10 +312,10 @@ def run(args):
             train_gap_err = train_gap_metric.result()
             train_gap_metric.reset_states()
             print('Training mark acc and gap err over epoch: %s, %s' \
-                    % (float(train_mark_acc), float(train_gap_err)), file=args.outfile)
+                    % (float(train_mark_acc), float(train_gap_err)))
 
             print('l2_train gap err over epoch: %s' \
-                    % (float(c_train_gap_err)), file=args.outfile)
+                    % (float(c_train_gap_err)))
             c_train_gap_metric.reset_states()
 
         if epoch > patience-1 or args.training_mode==0.0:
@@ -408,10 +408,10 @@ def run(args):
             test_gap_metric.reset_states()
 
             if args.verbose:
-                print('\ndev_gaps_pred', file=args.outfile)
-                print(tf.squeeze(dev_gaps_pred[:, 1:], axis=-1), file=args.outfile)
-                print('\ndev_gaps_out', file=args.outfile)
-                print(tf.squeeze(dev_gaps_out[:, 1:], axis=-1), file=args.outfile)
+                print('\ndev_gaps_pred')
+                print(tf.squeeze(dev_gaps_pred[:, 1:], axis=-1))
+                print('\ndev_gaps_out')
+                print(tf.squeeze(dev_gaps_out[:, 1:], axis=-1))
 
             if args.generate_plots:
                 # ----- Dev nowcasting plots for layer 2 ----- #
@@ -470,7 +470,7 @@ def run(args):
                 best_epoch = epoch + 1
 
                 save_path = manager.save()
-                print("Saved checkpoint for epoch %s" % (epoch), file=args.outfile)
+                print("Saved checkpoint for epoch %s" % (epoch))
 
                 if args.generate_plots:
                     best_true_gaps_plot = dev_gaps_out.numpy()
@@ -478,15 +478,15 @@ def run(args):
                     best_inp_tru_gaps = dev_gaps_in_unnorm
 
             print('Dev mark acc and gap err over epoch: %s, %s' \
-                    % (float(dev_mark_acc), float(dev_gap_err)), file=args.outfile)
+                    % (float(dev_mark_acc), float(dev_gap_err)))
             print('Test mark acc and gap err over epoch: %s, %s' \
-                    % (float(test_mark_acc), float(test_gap_err)), file=args.outfile)
+                    % (float(test_mark_acc), float(test_gap_err)))
 
     print('Best Dev mark acc, gap err: %s, %s' \
-            % (float(best_dev_mark_acc), float(best_dev_gap_error)), file=args.outfile)
+            % (float(best_dev_mark_acc), float(best_dev_gap_error)))
     print('Best Test mark acc and gap err: %s, %s' \
-            % (float(best_test_mark_acc), float(best_test_gap_error)), file=args.outfile)
-    print('Best epoch:', best_epoch, file=args.outfile)
+            % (float(best_test_mark_acc), float(best_test_gap_error)))
+    print('Best epoch:', best_epoch)
 
     if args.generate_plots and args.training_mode==0.0:
         plot_dir = os.path.join(args.output_dir, 'joint_plots', 'dev_plots_')
@@ -515,11 +515,11 @@ def run(args):
             plt.close()
 
     if args.verbose:
-        print('\n train_losses', file=args.outfile)
-        print(train_losses, file=args.outfile)
-        print('\n train_c_losses', file=args.outfile)
-        print(train_c_losses, file=args.outfile)
-        print('\n average infernece time:', np.mean(inference_times), file=args.outfile)
+        print('\n train_losses')
+        print(train_losses)
+        print('\n train_c_losses')
+        print(train_c_losses)
+        print('\n average infernece time:', np.mean(inference_times))
 
 
     return {

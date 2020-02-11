@@ -6,7 +6,7 @@ import numpy as np
 import math
 from bisect import bisect_right
 import os, sys
-import ipdb
+#import ipdb
 import time
 import datetime
 
@@ -73,15 +73,15 @@ def run(args):
     dev_t_b_plus = dev_begin_tss + dev_offsets
 
     if args.verbose:
-        print('\n dev_begin_tss', file=args.outfile)
+        print('\n dev_begin_tss')
         for d in dev_begin_tss.numpy().tolist():
-            print('{0:.15f}'.format(d[0]), file=args.outfile)
-        print('\n dev_offsets', file=args.outfile)
+            print('{0:.15f}'.format(d[0]))
+        print('\n dev_offsets')
         for d in dev_offsets.numpy().tolist():
-            print('{0:.15f}'.format(d[0]), file=args.outfile)
-        print('\n dev_t_b_plus', file=args.outfile)
+            print('{0:.15f}'.format(d[0]))
+        print('\n dev_t_b_plus')
         for d in dev_t_b_plus.numpy().tolist():
-            print('{0:.15f}'.format(d[0]), file=args.outfile)
+            print('{0:.15f}'.format(d[0]))
 
     dev_times_out_indices = [bisect_right(dev_t_out, t_b) for dev_t_out, t_b in zip(dev_times_out, dev_t_b_plus)]
     dev_times_out_indices = tf.minimum(dev_times_out_indices, dev_seq_lens_out-decoder_length+1)
@@ -95,23 +95,23 @@ def run(args):
     dev_gaps_out = tf.gather(dev_gaps_out, dev_times_out_indices, batch_dims=1)
 
     if args.verbose:
-        print('\ndev_times_out_indices', file=args.outfile)
-        print(dev_times_out_indices, file=args.outfile)
+        print('\ndev_times_out_indices')
+        print(dev_times_out_indices)
 
     # ----- Normalize dev_offsets and dev_t_b_plus ----- #
     dev_normalizer_d = data['dev_normalizer_d']
     dev_normalizer_a = data['dev_normalizer_a']
-    print(dev_offsets, dev_normalizer_d, file=args.outfile)
+    print(dev_offsets, dev_normalizer_d)
     dev_offsets_sec_norm = dev_offsets/dev_normalizer_d + dev_normalizer_a
     #dev_t_b_plus = dev_begin_tss + dev_offsets_sec_norm
 
     if args.verbose:
-        print('\n dev_begin_tss', file=args.outfile)
-        print(dev_begin_tss, file=args.outfile)
-        print('\n dev_offsets_sec_norm', file=args.outfile)
-        print(dev_offsets_sec_norm, file=args.outfile)
-        print('\n dev_t_b_plus', file=args.outfile)
-        print(dev_t_b_plus, file=args.outfile)
+        print('\n dev_begin_tss')
+        print(dev_begin_tss)
+        print('\n dev_offsets_sec_norm')
+        print(dev_offsets_sec_norm)
+        print('\n dev_t_b_plus')
+        print(dev_t_b_plus)
 
     # ----- End: Load dev_dataset ----- #
 
@@ -130,15 +130,15 @@ def run(args):
     test_t_b_plus = test_begin_tss + test_offsets
 
     if args.verbose:
-        print('\n test_begin_tss', file=args.outfile)
+        print('\n test_begin_tss')
         for d in test_begin_tss.numpy().tolist():
-            print('{0:.15f}'.format(d[0]), file=args.outfile)
-        print('\n test_offsets', file=args.outfile)
+            print('{0:.15f}'.format(d[0]))
+        print('\n test_offsets')
         for d in test_offsets.numpy().tolist():
-            print('{0:.15f}'.format(d[0]), file=args.outfile)
+            print('{0:.15f}'.format(d[0]))
         print('\n test_t_b_plus')
         for d in test_t_b_plus.numpy().tolist():
-            print('{0:.15f}'.format(d[0]), file=args.outfile)
+            print('{0:.15f}'.format(d[0]))
 
     test_times_out_indices = [bisect_right(test_t_out, t_b) for test_t_out, t_b in zip(test_times_out, test_t_b_plus)]
     test_times_out_indices = tf.minimum(test_times_out_indices, test_seq_lens_out-decoder_length+1)
@@ -149,23 +149,23 @@ def run(args):
     test_gaps_out = tf.gather(test_gaps_out, test_times_out_indices, batch_dims=1)
 
     if args.verbose:
-        print('\ntest_times_out_indices', file=args.outfile)
-        print(test_times_out_indices, file=args.outfile)
+        print('\ntest_times_out_indices')
+        print(test_times_out_indices)
 
     # ----- Normalize test_offsets and test_t_b_plus ----- #
     test_normalizer_d = data['test_normalizer_d']
     test_normalizer_a = data['test_normalizer_a']
-    print(test_offsets, test_normalizer_d, file=args.outfile)
+    print(test_offsets, test_normalizer_d)
     test_offsets_sec_norm = test_offsets/test_normalizer_d + test_normalizer_a
     #test_t_b_plus = test_begin_tss + test_offsets_sec_norm
 
     if args.verbose:
-        print('\n test_begin_tss', file=args.outfile)
-        print(test_begin_tss, file=args.outfile)
-        print('\n test_offsets_sec_norm', file=args.outfile)
-        print(test_offsets_sec_norm, file=args.outfile)
-        print('\n test_t_b_plus', file=args.outfile)
-        print(test_t_b_plus, file=args.outfile)
+        print('\n test_begin_tss')
+        print(test_begin_tss)
+        print('\n test_offsets_sec_norm')
+        print(test_offsets_sec_norm)
+        print('\n test_t_b_plus')
+        print(test_t_b_plus)
 
     # ----- End: Load test_dataset ----- #
 
@@ -210,9 +210,9 @@ def run(args):
                                          max_to_keep=1)
     ckpt.restore(manager.latest_checkpoint)
     if manager.latest_checkpoint:
-        print("Restored from {}".format(manager.latest_checkpoint), file=args.outfile)
+        print("Restored from {}".format(manager.latest_checkpoint))
     else:
-        print("Initializing from scratch.", file=args.outfile)
+        print("Initializing from scratch.")
 
     # Create summary writers
     current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -233,7 +233,7 @@ def run(args):
     inference_times = list()
     # Iterate over epochs.
     for epoch in range(epochs):
-        print('Start of epoch %d' % (epoch,), file=args.outfile)
+        print('Start of epoch %d' % (epoch,))
 
         # Iterate over the batches of the dataset.
         if args.training_mode:
@@ -273,7 +273,7 @@ def run(args):
                 train_gap_metric(gaps_batch_out, gaps_pred)
 
                 print('Training loss (for one batch) at step %s: %s %s %s' \
-                        % (step, float(loss), float(mark_loss), float(gap_loss)), file=args.outfile)
+                        % (step, float(loss), float(mark_loss), float(gap_loss)))
 
                 global_step += 1
 
@@ -288,7 +288,7 @@ def run(args):
             train_gap_err = train_gap_metric.result()
             train_gap_metric.reset_states()
             print('Training mark acc and gap err over epoch: %s, %s' \
-                    % (float(train_mark_acc), float(train_gap_err)), file=args.outfile)
+                    % (float(train_mark_acc), float(train_gap_err)))
 
         if epoch > patience-1 or args.training_mode==0.0:
 
@@ -297,7 +297,7 @@ def run(args):
                            dev_time_feature) \
                     in enumerate(dev_dataset):
 
-                print(dev_gaps_in.shape, dev_seqmask_in.shape, dev_marks_in.shape, file=args.outfile)
+                print(dev_gaps_in.shape, dev_seqmask_in.shape, dev_marks_in.shape)
                 dev_marks_logits, dev_gaps_pred, _, _ = model(dev_gaps_in,
                                                               dev_seqmask_in,
                                                               dev_time_feature,
@@ -391,10 +391,10 @@ def run(args):
             test_gap_metric.reset_states()
 
             if args.verbose:
-                print('\ndev_gaps_pred', file=args.outfile)
-                print(tf.squeeze(dev_gaps_pred[:, 1:], axis=-1), file=args.outfile)
-                print('\ndev_gaps_out', file=args.outfile)
-                print(tf.squeeze(dev_gaps_out[:, 1:], axis=-1), file=args.outfile)
+                print('\ndev_gaps_pred')
+                print(tf.squeeze(dev_gaps_pred[:, 1:], axis=-1))
+                print('\ndev_gaps_out')
+                print(tf.squeeze(dev_gaps_out[:, 1:], axis=-1))
 
             if args.generate_plots:
                 end_of_input_seq = dev_seq_lens - 20
@@ -441,7 +441,7 @@ def run(args):
                     best_epoch = epoch + 1
 
                 save_path = manager.save()
-                print("Saved checkpoint for epoch %s" % (epoch), file=args.outfile)
+                print("Saved checkpoint for epoch %s" % (epoch))
 
                 if args.generate_plots:
                     best_true_gaps_plot = dev_gaps_out.numpy()
@@ -449,15 +449,15 @@ def run(args):
                     best_inp_tru_gaps = dev_gaps_in_unnorm
 
             print('Dev mark acc and gap err over epoch: %s, %s' \
-                    % (float(dev_mark_acc), float(dev_gap_err)), file=args.outfile)
+                    % (float(dev_mark_acc), float(dev_gap_err)))
             print('Test mark acc and gap err over epoch: %s, %s' \
-                    % (float(test_mark_acc), float(test_gap_err)), file=args.outfile)
+                    % (float(test_mark_acc), float(test_gap_err)))
 
     print('Best Dev mark acc and gap err: %s, %s' \
-            % (float(best_dev_mark_acc), float(best_dev_gap_error)), file=args.outfile)
+            % (float(best_dev_mark_acc), float(best_dev_gap_error)))
     print('Best Test mark acc and gap err: %s, %s' \
-            % (float(best_test_mark_acc), float(best_test_gap_error)), file=args.outfile)
-    print('Best epoch:', best_epoch, file=args.outfile)
+            % (float(best_test_mark_acc), float(best_test_gap_error)))
+    print('Best epoch:', best_epoch)
 
     if args.generate_plots and args.training_mode==0.0:
         plot_dir = os.path.join(args.output_dir, 'joint_plots', 'dev_plots')
@@ -486,9 +486,9 @@ def run(args):
             plt.close()
 
     if args.verbose:
-        print('\n train_losses', file=args.outfile)
-        print(train_losses, file=args.outfile)
-        print('\n average inference time:', np.mean(inference_times), file=args.outfile)
+        print('\n train_losses')
+        print(train_losses)
+        print('\n average inference time:', np.mean(inference_times))
 
 
     return {

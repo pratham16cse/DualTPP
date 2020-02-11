@@ -3,7 +3,7 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 import collections
 import matplotlib.pyplot as plt
 import numpy as np
-import ipdb
+#import ipdb
 import math
 
 import tensorflow as tf

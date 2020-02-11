@@ -4,9 +4,9 @@ import json
 import os
 from itertools import product
 from argparse import Namespace
-import ipdb
+#import ipdb
 import copy
-from joblib import Parallel, delayed
+import multiprocessing as MP
 from operator import itemgetter
 
 import run_rmtpp
@@ -97,8 +97,9 @@ def run_config(param_vals, training_mode):
     print(args_vars_config['output_dir'])
 
     os.makedirs(args_vars_config['output_dir'], exist_ok=True)
-    f = open(os.path.join(args_vars_config['output_dir'], 'print_dump'), 'w')
-    args_vars_config['outfile'] = f
+    if args.parallel_hparam:
+        f = open(os.path.join(args_vars_config['output_dir'], 'print_dump'), 'w')
+        sys.stdout = f
 
     args_config = Namespace(**args_vars_config)
     print(args_config)
@@ -118,7 +119,9 @@ def run_config(param_vals, training_mode):
         result_json = json.dumps(result, indent=4)
         fp.write(result_json)
 
-    f.close()
+    if args.parallel_hparam:
+        sys.stdout = orig_stdout
+        f.close()
 
     return result
 
@@ -132,7 +135,8 @@ training_mode_list = [1.] * len(param_vals_list)
 if args.parallel_hparam:
     for param_vals, training_mode in zip(param_vals_list, training_mode_list):
         print(param_vals, training_mode)
-    results = Parallel(n_jobs=1)(delayed(run_config)(param_vals, training_mode) for param_vals, training_mode in zip(param_vals_list, training_mode_list))
+    with MP.Pool() as pool:
+        results = pool.starmap(run_config, zip(param_vals_list, training_mode_list))
 else:
     results = list()
     for param_vals, mode in zip(param_vals_list, training_mode_list):
@@ -144,7 +148,8 @@ print('\n Finished Training. . .')
 # Inference
 print('\n Starting Inference. . .')
 training_mode_list = [0.] * len(param_vals_list)
-results = Parallel(n_jobs=1)(delayed(run_config)(param_vals, training_mode) for param_vals, training_mode in zip(param_vals_list, training_mode_list))
+with MP.Pool() as pool:
+    results = pool.starmap(run_config, zip(param_vals_list, training_mode_list))
 print('\n Finished Inference. . .')
 
 dev_gap_errors = [result['best_dev_gap_error'] for result in results]
