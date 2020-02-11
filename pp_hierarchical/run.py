@@ -60,6 +60,8 @@ parser.add_argument('--compound_event_size', type=int, default=10,
 parser.add_argument('--generate_plots', action='store_true',
                     help='Generate dev and test plots, both per epochs \
                           and after training')
+parser.add_argument('--parallel_hparam', action='store_true',
+                    help='Parallel execution of hyperparameters')
 
 group = parser.add_mutually_exclusive_group()
 group.add_argument('-v', '--verbose', action='store_true')
@@ -127,16 +129,22 @@ param_vals_list = [param_vals for param_vals in param_vals_list]
 # Training
 print('\n Starting Training. . .')
 training_mode_list = [1.] * len(param_vals_list)
-for param_vals, training_mode in zip(param_vals_list, training_mode_list):
-    print(param_vals, training_mode)
-results = Parallel(n_jobs=-1)(delayed(run_config)(param_vals, training_mode) for param_vals, training_mode in zip(param_vals_list, training_mode_list))
+if args.parallel_hparam:
+    for param_vals, training_mode in zip(param_vals_list, training_mode_list):
+        print(param_vals, training_mode)
+    results = Parallel(n_jobs=1)(delayed(run_config)(param_vals, training_mode) for param_vals, training_mode in zip(param_vals_list, training_mode_list))
+else:
+    results = list()
+    for param_vals, mode in zip(param_vals_list, training_mode_list):
+        result = run_config(param_vals, mode)
+        results.append(result)
 print('\n Finished Training. . .')
 
 
 # Inference
 print('\n Starting Inference. . .')
 training_mode_list = [0.] * len(param_vals_list)
-results = Parallel(n_jobs=-1)(delayed(run_config)(param_vals, training_mode) for param_vals, training_mode in zip(param_vals_list, training_mode_list))
+results = Parallel(n_jobs=1)(delayed(run_config)(param_vals, training_mode) for param_vals, training_mode in zip(param_vals_list, training_mode_list))
 print('\n Finished Inference. . .')
 
 dev_gap_errors = [result['best_dev_gap_error'] for result in results]

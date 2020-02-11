@@ -34,6 +34,7 @@ def run(args):
         args.epochs = 1
 
     tf.random.set_seed(args.seed)
+    dataset_name = args.dataset_name
     dataset_path = args.dataset_path
 
     epochs = args.epochs
@@ -50,7 +51,7 @@ def run(args):
     block_size_sec = 3600.0 * block_size
 
 
-    data = reader_rmtpp.get_preprocessed_data(dataset_path, block_size,
+    data = reader_rmtpp.get_preprocessed_data(dataset_name, dataset_path, block_size,
                                               decoder_length, normalization)
     num_categories = data['num_categories']
     num_sequences = data['num_sequences']
@@ -85,9 +86,12 @@ def run(args):
     dev_times_out_indices = [bisect_right(dev_t_out, t_b) for dev_t_out, t_b in zip(dev_times_out, dev_t_b_plus)]
     dev_times_out_indices = tf.minimum(dev_times_out_indices, dev_seq_lens_out-decoder_length+1)
     dev_times_out_indices = tf.expand_dims(dev_times_out_indices, axis=-1)
+    print(dev_times_out_indices)
+    print(dev_seq_lens_out)
     dev_times_out_indices \
             = (dev_times_out_indices-1) \
             + tf.expand_dims(tf.range(decoder_length), axis=0)
+    print(dev_times_out_indices)
     dev_gaps_out = tf.gather(dev_gaps_out, dev_times_out_indices, batch_dims=1)
 
     if args.verbose:

@@ -32,6 +32,7 @@ def run(args):
     if not args.training_mode:
         args.epochs = 1
     tf.random.set_seed(args.seed)
+    dataset_name = args.dataset_name
     dataset_path = args.dataset_path
 
     epochs = args.epochs
@@ -46,7 +47,7 @@ def run(args):
 
     hidden_layer_size = args.hidden_layer_size
 
-    data = reader_hierarchical.get_preprocessed_data(dataset_path, block_size,
+    data = reader_hierarchical.get_preprocessed_data(dataset_name, dataset_path, block_size,
                                                      decoder_length,
                                                      normalization,
                                                      compound_event_size)
