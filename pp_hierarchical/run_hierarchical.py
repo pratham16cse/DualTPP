@@ -65,7 +65,7 @@ def process_query_1(model, arguments, params, extra_args):
                                      dev_begin_tss,
                                      c_dev_t_b_plus,
                                      c_dev_t_b_plus,
-                                     decoder_length,
+                                     0,
                                      2,
                                      second_last_gaps_pred,)
     
@@ -120,7 +120,7 @@ def process_query_2(model, arguments, params, extra_args):
                                      dev_begin_tss,
                                      c_dev_t_b_plus,
                                      c_dev_t_b_plus,
-                                     decoder_length,
+                                     0,
                                      2,
                                      second_last_gaps_pred,)
     
@@ -155,6 +155,7 @@ def process_query_2(model, arguments, params, extra_args):
                                      initial_state=l1_rnn_init_state)
 
     all_gaps_pred = tf.squeeze(all_l1_dev_gaps_pred, axis=-1)
+    #TODO: debug here all_gaps_pred and time preds should have proper dimention and should not have any extra gaps in it.
 
     return (all_gaps_pred, dev_simulator.all_times_pred, simulation_count)
 
@@ -416,6 +417,7 @@ def run(args):
     sample_hours = 5
     dev_offsets_t_e = tf.random.uniform(shape=(num_sequences, 1)) * 60. * sample_hours # Sampling offsets for t_e_+
     c_dev_offsets_sec_norm_t_e = dev_offsets_t_e/c_dev_normalizer_d + c_dev_normalizer_a
+    #TODO: to be corrected should be c_dev_t_b_plus
     c_dev_t_e_plus = dev_t_b_plus + c_dev_offsets_sec_norm_t_e
     dev_offsets_sec_norm_t_e = dev_offsets_t_e/dev_normalizer_d + dev_normalizer_a
     dev_t_e_plus = dev_t_b_plus + dev_offsets_sec_norm_t_e
@@ -653,7 +655,6 @@ def run(args):
                     dev_gaps_pred_in_range = [np.trim_zeros(dev_gaps_pred_in_range[idx], 'b') for idx in range(len(dev_t_b_plus))]
                     dtw_cost_in_range = DTW(dev_gaps_pred_in_range, actual_dev_gaps_in_range)
 
-                    # print('actual_dev_event_in_range', actual_dev_event_in_range)
                     # print('dev_gaps_pred_in_range', dev_gaps_pred_in_range)
                     # print('actual_dev_gaps_in_range', actual_dev_gaps_in_range)
                     print('dtw_cost_in_range', dtw_cost_in_range)
