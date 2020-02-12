@@ -10,6 +10,69 @@ from tensorflow import keras
 from tensorflow.keras import layers
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 
+def read_taxi_dataset(data_path):
+
+    data = pd.read_csv(data_path)
+
+    # 06/19/2018 08:13:00 AM
+    # data['tpep_pickup_datetime'] = pd.to_datetime(data['tpep_pickup_datetime'], format = '%m/%d/%Y %I:%M:%S %p')
+    data['tpep_pickup_datetime'] = pd.to_datetime(data['tpep_pickup_datetime'], format = '%Y-%m-%d %H:%M:%S')
+    data = data[(data['tpep_pickup_datetime'].dt.year == 2019)]
+    data['tpep_dropoff_datetime'] = pd.to_datetime(data['tpep_dropoff_datetime'], format = '%Y-%m-%d %H:%M:%S')
+    data = data[(data['tpep_dropoff_datetime'].dt.year == 2019)]
+    data['pickup'] = data.tpep_pickup_datetime.values.astype(np.int64) // 10 ** 9
+    data['dropoff'] = data.tpep_dropoff_datetime.values.astype(np.int64) // 10 ** 9
+
+    data['Time'] = data['pickup']
+    data['loc'] = data['PULocationID']
+    data['ID1'] = '1'
+    data['ID2'] = '2'
+
+    data1 = pd.DataFrame()
+    data1['Time'] = data['Time'].append(data['dropoff'], ignore_index=True)
+    data1['loc'] = data['loc'].append(data['DOLocationID'], ignore_index=True)
+    data1['ID'] = data['ID1'].append(data['ID2'], ignore_index=True)
+
+
+    # data['Time'] = data['pickup']
+    # data['ID'] = data['PULocationID']
+    data = data1
+
+    df = data['Time'].groupby(data['loc'])
+    data = data.sort_values(['Time'], ascending=True)
+
+    # print(data)
+    from collections import defaultdict
+    dlst = defaultdict(list)
+    deve = defaultdict(list)
+
+
+    lst1=data['Time'].values.tolist()
+    eve1=data['ID'].values.tolist()
+    loc=data['loc'].values.tolist()
+
+    for x in range(len(lst1)):
+        dlst[loc[x]].append(lst1[x])
+        deve[loc[x]].append(eve1[x])
+
+    # print(dlst)
+    # print(deve)
+
+    lst = list()
+    eve = list()
+
+    for x in dlst:
+        #if len(dlst[x]) > 10*sequence_length:# Need at least one train, dev,
+        #                                    # and test chunk from each chunk
+        lst.append(dlst[x])
+
+    for x in deve:
+        #if len(deve[x]) > 10*sequence_length:
+        eve.append(deve[x])
+
+
+    return lst, eve, lst, eve
+
 def timestampToTime(timestamp):
     #t = time.strftime("%Y %m %d %H %M %S", time.localtime(timestamp)).split(' ')
     t = time.strftime("%m %d %H %M %S", time.gmtime(timestamp)).split(' ')
@@ -21,19 +84,28 @@ def getTheHour(timestamp):
         return 0
     return timestampToTime(timestamp)[2]
 
-def read_data(filename):
-    with open(filename, 'r') as f:
+def read_data(dataset_name, filename):
+    if dataset_name in ['Taxi']:
+        times, marks, _, _ = read_taxi_dataset(filename)
+        # TODO Temporariliy considering only one sequence
+        times = times[0]
+        marks = marks[0]
         data = list()
-        for line in f:
-            mark, time = line.strip().split()[:2]
-            data.append((int(mark), float(time)))
-    data_sorted = sorted(data, key=itemgetter(1))
+        for t, m in zip(times, marks):
+            data.append((int(m), float(t)))
+        data_sorted = sorted(data, key=itemgetter(1))
+    else:
+        with open(filename, 'r') as f:
+            data = list()
+            for line in f:
+                mark, time = line.strip().split()[:2]
+                data.append((int(mark), float(time)))
+        data_sorted = sorted(data, key=itemgetter(1))
 
     marks = np.array([event[0] for event in data_sorted])
     times = np.array([event[1] for event in data_sorted])
-    initial_timestamp = times[0]
     times = times-times[0] # Shift all timestamps to start with zero
-    return marks, times, initial_timestamp
+    return marks, times
 
 def split_data(data, num_chops):
     marks, times = data
@@ -108,18 +180,15 @@ def get_time_features(data):
 
 def get_time_features_for_data(data):
     times_in = data
-    time_feature = (times_in // 3600) % 24
-    return time_feature
-
-def get_sec_time_features_for_data(data):
-    times_in = data
+    time_feature_hour = (times_in // 3600) % 24
     time_feature_minute = (times_in // 60) % 60
     time_feature_seconds = (times_in) % 60
 
-    time_feature = (time_feature_minute * 60.0) + time_feature_seconds
+    time_feature = (time_feature_hour * 3600.0 
+                 + time_feature_minute * 60.0
+                 + time_feature_seconds)
     time_feature = time_feature / 3600.0
     return time_feature
-
 
 def get_hour_of_day_ts(ts):
     ''' Returns timestamp at the beginning of the hour'''
@@ -278,7 +347,7 @@ def get_seq_mask(sequences):
     seq_mask = tf.sequence_mask(seq_lens, dtype=tf.float32)
     return seq_mask, seq_lens
 
-def get_preprocessed_(data, block_size, decoder_length, normalization, initial_timestamp):
+def get_preprocessed_(data, block_size, decoder_length, normalization):
     marks, times = data
     num_categories = len(np.unique(marks))
 
@@ -308,11 +377,7 @@ def get_preprocessed_(data, block_size, decoder_length, normalization, initial_t
                                   train_marks_out, train_gaps_out, train_times_out))
 
     (train_time_feature) \
-            = get_time_features_for_data((train_times_in+initial_timestamp))
-    (train_time_feature_minute) \
-            = get_sec_time_features_for_data((train_times_in+initial_timestamp))
-
-    train_time_feature += train_time_feature_minute
+            = get_time_features_for_data((train_times_in))
 
     (train_marks_in, train_gaps_in, train_times_in, train_seqmask_in,
      train_marks_out, train_gaps_out, train_times_out, train_seqmask_out, train_time_feature) \
@@ -362,12 +427,7 @@ def get_preprocessed_(data, block_size, decoder_length, normalization, initial_t
                                   dev_marks_out, dev_gaps_out, dev_times_out))
 
     (dev_time_feature) \
-            = get_time_features_for_data((dev_times_in+initial_timestamp))
-    (dev_time_feature_minute) \
-            = get_sec_time_features_for_data((dev_times_in+initial_timestamp))
-
-    dev_time_feature += dev_time_feature_minute
-
+            = get_time_features_for_data((dev_times_in))
 
     (dev_gaps_in_norm, dev_gaps_out_norm,
      dev_normalizer_d, dev_normalizer_a) \
@@ -391,10 +451,7 @@ def get_preprocessed_(data, block_size, decoder_length, normalization, initial_t
 
     print('test_times_in', test_times_in)
     (test_time_feature) \
-            = get_time_features_for_data((test_times_in+initial_timestamp))
-    (test_time_feature_minute) \
-            = get_sec_time_features_for_data((test_times_in+initial_timestamp))
-    test_time_feature += test_time_feature_minute
+            = get_time_features_for_data((test_times_in))
 
     print('test_time_feature', test_time_feature)
 
@@ -452,7 +509,6 @@ def get_preprocessed_(data, block_size, decoder_length, normalization, initial_t
         'train_seqmask_out': train_seqmask_out,
         'dev_seqmask_out': dev_seqmask_out,
         'test_seqmask_out': test_seqmask_out,
-        'initial_timestamp': initial_timestamp,
 
         'train_gaps_in_norm': train_gaps_in_norm,
         'train_gaps_out_norm': train_gaps_out_norm,
@@ -471,10 +527,10 @@ def get_preprocessed_(data, block_size, decoder_length, normalization, initial_t
 
         }
 
-def get_preprocessed_data(dataset_path, block_size, decoder_length, normalization):
-    marks, times, initial_timestamp = read_data(dataset_path)
+def get_preprocessed_data(dataset_name, dataset_path, block_size, decoder_length, normalization):
+    marks, times = read_data(dataset_name, dataset_path)
     data = get_preprocessed_((marks, times), block_size, decoder_length,
-                             normalization, initial_timestamp)
+                             normalization)
     return data
 
 def main():

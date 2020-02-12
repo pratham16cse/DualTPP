@@ -3,12 +3,14 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 import collections
 import matplotlib.pyplot as plt
 import numpy as np
-import ipdb
+#import ipdb
 import math
 
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
+
+import reader_rmtpp
 
 
 one_by = tf.math.reciprocal_no_nan
@@ -45,8 +47,7 @@ class NegativeLogLikelihood(tf.keras.losses.Loss):
         return -log_f_star
 
 class RMTPP(tf.keras.Model):
-    def __init__(self,
-                 num_categories,
+    def __init__(self, num_categories,
                  embed_size,
                  hidden_layer_size,
                  name='RMTPP',
@@ -85,22 +86,50 @@ class RMTPP(tf.keras.Model):
             self.WT_layer = layers.Dense(1, activation=tf.nn.softplus, name='WT_layer')
             self.gaps_output_layer = InverseTransformSampling()
 
-    def call(self, gaps, mask, marks=None, time_features=None, initial_state=None):
+    def process_inputs(self, gaps, mask, time_features, marks=None):
+        if gaps.ndim == 2:
+            gaps = tf.expand_dims(gaps, axis=1)
+        if mask.ndim == 1:
+            mask = tf.expand_dims(mask, axis=1)
+        if time_features.ndim == 2:
+            time_features = tf.expand_dims(time_features, axis=1)
+        if marks is not None and marks.ndim == 2:
+            marks = tf.expand_dims(marks, axis=1)
+
+        return gaps, mask, time_features, marks
+
+    def process_output(self, marks_logits, gaps_pred, D, WT):
+        if marks_logits is not None and marks_logits.shape[1] == 1:
+            marks_logits = tf.squeeze(marks_logits, axis=1)
+        if gaps_pred.shape[1] == 1:
+            gaps_pred = tf.squeeze(gaps_pred, axis=1)
+        if D.shape[1] == 1:
+            D = tf.squeeze(D, axis=1)
+        if WT.shape[1] == 1:
+            WT = tf.squeeze(WT, axis=1)
+
+        return marks_logits, gaps_pred, D, WT
+
+    def call(self, gaps, mask, time_features, marks=None, initial_state=None):
         ''' Forward pass of the RMTPP model'''
 
+        self.gaps = gaps
+        self.mask = mask
+        self.time_features = time_features
+        self.marks = marks
+        self.initial_state = initial_state
+        self.gaps, self.mask, self.time_features, self.marks \
+                = self.process_inputs(self.gaps, self.mask, self.time_features,
+                                      marks=self.marks)
         # Gather input for the rnn
         if self.use_marks:
-            self.marks_embd = self.embedding_layer(marks)
-
-        if time_features is not None:
-            if self.use_time_embed:
-                time_features = tf.round(time_features)
-                time_features = tf.squeeze(time_features, axis=2)
-                self.time_features = self.time_feature_embedding_layer(time_features)
-            else:
-                self.time_features = self.time_features_layer(time_features)
-        self.gaps = gaps
-
+            self.marks_embd = self.embedding_layer(self.marks)
+        if self.use_time_embed:
+            self.time_features = tf.round(self.time_features)
+            self.time_features = tf.squeeze(self.time_features, axis=2)
+            self.time_features = self.time_feature_embedding_layer(self.time_features)
+        else:
+            self.time_features = self.time_features_layer(self.time_features)
         if self.use_marks:
             rnn_inputs = tf.concat([self.marks_embd, self.gaps, self.time_features], axis=-1)
         elif time_features is not None:
@@ -110,8 +139,8 @@ class RMTPP(tf.keras.Model):
 
         self.hidden_states, self.final_state \
                 = self.rnn_layer(rnn_inputs,
-                                 initial_state=initial_state,
-                                 mask=mask)
+                                 initial_state=self.initial_state,
+                                 mask=self.mask)
 
         # Generate D, WT, and gaps_pred
         self.D = self.D_layer(self.hidden_states)
@@ -129,12 +158,15 @@ class RMTPP(tf.keras.Model):
 
         # Apply mask on outputs
         if self.use_marks:
-            self.marks_logits = self.marks_logits * mask
-        self.gaps_pred = self.gaps_pred * tf.expand_dims(mask, axis=-1)
-        self.D = self.D * tf.expand_dims(mask, axis=-1)
+            self.marks_logits = self.marks_logits * self.mask
+        self.gaps_pred = self.gaps_pred * tf.expand_dims(self.mask, axis=-1)
+        self.D = self.D * tf.expand_dims(self.mask, axis=-1)
         if self.use_intensity:
-            self.WT = self.WT * tf.expand_dims(mask, axis=-1)
+            self.WT = self.WT * tf.expand_dims(self.mask, axis=-1)
 
+        self.marks_logits, self.gaps_pred, self.D, self.WT \
+                = self.process_output(self.marks_logits, self.gaps_pred,
+                                      self.D, self.WT)
 
         return self.marks_logits, self.gaps_pred, self.D, self.WT
 
@@ -165,19 +197,23 @@ class HierarchicalRNN(tf.keras.Model):
                  name='HierarchicalRNN',
                  use_marks=True,
                  use_intensity=True,
+                 use_time_embed=True,
                  **kwargs):
         super(HierarchicalRNN, self).__init__(name=name, **kwargs)
         self.use_marks = use_marks
         self.use_intensity = use_intensity
         self.l1_rnn = RMTPP(num_categories, embed_size, hidden_layer_size,
                             use_marks=use_marks,
-                            use_intensity=use_intensity)
+                            use_intensity=use_intensity,
+                            use_time_embed=use_time_embed)
         self.l2_rnn = RMTPP(num_categories, embed_size, hidden_layer_size,
                             use_marks=use_marks,
-                            use_intensity=use_intensity)
+                            use_intensity=use_intensity,
+                            use_time_embed=use_time_embed)
         self.ff = FeedForward(hidden_layer_size)
 
-    def call(self, inputs, l2_gaps, l2_mask, l1_gaps=None, l1_mask=None,
+    def call(self, l2_gaps, l2_mask, l2_time_features,
+             l1_gaps=None, l1_mask=None, l1_time_features=None,
              l2_marks=None, l1_marks=None, debug=False):
 
         # Gather input for the rnn
@@ -191,7 +227,7 @@ class HierarchicalRNN(tf.keras.Model):
 
         # Forward pass for the compound-event rnn
         self.l2_marks_logits, self.l2_gaps_pred, self.l2_D, self.l2_WT \
-                 = self.l2_rnn(l2_gaps, l2_mask, marks=l2_marks)
+                 = self.l2_rnn(l2_gaps, l2_mask, l2_time_features, marks=l2_marks)
 
         # Transform compound-hidden-states using FF
         self.state_transformed = self.ff(self.l2_rnn.hidden_states)
@@ -205,8 +241,9 @@ class HierarchicalRNN(tf.keras.Model):
             for idx in range(self.state_transformed.shape[1]):
                 l1_m_logits, l1_g_pred, l1_D, l1_WT \
                         = self.l1_rnn(l1_gaps[:, idx],
-                                      initial_state=self.state_transformed[:, idx],
-                                      mask=l1_mask[:, idx])
+                                      l1_mask[:, idx],
+                                      l1_time_features[:, idx],
+                                      initial_state=self.state_transformed[:, idx])
                 self.l1_D.append(l1_D)
                 self.l1_WT.append(l1_WT)
                 self.l1_marks_logits.append(l1_m_logits)
@@ -223,6 +260,7 @@ class HierarchicalRNN(tf.keras.Model):
         else:
             self.l1_marks_logits, self.l1_gaps_pred = None, None
             self.l2_D, self.l2_WT = None, None
+            self.l1_D, self.l1_WT = None, None
 
         return (self.l2_marks_logits, self.l2_gaps_pred, self.l2_D, self.l2_WT,
                 self.l1_marks_logits, self.l1_gaps_pred, self.l1_D, self.l1_WT)
@@ -233,13 +271,21 @@ class HierarchicalRNN(tf.keras.Model):
 
 class SimulateRMTPP:
     def simulate(self, model, times, gaps_in, block_begin_ts, t_b_plus,
-                 decoder_length, normalizers, initial_timestamp=0.0, marks_in=None):
+                 decoder_length, normalizers, marks_in=None):
     
         marks_logits, gaps_pred = list(), list()
         normalizer_d, normalizer_a = normalizers
+        normalizer_d = tf.squeeze(normalizer_d, axis=1)
+        normalizer_a = tf.squeeze(normalizer_a, axis=1)
+        if gaps_in.shape[1] == 1:
+            gaps_in = tf.squeeze(gaps_in, axis=-1)
+        if times.shape[1] == 1:
+            times = tf.squeeze(times, axis=-1)
         times_pred = list()
-        last_times_pred = tf.squeeze(times + gaps_in, axis=-1)
+        last_gaps_pred_unnorm = (gaps_in - normalizer_a) * normalizer_d
+        last_times_pred = times + last_gaps_pred_unnorm
         times_pred.append(last_times_pred)
+        time_features = reader_rmtpp.get_time_features_for_data((last_times_pred))
         N = len(gaps_in)
         pred_idxes = -1.0 * np.ones(N)
         begin_idxes, end_idxes = np.zeros(N, dtype=int), np.zeros(N, dtype=int)
@@ -247,18 +293,10 @@ class SimulateRMTPP:
         mask = np.squeeze(np.ones_like(gaps_in), axis=-1)
         while any(times_pred[-1]<t_b_plus) or any(pred_idxes<decoder_length):
 
-            last_times_pred_unnorm = (tf.expand_dims(last_times_pred, axis=1) - normalizer_a) * normalizer_d
-            last_times_pred_unnorm = last_times_pred_unnorm + initial_timestamp
-            time_features = (last_times_pred_unnorm // 3600) % 24
-            
-            time_feature_minute = (last_times_pred_unnorm // 60) % 60
-            time_feature_seconds = (last_times_pred_unnorm) % 60
-
-            time_features += ((time_feature_minute * 60.0) + time_feature_seconds) / 3600.0
-
             step_marks_logits, step_gaps_pred, _, _ \
-                    = model(gaps_in, tf.constant(mask), marks=marks_in,
-                            time_features=time_features)
+                    = model(gaps_in, tf.constant(mask),
+                            time_features,
+                            marks=marks_in)
 
             if marks_in is not None:
                 step_marks_pred = tf.argmax(step_marks_logits, axis=-1) + 1
@@ -266,13 +304,14 @@ class SimulateRMTPP:
                 step_marks_pred = None
     
             #print('Simul step:', simul_step, tf.squeeze(tf.squeeze(step_gaps_pred, axis=1), axis=-1))
-            gaps_pred.append(step_gaps_pred)
-            marks_logits.append(step_marks_logits)
-            last_times_pred = times_pred[-1] + tf.squeeze(step_gaps_pred, axis=-1)
-            times_pred.append(last_times_pred)
-    
             marks_in, gaps_in = step_marks_pred, step_gaps_pred
-    
+            marks_logits.append(step_marks_logits)
+            last_gaps_pred_unnorm = (step_gaps_pred - normalizer_a) * normalizer_d
+            last_times_pred = times_pred[-1] + last_gaps_pred_unnorm
+            gaps_pred.append(last_gaps_pred_unnorm)
+            times_pred.append(last_times_pred)
+            time_features = reader_rmtpp.get_time_features_for_data((last_times_pred))
+
             for ex_id, (t_pred, t_b) in enumerate(zip(times_pred[-1], t_b_plus)):
                 if t_pred > t_b:
                     pred_idxes[ex_id] += 1
@@ -289,7 +328,8 @@ class SimulateRMTPP:
             marks_logits = [m_l[b_idx:e_idx] for m_l, b_idx, e_idx in \
                                 zip(marks_logits, begin_idxes, end_idxes)]
             marks_logits = tf.stack(marks_logits, axis=0)
-        gaps_pred = tf.squeeze(tf.stack(gaps_pred, axis=1), axis=2)
+
+        gaps_pred = tf.stack(gaps_pred, axis=1)
         self.all_gaps_pred = gaps_pred
 
         last_gaps_pred = [t_l[b_idx:b_idx+1] for t_l, b_idx in \
@@ -308,6 +348,7 @@ class SimulateRMTPP:
                             zip(times_pred, begin_idxes)]
         times_pred = tf.stack(times_pred, axis=0)
         
+        #TODO Check this
         times_pred = tf.expand_dims(times_pred, axis=-1)
 
         return marks_logits, gaps_pred, times_pred, last_gaps_pred, all_times_pred, begin_idxes
@@ -372,6 +413,7 @@ class SimulateHierarchicalRNN:
             last_times_pred = times_pred[-1] + tf.squeeze(gaps_inputs, axis=-1)
             gaps_inputs = step_gaps_pred
             times_pred.append(last_times_pred)
+            time_features = reader_rmtpp.get_time_features_for_data((times_pred[-1]))
             # initial_state = model_rnn.hidden_states[:, -1]
 
             for ex_id, (t_pred, t_b, t_e) in enumerate(zip(times_pred[-1], t_b_plus, t_e_plus)):
@@ -422,9 +464,15 @@ class SimulateHierarchicalRNN:
     def simulate(self, model, c_times_in, c_gaps_pred, c_seq_lens,
                  block_begin_ts,
                  t_b_plus, c_t_b_plus,
-                 decoder_length):
+                 decoder_length, c_normalizers, normalizers):
 
-        # ----- Start: Simulation of Layer 2 RNN ----- #
+        c_normalizer_d, c_normalizer_a = c_normalizers
+        c_normalizer_d = tf.squeeze(c_normalizer_d, axis=1)
+        c_normalizer_a = tf.squeeze(c_normalizer_a, axis=1)
+        normalizer_d, normalizer_a = normalizers
+        normalizer_d = tf.squeeze(normalizer_d, axis=1)
+        normalizer_a = tf.squeeze(normalizer_a, axis=1)
+        # ----- Start: Simulation  Layer 2 RNN ----- #
 
         l2_hidden_states = list()
         l2_gaps_pred = list()
@@ -434,22 +482,28 @@ class SimulateHierarchicalRNN:
         l2_idxes = np.ones(N, dtype=int) * 0
 
         l2_second_last_gaps_pred = tf.gather(c_gaps_pred, c_seq_lens-2, batch_dims=1)
+        l2_second_last_gaps_pred = tf.squeeze(l2_second_last_gaps_pred, axis=1)
+        l2_second_last_gaps_pred_unnorm = l2_second_last_gaps_pred * c_normalizer_d
         #l2_second_last_times_in = tf.gather(c_times_in, c_seq_lens-2, batch_dims=1)
-        #l2_second_last_times_pred = tf.squeeze(l2_second_last_times_in + l2_second_last_gaps_pred, axis=-1)
+        #l2_second_last_times_pred = tf.squeeze(l2_second_last_times_in + l2_second_last_gaps_pred_unnorm, axis=-1)
         #l2_times_pred.append(l2_second_last_times_pred)
 
         l2_last_gaps_pred = tf.gather(c_gaps_pred, c_seq_lens-1, batch_dims=1)
+        l2_last_gaps_pred = tf.squeeze(l2_last_gaps_pred, axis=1)
+        l2_last_gaps_pred_unnorm = l2_last_gaps_pred * c_normalizer_d
         l2_last_times_in = tf.gather(c_times_in, c_seq_lens-1, batch_dims=1)
-        l2_last_times_pred = tf.squeeze(l2_last_times_in + l2_last_gaps_pred, axis=-1)
+        l2_last_times_in = tf.squeeze(l2_last_times_in, axis=1)
+        l2_last_times_pred = l2_last_times_in + l2_last_gaps_pred_unnorm
         l2_times_pred.append(l2_last_times_pred)
 
         l2_hidden_states.append(model.l2_rnn.hidden_states[:, -2])
         l2_hidden_states.append(model.l2_rnn.hidden_states[:, -1])
-        l2_gaps_pred.append(l2_second_last_gaps_pred)
+        l2_gaps_pred.append(l2_second_last_gaps_pred_unnorm)
         l2_gaps_inputs = l2_last_gaps_pred
         simul_step = 0
-        l2_mask = np.squeeze(np.ones_like(l2_gaps_inputs), axis=-1)
-        #ipdb.set_trace()
+        l2_mask = np.ones_like(l2_gaps_inputs)
+
+        time_features = reader_rmtpp.get_time_features_for_data((l2_times_pred[-1]))
         while any(l2_times_pred[-1]<c_t_b_plus):
 
             #print('layer 2 simul_step:', simul_step)
@@ -457,29 +511,31 @@ class SimulateHierarchicalRNN:
             #(_, step_l2_gaps_pred, _, _, _, _, _, _) \
             #        = model(None, l2_gaps=l2_gaps_inputs)
             _, step_l2_gaps_pred, _, _ \
-                     = model.l2_rnn(l2_gaps_inputs, tf.constant(l2_mask))
+                     = model.l2_rnn(l2_gaps_inputs, tf.constant(l2_mask), time_features)
 
             prev_hidden_state = model.l2_rnn.hidden_states[:, -1]
             l2_hidden_states.append(prev_hidden_state)
-            l2_gaps_pred.append(l2_gaps_inputs)
+            l2_gaps_pred.append(l2_gaps_inputs * c_normalizer_d)
             l2_gaps_inputs = step_l2_gaps_pred
-            l2_last_times_pred = l2_times_pred[-1] + tf.squeeze(step_l2_gaps_pred, axis=-1)
+            step_l2_gaps_pred_unnorm =  step_l2_gaps_pred * c_normalizer_d
+            l2_last_times_pred = l2_times_pred[-1] + step_l2_gaps_pred_unnorm
             l2_times_pred.append(l2_last_times_pred)
+            time_features = reader_rmtpp.get_time_features_for_data((l2_times_pred[-1]))
 
             for ex_id, (l2_t_pred, c_t_b) in enumerate(zip(l2_times_pred[-1], c_t_b_plus)):
-                if l2_t_pred >= c_t_b and l2_mask[ex_id] == 1:
+                if l2_t_pred >= c_t_b and l2_mask[ex_id] == 1.:
                     l2_idxes[ex_id] = len(l2_hidden_states)-2
                     l2_mask[ex_id] = 0.
 
             simul_step += 1
 
         #l2_gaps_pred = tf.stack(l2_gaps_pred, axis=0)
-        l2_gaps_pred = tf.squeeze(tf.stack(l2_gaps_pred, axis=1), axis=2)
+        l2_gaps_pred = tf.concat(l2_gaps_pred, axis=1)
         self.all_l2_gaps_pred = l2_gaps_pred # all predicted gaps from start to end of simulation
         # ipdb.set_trace()
         l2_idxes = tf.expand_dims(l2_idxes, axis=-1)
         l2_gaps_pred = tf.gather(l2_gaps_pred, l2_idxes, batch_dims=1)
-        all_l2_times_pred = tf.squeeze(tf.stack(l2_times_pred, axis=1), axis=-1)
+        all_l2_times_pred = tf.concat(l2_times_pred, axis=1)
         l2_times_pred = tf.gather(all_l2_times_pred, l2_idxes, batch_dims=1)
         #ipdb.set_trace()
 
@@ -494,12 +550,13 @@ class SimulateHierarchicalRNN:
 
         #ipdb.set_trace()
         l1_gaps_inputs = l2_gaps_pred / 10.0 #TODO Can we do better here?
-        #l1_gaps_inputs = tf.expand_dims(l1_gaps_inputs, axis=-1)
-        l1_mask = np.squeeze(np.ones_like(l1_gaps_inputs), axis=-1)
+        l1_gaps_inputs = l1_gaps_inputs / normalizer_d
+        l1_mask = np.ones_like(l1_gaps_inputs)
 
         # Transform hidden state of layer 2 rnn using ff
         l1_rnn_init_state =  model.ff(l2_hidden_states[-2])
 
+        #model.l1_rnn.reset_states()
         while any(l1_times_pred[-1]<t_b_plus) or any(pred_idxes<decoder_length):
 
             # print('layer 1 simul_step:', simul_step)
@@ -507,16 +564,16 @@ class SimulateHierarchicalRNN:
             #(_, _, _, _, _, step_l1_gaps_pred, _, _) \
             #        = model(None, l1_gaps=tf.expand_dims(l1_gaps_inputs, axis=-1), debug=False)
             _, step_l1_gaps_pred, _, _ \
-                    = model.l1_rnn(l1_gaps_inputs, tf.constant(l1_mask),
+                    = model.l1_rnn(l1_gaps_inputs, tf.constant(l1_mask), time_features,
                                   initial_state=l1_rnn_init_state)
-            step_l1_gaps_pred = tf.expand_dims(step_l1_gaps_pred, axis=1)
+            #step_l1_gaps_pred = tf.expand_dims(step_l1_gaps_pred, axis=1)
             #ipdb.set_trace()
 
             # print('step_l1_gaps_pred', step_l1_gaps_pred)
-            l1_gaps_pred.append(step_l1_gaps_pred)
-            l1_gaps_inputs = tf.squeeze(step_l1_gaps_pred, axis=1)
-            step_l1_gaps_pred_squeeze = tf.squeeze(tf.squeeze(step_l1_gaps_pred, axis=-1), axis=-1)
-            l1_last_times_pred = l1_times_pred[-1] + step_l1_gaps_pred_squeeze
+            step_l1_gaps_pred_unnorm = step_l1_gaps_pred * normalizer_d
+            l1_gaps_pred.append(step_l1_gaps_pred_unnorm)
+            l1_gaps_inputs = step_l1_gaps_pred
+            l1_last_times_pred = l1_times_pred[-1] + step_l1_gaps_pred
             l1_times_pred.append(l1_last_times_pred)
             l1_rnn_init_state = model.l1_rnn.hidden_states[:, -1]
 
@@ -531,11 +588,10 @@ class SimulateHierarchicalRNN:
 
             simul_step += 1
 
-        l1_gaps_pred = tf.squeeze(tf.squeeze(tf.squeeze(tf.stack(l1_gaps_pred, axis=1), axis=-1), axis=-1), axis=-1)
+        l1_gaps_pred = tf.concat(l1_gaps_pred, axis=1)
         self.all_l1_gaps_pred = l1_gaps_pred
         l1_idxes = tf.expand_dims(tf.constant(l1_begin_idxes, dtype=tf.int32), axis=-1) + tf.expand_dims(tf.range(decoder_length, dtype=tf.int32), axis=0)
         l1_gaps_pred = tf.gather(l1_gaps_pred, l1_idxes, batch_dims=1)
-        l1_gaps_pred = tf.expand_dims(l1_gaps_pred, axis=-1)
         #ipdb.set_trace()
         #l1_gaps_pred = [t_l[b_idx:e_idx] for t_l, b_idx, e_idx in \
         #                    zip(l1_gaps_pred, l1_begin_idxes, l1_end_idxes)]
