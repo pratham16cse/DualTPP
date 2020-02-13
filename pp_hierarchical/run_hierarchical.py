@@ -889,10 +889,11 @@ def run(args):
                 best_test_gap_error = test_gap_err
                 best_dev_mark_acc = dev_mark_acc
                 best_test_mark_acc = test_mark_acc
-                best_epoch = epoch + 1
+                if args.training_mode:
+                    best_epoch = epoch + 1
 
-                save_path = manager.save()
-                print("Saved checkpoint for epoch %s" % (epoch))
+                    save_path = manager.save()
+                    print("Saved checkpoint for epoch %s" % (epoch))
 
                 if args.generate_plots:
                     best_true_gaps_plot = dev_gaps_out.numpy()

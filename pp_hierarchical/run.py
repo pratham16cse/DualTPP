@@ -148,8 +148,14 @@ print('\n Finished Training. . .')
 # Inference
 print('\n Starting Inference. . .')
 training_mode_list = [0.] * len(param_vals_list)
-with MP.Pool() as pool:
-    results = pool.starmap(run_config, zip(param_vals_list, training_mode_list))
+if args.parallel_hparam:
+    with MP.Pool() as pool:
+        results = pool.starmap(run_config, zip(param_vals_list, training_mode_list))
+else:
+    results = list()
+    for param_vals, mode in zip(param_vals_list, training_mode_list):
+        result = run_config(param_vals, mode)
+        results.append(result)
 print('\n Finished Inference. . .')
 
 dev_gap_errors = [result['best_dev_gap_error'] for result in results]

@@ -573,8 +573,8 @@ def run(args):
                 if args.training_mode:
                     best_epoch = epoch + 1
 
-                save_path = manager.save()
-                print("Saved checkpoint for epoch %s" % (epoch))
+                    save_path = manager.save()
+                    print("Saved checkpoint for epoch %s" % (epoch))
 
                 if args.generate_plots:
                     best_true_gaps_plot = dev_gaps_out.numpy()
