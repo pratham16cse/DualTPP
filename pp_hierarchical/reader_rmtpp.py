@@ -10,6 +10,22 @@ from tensorflow import keras
 from tensorflow.keras import layers
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 
+
+def read_multiseq_data(data_path):
+    marks_seqs, times_seqs = dict(), dict()
+    data = list()
+    with open(data_path, 'r') as f:
+        for line in f:
+            s_id, m, t = line.strip().split(' ')
+            if times_seqs.get(s_id, -1) == -1:
+                marks_seqs[s_id] = list()
+                times_seqs[s_id] = list()
+            else:
+                marks_seqs[s_id].append(int(m))
+                times_seqs[s_id].append(float(t))
+
+    return list(marks_seqs.values()), list(times_seqs.values())
+
 def read_taxi_dataset(data_path):
 
     data = pd.read_csv(data_path)
@@ -86,26 +102,23 @@ def getTheHour(timestamp):
 
 def read_data(dataset_name, filename):
     if dataset_name in ['Taxi']:
-        times, marks, _, _ = read_taxi_dataset(filename)
-        # TODO Temporariliy considering only one sequence
-        times = times[0]
-        marks = marks[0]
-        data = list()
-        for t, m in zip(times, marks):
-            data.append((int(m), float(t)))
-        data_sorted = sorted(data, key=itemgetter(1))
+        times_seqs, marks_seqs, _, _ = read_taxi_dataset(filename)
+    elif dataset_name in ['testdata_multiseq', 'sin_multiseq']:
+        marks_seqs, times_seqs = read_multiseq_data(filename)
     else:
         with open(filename, 'r') as f:
             data = list()
             for line in f:
                 mark, time = line.strip().split()[:2]
                 data.append((int(mark), float(time)))
-        data_sorted = sorted(data, key=itemgetter(1))
+        data = sorted(data, key=itemgetter(1))
+        marks, times = zip(*data)
+        marks_seqs, times_seqs = [marks], [times]
 
-    marks = np.array([event[0] for event in data_sorted])
-    times = np.array([event[1] for event in data_sorted])
-    times = times-times[0] # Shift all timestamps to start with zero
-    return marks, times
+    marks_seqs = [np.array(marks) for marks in marks_seqs]
+    times_seqs = [np.array(times) for times in times_seqs]
+    times_seqs = [times-times[0] for times in times_seqs]
+    return marks_seqs, times_seqs
 
 def split_data(data, num_chops):
     marks, times = data
@@ -266,37 +279,39 @@ def get_train_input_output(data):
     return marks_in, marks_out, gaps_in, gaps_out, times_in, times_out
 
 def create_train_dev_test_split(data, block_size, decoder_length):
-    marks, times = data
-    num_events_per_hour = get_num_events_per_hour((marks, times))
-    print(num_events_per_hour.index[0])
+    marks_sequences, times_sequences = data
+
     train_marks, train_times = list(), list()
     dev_marks, dev_times = list(), list()
     test_marks, test_times = list(), list()
     dev_begin_tss, test_begin_tss = list(), list()
 
-    block_begin_idxes = num_events_per_hour.cumsum()
-    num_hrs = len(num_events_per_hour)-len(num_events_per_hour)%(4*block_size)
-    for idx in range(0, num_hrs, 4*block_size):
-        print(idx, num_hrs)
-        train_start_idx = block_begin_idxes[idx-1] if idx>0 else 0
-        train_end_idx = block_begin_idxes[idx+(2*block_size-1)]#-decoder_length-1
-        train_marks.append(marks[train_start_idx:train_end_idx])
-        train_times.append(times[train_start_idx:train_end_idx])
-        print(idx, 'train length:', len(times[train_start_idx:train_end_idx]))
+    for marks, times in zip(marks_sequences, times_sequences):
+        num_events_per_hour = get_num_events_per_hour((marks, times))
+        print(num_events_per_hour.index[0])
+        block_begin_idxes = num_events_per_hour.cumsum()
+        num_hrs = len(num_events_per_hour)-len(num_events_per_hour)%(4*block_size)
+        for idx in range(0, num_hrs, 4*block_size):
+            print(idx, num_hrs)
+            train_start_idx = block_begin_idxes[idx-1] if idx>0 else 0
+            train_end_idx = block_begin_idxes[idx+(2*block_size-1)]#-decoder_length-1
+            train_marks.append(marks[train_start_idx:train_end_idx])
+            train_times.append(times[train_start_idx:train_end_idx])
+            print(idx, 'train length:', len(times[train_start_idx:train_end_idx]))
 
-        dev_start_idx = block_begin_idxes[idx+(2*block_size-1)]#-decoder_length-1
-        dev_end_idx = block_begin_idxes[idx+(3*block_size-1)]#-decoder_length-1
-        dev_marks.append(marks[dev_start_idx:dev_end_idx])
-        dev_times.append(times[dev_start_idx:dev_end_idx])
-        dev_begin_tss.append(get_hour_of_day_ts(times[dev_start_idx]) * 3600.)
-        print(idx, 'dev length:', len(times[dev_start_idx:dev_end_idx]))
+            dev_start_idx = block_begin_idxes[idx+(2*block_size-1)]#-decoder_length-1
+            dev_end_idx = block_begin_idxes[idx+(3*block_size-1)]#-decoder_length-1
+            dev_marks.append(marks[dev_start_idx:dev_end_idx])
+            dev_times.append(times[dev_start_idx:dev_end_idx])
+            dev_begin_tss.append(get_hour_of_day_ts(times[dev_start_idx]) * 3600.)
+            print(idx, 'dev length:', len(times[dev_start_idx:dev_end_idx]))
 
-        test_start_idx = block_begin_idxes[idx+(3*block_size-1)]#-decoder_length-1
-        test_end_idx = block_begin_idxes[idx+(4*block_size-1)]
-        test_marks.append(marks[test_start_idx:test_end_idx])
-        test_times.append(times[test_start_idx:test_end_idx])
-        test_begin_tss.append(get_hour_of_day_ts(times[test_start_idx]) * 3600.)
-        print(idx, 'test length:', len(times[test_start_idx:test_end_idx]))
+            test_start_idx = block_begin_idxes[idx+(3*block_size-1)]#-decoder_length-1
+            test_end_idx = block_begin_idxes[idx+(4*block_size-1)]
+            test_marks.append(marks[test_start_idx:test_end_idx])
+            test_times.append(times[test_start_idx:test_end_idx])
+            test_begin_tss.append(get_hour_of_day_ts(times[test_start_idx]) * 3600.)
+            print(idx, 'test length:', len(times[test_start_idx:test_end_idx]))
 
     train_marks = train_marks * 5
     train_times = train_times * 5

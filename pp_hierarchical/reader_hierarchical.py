@@ -143,8 +143,8 @@ def get_dev_test_input_output(train_marks, train_times,
 
 def get_train_input_output(c_data, data, dec_len):
     train_dec_len = 3*dec_len #TODO Fix appropriate train_dec_len
-    c_marks, c_times, l1_idxes = c_data
-    marks, times = data
+    c_marks, c_times, l1_idxes, b2s_idxes = c_data
+    marks_seqs, times_seqs = data
 
     #marks = [np.array(x[1:]) for x in marks]
     c_marks_in = [np.array(x[1:-1]) for x in c_marks]
@@ -157,12 +157,26 @@ def get_train_input_output(c_data, data, dec_len):
     c_times_in = [np.array(x[1:-1]) for x in c_times]
     c_times_out = [np.array(x[2:]) for x in c_times]
 
-    gaps = np.array(times[1:]) - np.array(times[:-1])
-    gaps_in = [[np.array(gaps[idx-1:idx-1+train_dec_len]) for idx in idxes[1:-1]] for idxes in l1_idxes]
-    times_in = [[np.array(times[idx:idx+train_dec_len]) for idx in idxes[1:-1]] for idxes in l1_idxes]
-    gaps_out = [[np.array(gaps[idx:idx+train_dec_len]) for idx in idxes[1:-1]] for idxes in l1_idxes]
-    times_out = [[np.array(times[idx+1:idx+1+train_dec_len]) for idx in idxes[1:-1]] for idxes in l1_idxes]
-    #ipdb.set_trace()
+    #TODO:Use b2s_idxes here
+    #gaps_in = [[np.array(gaps[idx-1:idx-1+train_dec_len]) for idx in idxes[1:-1]] for idxes in l1_idxes]
+    #times_in = [[np.array(times[idx:idx+train_dec_len]) for idx in idxes[1:-1]] for idxes in l1_idxes]
+    #gaps_out = [[np.array(gaps[idx:idx+train_dec_len]) for idx in idxes[1:-1]] for idxes in l1_idxes]
+    #times_out = [[np.array(times[idx+1:idx+1+train_dec_len]) for idx in idxes[1:-1]] for idxes in l1_idxes]
+
+    gaps_in, gaps_out, times_in, times_out = list(), list(), list(), list()
+    for seq_idx, (b2s_idx, idxes) in enumerate(zip(b2s_idxes, l1_idxes)):
+        times = times_seqs[b2s_idx]
+        gaps = np.array(times[1:]) - np.array(times[:-1])
+        gaps_in_, gaps_out_, times_in_, times_out_ = list(), list(), list(), list()
+        for idx in idxes[1:-1]:
+            gaps_in_.append(gaps[idx-1:idx-1+train_dec_len])
+            times_in_.append(times[idx:idx+train_dec_len])
+            gaps_out_.append(gaps[idx:idx+train_dec_len])
+            times_out_.append(times[idx+1:idx+1+train_dec_len])
+        gaps_in.append(gaps_in_)
+        times_in.append(times_in_)
+        gaps_out.append(gaps_out_)
+        times_out.append(times_out_)
 
     #print(len(c_marks_in), len(c_marks_out),
     #      len(c_gaps_in), len(c_gaps_out),
@@ -176,58 +190,66 @@ def get_train_input_output(c_data, data, dec_len):
             gaps_out, times_out)
 
 def create_train_dev_test_split(data, block_size, decoder_length):
-    marks, times, l1_idxes = data
-    num_events_per_hour = get_num_events_per_hour((marks, times))
-    print(num_events_per_hour.index[0])
+    marks_sequences, times_sequences, l1_idxes_sequences = data
+
     train_marks, train_times, train_l1_idxes = list(), list(), list()
     dev_marks, dev_times, dev_l1_idxes = list(), list(), list()
     test_marks, test_times, test_l1_idxes = list(), list(), list()
     dev_begin_tss, test_begin_tss = list(), list()
+    # b2s: block_to_sequence, index of sequence from which block was extracted
+    train_b2s_idxes, dev_b2s_idxes, test_b2s_idxes = list(), list(), list()
 
-    block_begin_idxes = num_events_per_hour.cumsum()
-    num_hrs = len(num_events_per_hour)-len(num_events_per_hour)%(4*block_size)
-    for t in times:
-        print(t)
-    for idx in range(0, num_hrs, 4*block_size):
-        print(idx, num_hrs)
-        train_start_idx = block_begin_idxes[idx-1] if idx>0 else 0
-        train_end_idx = block_begin_idxes[idx+(2*block_size-1)]#-decoder_length-1
-        train_marks.append(marks[train_start_idx:train_end_idx])
-        train_times.append(times[train_start_idx:train_end_idx])
-        train_l1_idxes.append(l1_idxes[train_start_idx:train_end_idx])
+    for seq_idx, (marks, times, l1_idxes) in \
+            enumerate(zip(marks_sequences, times_sequences, l1_idxes_sequences)):
+        num_events_per_hour = get_num_events_per_hour((marks, times))
+        block_begin_idxes = num_events_per_hour.cumsum()
+        num_hrs = len(num_events_per_hour)-len(num_events_per_hour)%(4*block_size)
+        for idx in range(0, num_hrs, 4*block_size):
+            print(idx, num_hrs)
+            train_start_idx = block_begin_idxes[idx-1] if idx>0 else 0
+            train_end_idx = block_begin_idxes[idx+(2*block_size-1)]#-decoder_length-1
+            train_marks.append(marks[train_start_idx:train_end_idx])
+            train_times.append(times[train_start_idx:train_end_idx])
+            train_l1_idxes.append(l1_idxes[train_start_idx:train_end_idx])
+            train_b2s_idxes.append(seq_idx)
 
-        dev_start_idx = block_begin_idxes[idx+(2*block_size-1)]#-decoder_length-1
-        dev_end_idx = block_begin_idxes[idx+(3*block_size-1)]#-decoder_length-1
-        dev_marks.append(marks[dev_start_idx:dev_end_idx])
-        dev_times.append(times[dev_start_idx:dev_end_idx])
-        dev_l1_idxes.append(l1_idxes[dev_start_idx:dev_end_idx])
-        dev_begin_tss.append(get_hour_of_day_ts(times[dev_start_idx]) * 3600.)
+            dev_start_idx = block_begin_idxes[idx+(2*block_size-1)]#-decoder_length-1
+            dev_end_idx = block_begin_idxes[idx+(3*block_size-1)]#-decoder_length-1
+            dev_marks.append(marks[dev_start_idx:dev_end_idx])
+            dev_times.append(times[dev_start_idx:dev_end_idx])
+            dev_l1_idxes.append(l1_idxes[dev_start_idx:dev_end_idx])
+            dev_begin_tss.append(get_hour_of_day_ts(times[dev_start_idx]) * 3600.)
+            dev_b2s_idxes.append(seq_idx)
 
-        test_start_idx = block_begin_idxes[idx+(3*block_size-1)]#-decoder_length-1
-        test_end_idx = block_begin_idxes[idx+(4*block_size-1)]
-        test_marks.append(marks[test_start_idx:test_end_idx])
-        test_times.append(times[test_start_idx:test_end_idx])
-        test_l1_idxes.append(l1_idxes[test_start_idx:test_end_idx])
-        test_begin_tss.append(get_hour_of_day_ts(times[test_start_idx]) * 3600.)
+            test_start_idx = block_begin_idxes[idx+(3*block_size-1)]#-decoder_length-1
+            test_end_idx = block_begin_idxes[idx+(4*block_size-1)]
+            test_marks.append(marks[test_start_idx:test_end_idx])
+            test_times.append(times[test_start_idx:test_end_idx])
+            test_l1_idxes.append(l1_idxes[test_start_idx:test_end_idx])
+            test_begin_tss.append(get_hour_of_day_ts(times[test_start_idx]) * 3600.)
+            test_b2s_idxes.append(seq_idx)
 
     train_marks = train_marks * 5
     train_times = train_times * 5
     train_l1_idxes = train_l1_idxes * 5
+    train_b2s_idxes = train_b2s_idxes * 5
     dev_marks = dev_marks * 5
     dev_times = dev_times * 5
     dev_l1_idxes = dev_l1_idxes * 5
+    dev_b2s_idxes = dev_b2s_idxes * 5
     test_marks = test_marks * 5
     test_times = test_times * 5
     test_l1_idxes = test_l1_idxes * 5
+    test_b2s_idxes = test_b2s_idxes * 5
     dev_begin_tss = dev_begin_tss * 5
     test_begin_tss = test_begin_tss * 5
 
     dev_begin_tss = tf.expand_dims(tf.constant(dev_begin_tss), axis=-1)
     test_begin_tss = tf.expand_dims(tf.constant(test_begin_tss), axis=-1)
 
-    return (train_marks, train_times, train_l1_idxes,
-            dev_marks, dev_times, dev_l1_idxes,
-            test_marks, test_times, test_l1_idxes,
+    return (train_marks, train_times, train_l1_idxes, train_b2s_idxes,
+            dev_marks, dev_times, dev_l1_idxes, dev_b2s_idxes,
+            test_marks, test_times, test_l1_idxes, test_b2s_idxes,
             dev_begin_tss, test_begin_tss)
 
 def transpose(c_m_in, c_g_in, c_t_in, c_sm_in,
@@ -238,7 +260,7 @@ def transpose(c_m_in, c_g_in, c_t_in, c_sm_in,
               f_in):
     print(c_m_in.shape, c_g_in.shape, c_t_in.shape, c_sm_in.shape,
           c_m_out.shape, c_g_out.shape, c_t_out.shape, sm_in.shape,
-          g_out.shape, t_out.shape)
+          g_in.shape, t_in.shape, g_out.shape, t_out.shape)
     return (tf.transpose(c_m_in), tf.transpose(c_g_in, [1, 0, 2]),
             tf.transpose(c_t_in, [1, 0, 2]), tf.transpose(c_sm_in),
             tf.transpose(c_m_out), tf.transpose(c_g_out, [1, 0, 2]),
@@ -286,43 +308,41 @@ def get_compound_events(data, K=1):
         lst = arr.tolist()
         return max(set(lst), key=lst.count)
 
-    marks, times = data
-    c_marks, c_times = list(), list()
-    #for m_seq, t_seq in zip(marks, times):
-    #    c_t_seq = [t_seq[i:i+K][-1] for i in range(0, len(t_seq), K)]
-    #    c_times.append(c_t_seq)
-    #    c_m_seq = [most_frequent(m_seq[i:i+K]) for i in range(0, len(m_seq), K)]
-    #    c_marks.append(c_m_seq)
-    #    #TODO Instead of returning most frequent marker, return the simplex of marks
+    marks_seqs, times_seqs = data
+    c_marks_seqs, c_times_seqs = list(), list()
+    level_1_idxes_seqs = list()
+    for marks, times in zip(marks_seqs, times_seqs):
+        c_times = [times[i:i+K][-1] for i in range(0, len(times), K)]
+        c_times_seqs.append(c_times)
+        c_marks = [most_frequent(marks[i:i+K]) for i in range(0, len(marks), K)]
+        c_marks_seqs.append(c_marks)
+        #TODO Instead of returning most frequent marker, return the simplex of marks
+        level_1_idxes = np.array([i+K-1 for i in range(0, len(marks), K)])
+        level_1_idxes_seqs.append(level_1_idxes)
 
-    c_times = np.array([times[i:i+K][-1] for i in range(0, len(times), K)])
-    c_marks = np.array([most_frequent(marks[i:i+K]) for i in range(0, len(marks), K)])
-    level_1_idxes = np.array([i+K-1 for i in range(0, len(marks), K)])
-    #TODO Instead of returning most frequent marker, return the simplex of marks
+    assert len(c_times_seqs) == len(c_marks_seqs)
+    assert len(c_times_seqs) == len(level_1_idxes_seqs)
 
-    assert len(c_times) == len(c_marks)
-    assert len(c_times) == len(level_1_idxes)
-
-    return c_marks, c_times, level_1_idxes
+    return c_marks_seqs, c_times_seqs, level_1_idxes_seqs
 
 def get_preprocessed_(c_data, data, block_size, decoder_length, normalization):
     c_marks, c_times, level_1_idxes = c_data
     marks, times = data
     num_categories = len(np.unique(marks))
 
-    (c_train_marks, c_train_times, c_train_l1_idxes,
-     c_dev_marks, c_dev_times, c_dev_l1_idxes,
-     c_test_marks, c_test_times, c_test_l1_idxes,
+    (c_train_marks, c_train_times, c_train_l1_idxes, c_train_b2s_idxes,
+     c_dev_marks, c_dev_times, c_dev_l1_idxes, c_dev_b2s_idxes,
+     c_test_marks, c_test_times, c_test_l1_idxes, c_test_b2s_idxes,
      dev_begin_tss, test_begin_tss) \
             = create_train_dev_test_split(c_data, block_size, decoder_length)
     num_sequences = len(c_train_marks)
-    
+
     (c_train_marks_in, c_train_marks_out,
      c_train_gaps_in, c_train_gaps_out,
      c_train_times_in, c_train_times_out,
      train_gaps_in, train_times_in,
      train_gaps_out, train_times_out) \
-            = get_train_input_output((c_train_marks, c_train_times, c_train_l1_idxes),
+            = get_train_input_output((c_train_marks, c_train_times, c_train_l1_idxes, c_train_b2s_idxes),
                                      (marks, times),
                                      decoder_length)
 

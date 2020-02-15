@@ -372,11 +372,13 @@ class SimulateHierarchicalRNN:
 
         N = len(last_gaps_pred)
 
-        mask = np.squeeze(np.ones_like(last_gaps_pred), axis=-1)
+        #mask = np.squeeze(np.ones_like(last_gaps_pred), axis=-1)
+        mask = np.ones_like(last_gaps_pred)
 
         if second_last_gaps_pred is None:
+            time_features = reader_rmtpp.get_time_features_for_data((last_times_in))
             _, step_gaps_pred, _, _ \
-                     = model_rnn(last_gaps_pred, tf.constant(mask), initial_state)
+                     = model_rnn(last_gaps_pred, tf.constant(mask), time_features, initial_state=initial_state)
 
             second_last_gaps_pred, last_gaps_pred = last_gaps_pred, step_gaps_pred
 
@@ -385,7 +387,8 @@ class SimulateHierarchicalRNN:
         end_pred_idxes = -1.0 * np.ones(N)
 
         # last_times_pred = tf.squeeze(last_times_in + last_gaps_pred, axis=-1)
-        last_times_pred = tf.squeeze(last_times_in, axis=-1)
+        #last_times_pred = tf.squeeze(last_times_in, axis=-1)
+        last_times_pred = last_times_in
         times_pred.append(last_times_pred)
 
         #TODO:
@@ -402,17 +405,18 @@ class SimulateHierarchicalRNN:
         simul_step = 1
 
         # ipdb.set_trace()
+        time_features = reader_rmtpp.get_time_features_for_data((times_pred[-1]))
         while any(times_pred[-1]<t_b_plus) or any(end_pred_idxes<decoder_length) or any(times_pred[-1]<t_e_plus):
 
-            #print('layer', layer, 'simul_step:', simul_step)
             prev_hidden_state = model_rnn.hidden_states[:, -1]
+            print('layer', layer, 'simul_step:', simul_step)
 
             _, step_gaps_pred, _, _ \
-                     = model_rnn(gaps_inputs, tf.constant(mask))
+                     = model_rnn(gaps_inputs, tf.constant(mask), time_features)
 
             hidden_states.append(prev_hidden_state)
             gaps_pred.append(gaps_inputs)
-            last_times_pred = times_pred[-1] + tf.squeeze(gaps_inputs, axis=-1)
+            last_times_pred = times_pred[-1] + gaps_inputs
             gaps_inputs = step_gaps_pred
             times_pred.append(last_times_pred)
             time_features = reader_rmtpp.get_time_features_for_data((times_pred[-1]))
@@ -458,7 +462,7 @@ class SimulateHierarchicalRNN:
         # ipdb.set_trace()
         all_times_pred = tf.squeeze(tf.stack(times_pred, axis=1), axis=-1)
         times_pred = tf.gather(all_times_pred, tf.expand_dims(begin_idxes-1, axis=-1), batch_dims=1)
-        times_pred = tf.expand_dims(times_pred, axis=-1)
+        #times_pred = tf.expand_dims(times_pred, axis=-1)
         self.all_times_pred = all_times_pred
 
         return all_gaps_pred, times_pred, before_tb_gaps_pred, after_tb_gaps_pred_till_decoder_len, \

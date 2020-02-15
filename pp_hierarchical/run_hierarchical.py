@@ -53,22 +53,22 @@ def process_query_1(model, arguments, params, extra_args):
     # else:
     #     second_last_gaps_pred = tf.gather(dev_l2_gaps_pred, c_dev_seq_lens-2, batch_dims=1)
 
-    second_last_gaps_pred = tf.gather(dev_l2_gaps_pred, c_dev_seq_lens-2, batch_dims=1)
-    last_gaps_pred = tf.gather(dev_l2_gaps_pred, c_dev_seq_lens-1, batch_dims=1)
-    last_times_in = tf.gather(c_dev_times_in, c_dev_seq_lens-1, batch_dims=1)
+    second_last_gaps_pred = tf.squeeze(tf.gather(dev_l2_gaps_pred, c_dev_seq_lens-2, batch_dims=1), axis=-1)
+    last_gaps_pred = tf.squeeze(tf.gather(dev_l2_gaps_pred, c_dev_seq_lens-1, batch_dims=1), axis=-1)
+    last_times_in = tf.squeeze(tf.gather(c_dev_times_in, c_dev_seq_lens-1, batch_dims=1), axis=-1)
 
     dev_simulator = models.SimulateHierarchicalRNN()
     all_l2_dev_gaps_pred, last_times_pred, before_tb_gaps_pred, _, _, before_tb_hidden_state, _ \
                                    = dev_simulator.simulator(model.l2_rnn,
-                                     last_times_in,
-                                     last_gaps_pred,
-                                     c_dev_seq_lens,
-                                     dev_begin_tss,
-                                     c_dev_t_b_plus,
-                                     c_dev_t_b_plus,
-                                     0,
-                                     2,
-                                     second_last_gaps_pred,)
+                                                             last_times_in,
+                                                             last_gaps_pred,
+                                                             c_dev_seq_lens,
+                                                             dev_begin_tss,
+                                                             c_dev_t_b_plus,
+                                                             c_dev_t_b_plus,
+                                                             0,
+                                                             2,
+                                                             second_last_gaps_pred,)
     
     #TODO Process l2 gaps to l1  gaps
     # before_tb_gaps_pred
@@ -78,15 +78,15 @@ def process_query_1(model, arguments, params, extra_args):
 
     all_l1_dev_gaps_pred, last_times_pred, before_tb_gaps_pred, dev_gaps_pred, _, _, simulation_count \
                                    = dev_simulator.simulator(model.l1_rnn,
-                                     last_times_pred,
-                                     last_gaps_pred,
-                                     0,
-                                     dev_begin_tss,
-                                     dev_t_b_plus,
-                                     dev_t_b_plus,
-                                     decoder_length,
-                                     1,
-                                     initial_state=l1_rnn_init_state)
+                                                             last_times_pred,
+                                                             last_gaps_pred,
+                                                             0,
+                                                             dev_begin_tss,
+                                                             dev_t_b_plus,
+                                                             dev_t_b_plus,
+                                                             decoder_length,
+                                                             1,
+                                                             initial_state=l1_rnn_init_state)
 
     return (dev_gaps_pred, all_l2_dev_gaps_pred)
 
