@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from bisect import bisect_right
 import os, sys
-#import ipdb
+# import ipdb
 import time
 import datetime
 
@@ -28,14 +28,18 @@ from dtw import dtw
 
 
 
-def process_query_1(model, arguments, params, extra_args):
+def process_query_1(model, arguments, params, extra_args, all_normalizers):
     (c_dev_marks_in, c_dev_gaps_in, c_dev_times_in, c_dev_seqmask_in,
     c_dev_gaps_out, c_dev_times_out, c_dev_seqmask_out, c_dev_time_feature) = arguments
 
     (use_marks) = params
 
-    (c_dev_seq_lens, c_dev_t_b_plus, c_dev_t_e_plus, dev_t_b_plus, 
-        dev_t_e_plus, decoder_length, dev_begin_tss) = extra_args
+    (c_dev_seq_lens, dev_t_b_plus, dev_t_e_plus, decoder_length, dev_begin_tss) = extra_args
+
+    (dev_normalizer_d, dev_normalizer_a, c_dev_normalizer_d, c_dev_normalizer_a) = all_normalizers
+
+    c_dev_normalizers = (c_dev_normalizer_d, c_dev_normalizer_a)
+    dev_normalizers = (dev_normalizer_d, dev_normalizer_a)
 
     (dev_l2_marks_logits, dev_l2_gaps_pred, _, _,_, _, _, _) \
             = model(c_dev_gaps_in, c_dev_seqmask_in, c_dev_time_feature)
@@ -64,16 +68,19 @@ def process_query_1(model, arguments, params, extra_args):
                                                              last_gaps_pred,
                                                              c_dev_seq_lens,
                                                              dev_begin_tss,
-                                                             c_dev_t_b_plus,
-                                                             c_dev_t_b_plus,
+                                                             dev_t_b_plus,
+                                                             dev_t_b_plus,
                                                              0,
                                                              2,
+                                                             c_dev_normalizers,
                                                              second_last_gaps_pred,)
     
     #TODO Process l2 gaps to l1  gaps
     # before_tb_gaps_pred
 
+    before_tb_gaps_pred = (before_tb_gaps_pred - c_dev_normalizer_a) * c_dev_normalizer_d
     last_gaps_pred = before_tb_gaps_pred / 10.0
+    last_gaps_pred = (last_gaps_pred / dev_normalizer_d) + dev_normalizer_a
     l1_rnn_init_state =  model.ff(before_tb_hidden_state)
 
     all_l1_dev_gaps_pred, last_times_pred, before_tb_gaps_pred, dev_gaps_pred, _, _, simulation_count \
@@ -86,21 +93,26 @@ def process_query_1(model, arguments, params, extra_args):
                                                              dev_t_b_plus,
                                                              decoder_length,
                                                              1,
+                                                             dev_normalizers,
                                                              initial_state=l1_rnn_init_state)
 
     return (dev_gaps_pred, all_l2_dev_gaps_pred)
 
-def process_query_2(model, arguments, params, extra_args):
+def process_query_2(model, arguments, params, extra_args, all_normalizers):
     (c_dev_marks_in, c_dev_gaps_in, c_dev_times_in, c_dev_seqmask_in,
-    c_dev_gaps_out, c_dev_times_out, c_dev_seqmask_out) = arguments
+    c_dev_gaps_out, c_dev_times_out, c_dev_seqmask_out, c_dev_time_feature) = arguments
 
     (use_marks) = params
 
-    (c_dev_seq_lens, c_dev_t_b_plus, c_dev_t_e_plus, dev_t_b_plus, 
-        dev_t_e_plus, decoder_length, dev_begin_tss) = extra_args
+    (c_dev_seq_lens, dev_t_b_plus, dev_t_e_plus, decoder_length, dev_begin_tss) = extra_args
+
+    (dev_normalizer_d, dev_normalizer_a, c_dev_normalizer_d, c_dev_normalizer_a) = all_normalizers
+
+    c_dev_normalizers = (c_dev_normalizer_d, c_dev_normalizer_a)
+    dev_normalizers = (dev_normalizer_d, dev_normalizer_a)
 
     (dev_l2_marks_logits, dev_l2_gaps_pred, _, _,_, _, _, _) \
-            = model(None, c_dev_gaps_in, c_dev_seqmask_in)
+            = model(c_dev_gaps_in, c_dev_seqmask_in, c_dev_time_feature)
 
     if use_marks:
         dev_marks_pred = tf.argmax(dev_l2_marks_logits, axis=-1) + 1
@@ -108,9 +120,9 @@ def process_query_2(model, arguments, params, extra_args):
     else:
         dev_marks_pred_last = None
 
-    second_last_gaps_pred = tf.gather(dev_l2_gaps_pred, c_dev_seq_lens-2, batch_dims=1)
-    last_gaps_pred = tf.gather(dev_l2_gaps_pred, c_dev_seq_lens-1, batch_dims=1)
-    last_times_in = tf.gather(c_dev_times_in, c_dev_seq_lens-1, batch_dims=1)
+    second_last_gaps_pred = tf.squeeze(tf.gather(dev_l2_gaps_pred, c_dev_seq_lens-2, batch_dims=1), axis=-1)
+    last_gaps_pred = tf.squeeze(tf.gather(dev_l2_gaps_pred, c_dev_seq_lens-1, batch_dims=1), axis=-1)
+    last_times_in = tf.squeeze(tf.gather(c_dev_times_in, c_dev_seq_lens-1, batch_dims=1), axis=-1)
 
     dev_simulator = models.SimulateHierarchicalRNN()
     all_l2_dev_gaps_pred, last_times_pred, before_tb_gaps_pred, _, _, before_tb_hidden_state, _ \
@@ -119,16 +131,19 @@ def process_query_2(model, arguments, params, extra_args):
                                      last_gaps_pred,
                                      c_dev_seq_lens,
                                      dev_begin_tss,
-                                     c_dev_t_b_plus,
-                                     c_dev_t_b_plus,
+                                     dev_t_b_plus,
+                                     dev_t_b_plus,
                                      0,
                                      2,
+                                     c_dev_normalizers,
                                      second_last_gaps_pred,)
     
     #TODO Process l2 gaps to l1  gaps
     # before_tb_gaps_pred
 
+    before_tb_gaps_pred = (before_tb_gaps_pred - c_dev_normalizer_a) * c_dev_normalizer_d
     last_gaps_pred = before_tb_gaps_pred / 10.0
+    last_gaps_pred = (last_gaps_pred / dev_normalizer_d) + dev_normalizer_a
     l1_rnn_init_state =  model.ff(before_tb_hidden_state)
 
     all_l1_dev_gaps_pred, last_times_pred, before_tb_gaps_pred, dev_gaps_pred, _, l1_rnn_init_state, simulation_count \
@@ -141,8 +156,10 @@ def process_query_2(model, arguments, params, extra_args):
                                      dev_t_b_plus,
                                      0,
                                      1,
+                                     dev_normalizers,
                                      initial_state=l1_rnn_init_state)
 
+    before_tb_gaps_pred = (before_tb_gaps_pred / dev_normalizer_d) * dev_normalizer_a
     all_l1_dev_gaps_pred, last_times_pred, before_tb_gaps_pred, dev_gaps_pred, _, _, simulation_count \
                                    = dev_simulator.simulator(model.l1_rnn,
                                      last_times_pred,
@@ -153,6 +170,7 @@ def process_query_2(model, arguments, params, extra_args):
                                      dev_t_e_plus,
                                      0,
                                      1,
+                                     dev_normalizers,
                                      initial_state=l1_rnn_init_state)
 
     all_gaps_pred = tf.squeeze(all_l1_dev_gaps_pred, axis=-1)
@@ -308,11 +326,11 @@ def process_query_2(model, arguments, params, extra_args):
 
 
 
-def query_processor(query, model, arguments, params, extra_args):
+def query_processor(query, model, arguments, params, extra_args, all_normalizers):
     if query == 1:
-            return process_query_1(model, arguments, params, extra_args)
+            return process_query_1(model, arguments, params, extra_args, all_normalizers)
     if query == 2:
-            return process_query_2(model, arguments, params, extra_args)
+            return process_query_2(model, arguments, params, extra_args, all_normalizers)
     return None
 
 def compute_actual_event_in_range(t_b_plus, t_e_plus, times_out):
@@ -409,20 +427,18 @@ def run(args):
     # ----- Normalize dev_offsets and dev_t_b_plus ----- #
     c_dev_normalizer_d = data['c_dev_normalizer_d']
     c_dev_normalizer_a = data['c_dev_normalizer_a']
-    c_dev_offsets_sec_norm = dev_offsets/c_dev_normalizer_d + c_dev_normalizer_a
-    c_dev_t_b_plus = dev_begin_tss + dev_offsets
+    # c_dev_offsets_sec_norm = dev_offsets/c_dev_normalizer_d + c_dev_normalizer_a
+    # c_dev_t_b_plus = dev_begin_tss + c_dev_offsets_sec_norm
 
     dev_normalizer_d = data['dev_normalizer_d']
     dev_normalizer_a = data['dev_normalizer_a']
-    dev_offsets_sec_norm = dev_offsets/dev_normalizer_d + dev_normalizer_a
+    # dev_offsets_sec_norm = dev_offsets/dev_normalizer_d + dev_normalizer_a
+    # dev_t_b_plus = dev_begin_tss + dev_offsets_sec_norm
 
-    sample_hours = 5
-    dev_offsets_t_e = tf.random.uniform(shape=(num_sequences, 1)) * 60. * sample_hours # Sampling offsets for t_e_+
-    c_dev_offsets_sec_norm_t_e = dev_offsets_t_e/c_dev_normalizer_d + c_dev_normalizer_a
-    #TODO: to be corrected should be c_dev_t_b_plus
-    c_dev_t_e_plus = dev_t_b_plus + c_dev_offsets_sec_norm_t_e
-    dev_offsets_sec_norm_t_e = dev_offsets_t_e/dev_normalizer_d + dev_normalizer_a
-    dev_t_e_plus = dev_t_b_plus + dev_offsets_sec_norm_t_e
+    # c_dev_offsets_sec_norm_t_e = dev_offsets_t_e/c_dev_normalizer_d + c_dev_normalizer_a
+    # c_dev_t_e_plus = c_dev_t_b_plus + c_dev_offsets_sec_norm_t_e
+    # dev_offsets_sec_norm_t_e = dev_offsets_t_e/dev_normalizer_d + dev_normalizer_a
+    # dev_t_e_plus = dev_t_b_plus + dev_offsets_sec_norm_t_e
 
     # ----- End: Load dev_dataset ----- #
 
@@ -463,13 +479,13 @@ def run(args):
 
     # ----- End: Load test_dataset ----- #
 
-    c_dev_normalizer_d = tf.expand_dims(c_dev_normalizer_d, axis=1)
-    c_dev_normalizer_a = tf.expand_dims(c_dev_normalizer_a, axis=1)
+    # c_dev_normalizer_d = tf.expand_dims(c_dev_normalizer_d, axis=1)
+    # c_dev_normalizer_a = tf.expand_dims(c_dev_normalizer_a, axis=1)
     c_test_normalizer_d = tf.expand_dims(c_test_normalizer_d, axis=1)
     c_test_normalizer_a = tf.expand_dims(c_test_normalizer_a, axis=1)
 
-    dev_normalizer_d = tf.expand_dims(dev_normalizer_d, axis=1)
-    dev_normalizer_a = tf.expand_dims(dev_normalizer_a, axis=1)
+    # dev_normalizer_d = tf.expand_dims(dev_normalizer_d, axis=1)
+    # dev_normalizer_a = tf.expand_dims(dev_normalizer_a, axis=1)
     test_normalizer_d = tf.expand_dims(test_normalizer_d, axis=1)
     test_normalizer_a = tf.expand_dims(test_normalizer_a, axis=1)
 
@@ -660,105 +676,21 @@ def run(args):
 
                 params = (use_marks)
 
-                extra_args = (c_dev_seq_lens, c_dev_t_b_plus, c_dev_t_e_plus,
-                              dev_t_b_plus, dev_t_e_plus, decoder_length, dev_begin_tss)
+                extra_args = (c_dev_seq_lens, dev_t_b_plus, dev_t_e_plus, decoder_length, dev_begin_tss)
+
+                all_normalizers = (dev_normalizer_d, dev_normalizer_a, c_dev_normalizer_d, c_dev_normalizer_a)
 
                 query = 1
 
                 if query == 1:
-                    query_result = query_processor(1, model, arguments, params, extra_args)
+                    query_result = query_processor(1, model, arguments, params, extra_args, all_normalizers)
                     (dev_gaps_pred, all_l2_dev_gaps_pred) = query_result
 
                 elif query == 2:
-                    query_result = query_processor(2, model, arguments, params, extra_args)
+                    query_result = query_processor(2, model, arguments, params, extra_args, all_normalizers)
                     (dev_gaps_pred, all_times_pred_in_range, total_number_of_events_in_range) = query_result
 
-                    # print('dev_gaps_pred', dev_gaps_pred)
-                    # print('all_times_pred_in_range', all_times_pred_in_range)
-
-                    total_number_of_events_in_range = np.array(total_number_of_events_in_range)
-                    actual_event_count = np.array(event_bw_range_tb_te[0])
-                    error_in_event_count = np.mean((total_number_of_events_in_range-actual_event_count)**2)
-
-                    print('total_number_of_events_in_range', total_number_of_events_in_range)
-                    print('Actual count of events:', actual_event_count)
-                    # print('dev_t_b_plus', dev_t_b_plus)
-                    # print('dev_t_e_plus', dev_t_e_plus)
-
-                    actual_dev_event_in_range = event_bw_range_tb_te[1]
-                    actual_dev_gaps_in_range = event_bw_range_tb_te[2]
-
-                    dev_gaps_pred_in_range = (dev_gaps_pred[:, 1:] - dev_normalizer_a) * dev_normalizer_d
-                    dev_gaps_pred_in_range = dev_gaps_pred_in_range.numpy()
-
-                    dev_gaps_pred_in_range = [np.trim_zeros(dev_gaps_pred_in_range[idx], 'b') for idx in range(len(dev_t_b_plus))]
-                    dtw_cost_in_range = DTW(dev_gaps_pred_in_range, actual_dev_gaps_in_range)
-
-                    # print('dev_gaps_pred_in_range', dev_gaps_pred_in_range)
-                    # print('actual_dev_gaps_in_range', actual_dev_gaps_in_range)
-                    print('dtw_cost_in_range', dtw_cost_in_range)
-                    print('error_in_event_count', error_in_event_count)
-
-
-                # (dev_l2_marks_logits, dev_l2_gaps_pred, _, _,
-                #  _, _, _, _) \
-                #         = model(None, c_dev_gaps_in, c_dev_seqmask_in)
-
-                # if use_marks:
-                #     dev_marks_pred = tf.argmax(dev_marks_logits, axis=-1) + 1
-                #     dev_marks_pred_last = dev_marks_pred[:, -1:]
-                # else:
-                #     dev_marks_pred_last = None
-
-                # second_last_gaps_pred = tf.gather(dev_l2_gaps_pred, c_dev_seq_lens-2, batch_dims=1)
-                # last_gaps_pred = tf.gather(dev_l2_gaps_pred, c_dev_seq_lens-1, batch_dims=1)
-                # last_times_in = tf.gather(c_dev_times_in, c_dev_seq_lens-1, batch_dims=1)
-        
-                # dev_simulator = models.SimulateHierarchicalRNN()
-                # all_l2_dev_gaps_pred, last_times_pred, before_tb_gaps_pred, _, _, before_tb_hidden_state, _ \
-                #                                = dev_simulator.simulator(model.l2_rnn,
-                #                                  last_times_in,
-                #                                  last_gaps_pred,
-                #                                  c_dev_seq_lens,
-                #                                  dev_begin_tss,
-                #                                  c_dev_t_b_plus,
-                #                                  c_dev_t_b_plus,
-                #                                  decoder_length,
-                #                                  2,
-                #                                  second_last_gaps_pred,)
-                
-                # #TODO Process l2 gaps to l1  gaps
-                # # before_tb_gaps_pred
-
-                # last_gaps_pred = before_tb_gaps_pred / 10.0
-                # l1_rnn_init_state =  model.ff(before_tb_hidden_state)
-
-                # all_l1_dev_gaps_pred, last_times_pred, before_tb_gaps_pred, dev_gaps_pred, _, _, simulation_count \
-                #                                = dev_simulator.simulator(model.l1_rnn,
-                #                                  last_times_pred,
-                #                                  last_gaps_pred,
-                #                                  0,
-                #                                  dev_begin_tss,
-                #                                  dev_t_b_plus,
-                #                                  dev_t_b_plus,
-                #                                  decoder_length,
-                #                                  1,
-                #                                  initial_state=l1_rnn_init_state)
-
-                # all_l1_dev_gaps_pred, last_times_pred, before_tb_gaps_pred, dev_gaps_pred, _, _, simulation_count \
-                #                                = dev_simulator.simulator(model.l1_rnn,
-                #                                  last_times_pred,
-                #                                  before_tb_gaps_pred,
-                #                                  0,
-                #                                  dev_begin_tss,
-                #                                  dev_t_e_plus,
-                #                                  dev_t_e_plus,
-                #                                  decoder_length,
-                #                                  1,
-                #                                  initial_state=l1_rnn_init_state)
-
-                # print(all_l1_dev_gaps_pred)
-                # ipdb.set_trace()
+                #TODO: Why we are computing loss and acc after all step complete.
 
             model.reset_states()
             # ipdb.set_trace()
@@ -811,10 +743,55 @@ def run(args):
             #dev_gaps_pred = (dev_gaps_pred - dev_normalizer_a) * dev_normalizer_d
             #test_gaps_pred = (test_gaps_pred - test_normalizer_a) * test_normalizer_d
 
-            dev_gap_metric(dev_gaps_out[:, 1:], dev_gaps_pred[:, 1:])
-            test_gap_metric(test_gaps_out[:, 1:], test_gaps_pred[:, 1:])
-            dev_gap_err = dev_gap_metric.result()
-            test_gap_err = test_gap_metric.result()
+            if query == 1:
+                dev_gap_metric(dev_gaps_out[:, 1:], dev_gaps_pred[:, 1:])
+                test_gap_metric(test_gaps_out[:, 1:], test_gaps_pred[:, 1:])
+                dev_gap_err = dev_gap_metric.result()
+                test_gap_err = test_gap_metric.result()
+                dev_gap_err = dev_gap_err.numpy()
+                test_gap_err = test_gap_err.numpy()
+                dev_gap_metric.reset_states()
+                test_gap_metric.reset_states()
+
+            elif query == 2:
+                # print('dev_gaps_pred', dev_gaps_pred)
+                # print('all_times_pred_in_range', all_times_pred_in_range)
+
+                total_number_of_events_in_range = np.array(total_number_of_events_in_range)
+                actual_event_count = np.array(event_bw_range_tb_te[0])
+                error_in_event_count = np.mean((total_number_of_events_in_range-actual_event_count)**2)
+
+                #TODO: Why total count can not be zero
+                print('total_number_of_events_in_range', total_number_of_events_in_range)
+                print('Actual count of events:', actual_event_count)
+                # print('dev_t_b_plus', dev_t_b_plus)
+                # print('dev_t_e_plus', dev_t_e_plus)
+
+                actual_dev_event_in_range = event_bw_range_tb_te[1]
+                actual_dev_gaps_in_range = event_bw_range_tb_te[2]
+
+                dev_gaps_pred_in_range = dev_gaps_pred[:, 1:]
+                dev_gaps_pred_in_range = dev_gaps_pred_in_range.numpy()
+
+                dev_gaps_pred_in_range = [np.trim_zeros(dev_gaps_pred_in_range[idx], 'b') for idx in range(len(dev_t_b_plus))]
+                dtw_cost_in_range = DTW(dev_gaps_pred_in_range, actual_dev_gaps_in_range)
+
+                dev_time_pred_in_range = all_times_pred_in_range[:, 1:]
+                dev_time_pred_in_range = dev_time_pred_in_range.numpy()
+
+                dev_time_pred_in_range = [np.trim_zeros(dev_time_pred_in_range[idx], 'b') for idx in range(len(dev_t_b_plus))]
+                dtw_cost_in_range_for_time = DTW(dev_time_pred_in_range, actual_dev_event_in_range)
+
+
+                # print('dev_gaps_pred_in_range', dev_gaps_pred_in_range)
+                print('actual_dev_event_in_range', actual_dev_event_in_range)
+                print('actual_dev_gaps_in_range', actual_dev_gaps_in_range)
+                print('dtw_cost_in_range', dtw_cost_in_range)
+                print('dtw_cost_in_range_for_time', dtw_cost_in_range_for_time)
+                print('error_in_event_count', error_in_event_count)
+
+                dev_gap_err = dtw_cost_in_range
+                test_gap_err = dtw_cost_in_range
 
             with dev_summary_writer.as_default():
                 tf.summary.scalar('dev_gap_err', dev_gap_err, step=epoch)
@@ -822,15 +799,11 @@ def run(args):
                 tf.summary.scalar('test_gap_err', test_gap_err, step=epoch)
                 #TODO Add marks summary later
 
-            dev_gap_metric.reset_states()
-            test_gap_metric.reset_states()
-
-
             if args.verbose:
                 print('\ndev_gaps_pred')
-                print(tf.squeeze(dev_gaps_pred[:, 1:], axis=-1))
+                print(dev_gaps_pred[:, 1:])
                 print('\ndev_gaps_out')
-                print(tf.squeeze(dev_gaps_out[:, 1:], axis=-1))
+                print(dev_gaps_out[:, 1:])
 
             if args.generate_plots:
                 # ----- Dev nowcasting plots for layer 2 ----- #
@@ -841,7 +814,7 @@ def run(args):
                 # all_c_dev_gaps_pred = tf.squeeze(all_l2_dev_gaps_pred, axis=-1)
                 # # all_c_dev_gaps_pred = dev_simulator.all_l2_gaps_pred
                 # all_c_dev_gaps_pred = (all_c_dev_gaps_pred) * tf.expand_dims(c_dev_normalizer_d, axis=1)
-                all_c_dev_gaps_pred = dev_simulator.all_l2_gaps_pred
+                all_c_dev_gaps_pred = all_l2_dev_gaps_pred
 
                 plt.plot(tf.squeeze(c_dev_gaps_out[1], axis=-1), 'bo-')
                 plt.plot(all_c_dev_gaps_pred[1][1:], 'r*-')
@@ -946,8 +919,8 @@ def run(args):
 
 
     return {
-            'best_dev_gap_error': float(best_dev_gap_error.numpy()),
-            'best_test_gap_error': float(best_test_gap_error.numpy()),
+            'best_dev_gap_error': float(best_dev_gap_error),
+            'best_test_gap_error': float(best_test_gap_error),
             'best_epoch': best_epoch,
             'average_inference_time': np.mean(inference_times),
            }
