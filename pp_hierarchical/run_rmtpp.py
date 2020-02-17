@@ -244,7 +244,7 @@ def run(args):
                                model=model,
                                optimizer=optimizer)
     manager = tf.train.CheckpointManager(ckpt,
-                                         os.path.join(args.output_dir, 'ckpts'),
+                                         os.path.join(args.ckpt_dir, 'ckpts'),
                                          max_to_keep=1)
     ckpt.restore(manager.latest_checkpoint)
     if manager.latest_checkpoint:

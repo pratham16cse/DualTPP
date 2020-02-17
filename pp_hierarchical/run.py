@@ -88,6 +88,8 @@ def run_config(param_vals, training_mode):
 
     args_vars_config['output_dir'] \
             = os.path.join(args_vars_config['output_dir'], param_dir)
+    args_vars_config['ckpt_dir'] \
+            = os.path.join(args_vars_config['output_dir'], 'train')
     if training_mode==1.:
         args_vars_config['output_dir'] \
                 = os.path.join(args_vars_config['output_dir'], 'train')
