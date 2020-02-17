@@ -469,6 +469,7 @@ class SimulateHierarchicalRNN:
         #times_pred = tf.expand_dims(times_pred, axis=-1)
         self.all_times_pred = all_times_pred
 
+        
         return all_gaps_pred, times_pred, before_tb_gaps_pred, after_tb_gaps_pred_till_decoder_len, \
                after_tb_gaps_pred_till_te, before_tb_hidden_state, end_idxes
 

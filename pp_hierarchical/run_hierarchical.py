@@ -159,7 +159,7 @@ def process_query_2(model, arguments, params, extra_args, all_normalizers):
                                      dev_normalizers,
                                      initial_state=l1_rnn_init_state)
 
-    before_tb_gaps_pred = (before_tb_gaps_pred / dev_normalizer_d) * dev_normalizer_a
+    before_tb_gaps_pred = (before_tb_gaps_pred / dev_normalizer_d) + dev_normalizer_a
     all_l1_dev_gaps_pred, last_times_pred, before_tb_gaps_pred, dev_gaps_pred, _, _, simulation_count \
                                    = dev_simulator.simulator(model.l1_rnn,
                                      last_times_pred,
@@ -352,9 +352,17 @@ def DTW(time_preds, time_true):
     distance = 0
     for time_preds_, clipped_time_true_ in zip(time_preds, clipped_time_true):
         #TODO This is not right way
+        #Because of this dtw is very high as timestamp is very high
+        if np.shape(time_preds_)[0] == 0:
+            continue
+            time_preds_ = np.array([0.0]).reshape(-1, 1)
         if np.shape(clipped_time_true_)[0] == 0:
+            continue
             clipped_time_true_ = np.array([0.0]).reshape(-1, 1)
+        # print('pred time', time_preds_)
+        # print('true time', clipped_time_true_)
         d, cost_matrix, acc_cost_matrix, path = dtw(time_preds_, clipped_time_true_, dist=euclidean_norm)
+        # print('distance', d)
         distance += d
     distance = distance / len(clipped_time_true)
 
@@ -410,7 +418,7 @@ def run(args):
     if args.training_mode:
         dev_offsets = tf.zeros_like(dev_offsets)
     dev_t_b_plus = dev_begin_tss + dev_offsets
-    sample_hours = 5
+    sample_hours = 5.
     dev_offsets_t_e = tf.random.uniform(shape=(num_sequences, 1)) * 60. * sample_hours # Sampling offsets for t_e_+
     dev_t_e_plus = dev_t_b_plus + dev_offsets_t_e
     event_bw_range_tb_te = compute_actual_event_in_range(dev_t_b_plus, dev_t_e_plus, dev_times_out)
@@ -680,7 +688,7 @@ def run(args):
 
                 all_normalizers = (dev_normalizer_d, dev_normalizer_a, c_dev_normalizer_d, c_dev_normalizer_a)
 
-                query = 1
+                query = 2
 
                 if query == 1:
                     query_result = query_processor(1, model, arguments, params, extra_args, all_normalizers)
@@ -762,8 +770,8 @@ def run(args):
                 error_in_event_count = np.mean((total_number_of_events_in_range-actual_event_count)**2)
 
                 #TODO: Why total count can not be zero
-                print('total_number_of_events_in_range', total_number_of_events_in_range)
-                print('Actual count of events:', actual_event_count)
+                print('total_number_of_events_in_range\n', total_number_of_events_in_range)
+                print('Actual count of events:\n', actual_event_count)
                 # print('dev_t_b_plus', dev_t_b_plus)
                 # print('dev_t_e_plus', dev_t_e_plus)
 
@@ -779,19 +787,18 @@ def run(args):
                 dev_time_pred_in_range = all_times_pred_in_range[:, 1:]
                 dev_time_pred_in_range = dev_time_pred_in_range.numpy()
 
-                dev_time_pred_in_range = [np.trim_zeros(dev_time_pred_in_range[idx], 'b') for idx in range(len(dev_t_b_plus))]
+                dev_time_pred_in_range = [dev_time_pred_in_range[idx][:total_number_of_events_in_range[idx]-1] for idx in range(len(dev_t_b_plus))]
                 dtw_cost_in_range_for_time = DTW(dev_time_pred_in_range, actual_dev_event_in_range)
 
-
                 # print('dev_gaps_pred_in_range', dev_gaps_pred_in_range)
-                print('actual_dev_event_in_range', actual_dev_event_in_range)
-                print('actual_dev_gaps_in_range', actual_dev_gaps_in_range)
+                # print('actual_dev_event_in_range', actual_dev_event_in_range)
+                # print('actual_dev_gaps_in_range', actual_dev_gaps_in_range)
                 print('dtw_cost_in_range', dtw_cost_in_range)
                 print('dtw_cost_in_range_for_time', dtw_cost_in_range_for_time)
                 print('error_in_event_count', error_in_event_count)
 
-                dev_gap_err = dtw_cost_in_range
-                test_gap_err = dtw_cost_in_range
+                dev_gap_err = dtw_cost_in_range_for_time
+                test_gap_err = error_in_event_count
 
             with dev_summary_writer.as_default():
                 tf.summary.scalar('dev_gap_err', dev_gap_err, step=epoch)
