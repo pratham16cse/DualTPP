@@ -178,154 +178,6 @@ def process_query_2(model, arguments, params, extra_args, all_normalizers):
 
     return (all_gaps_pred, dev_simulator.all_times_pred, simulation_count)
 
-# def process_query_3(model, arguments, params, extra_args):
-#     (c_dev_marks_in, c_dev_gaps_in, c_dev_times_in, c_dev_seqmask_in,
-#     c_dev_gaps_out, c_dev_times_out, c_dev_seqmask_out) = arguments
-
-#     (dev_l2_marks_logits, dev_l2_gaps_pred, _, _,_, _, _, _) \
-#             = model(None, c_dev_gaps_in, c_dev_seqmask_in)
-
-#     if use_marks:
-#         dev_marks_pred = tf.argmax(dev_marks_logits, axis=-1) + 1
-#         dev_marks_pred_last = dev_marks_pred[:, -1:]
-#     else:
-#         dev_marks_pred_last = None
-
-#     second_last_gaps_pred = tf.gather(dev_l2_gaps_pred, c_dev_seq_lens-2, batch_dims=1)
-#     last_gaps_pred = tf.gather(dev_l2_gaps_pred, c_dev_seq_lens-1, batch_dims=1)
-#     last_times_in = tf.gather(c_dev_times_in, c_dev_seq_lens-1, batch_dims=1)
-
-#     total_number_of_events_till_tb = np.zeros(len(last_gaps_pred))
-#     total_number_of_events_till_te = np.zeros(len(last_gaps_pred))
-
-#     dev_simulator = models.SimulateHierarchicalRNN()
-
-#     _, last_times_pred, before_tb_gaps_pred, _, _, before_tb_hidden_state, simulation_count \
-#                                    = dev_simulator.simulator(model.l2_rnn,
-#                                      last_times_in,
-#                                      last_gaps_pred,
-#                                      c_dev_seq_lens,
-#                                      dev_begin_tss,
-#                                      c_dev_t_b_plus,
-#                                      c_dev_t_b_plus,
-#                                      decoder_length,
-#                                      2,
-#                                      second_last_gaps_pred,)
-    
-#     _, last_times_pred, before_tb_gaps_pred, _, _, before_tb_hidden_state, simulation_count \
-#                                    = dev_simulator.simulator(model.l2_rnn,
-#                                      last_times_pred,
-#                                      before_tb_gaps_pred,
-#                                      c_dev_seq_lens,
-#                                      dev_begin_tss,
-#                                      c_dev_t_e_plus,
-#                                      c_dev_t_e_plus,
-#                                      decoder_length,
-#                                      2,
-#                                      second_last_gaps_pred,)
-
-#     total_number_of_events_in_range = simulation_count * 10
-
-#     #TODO Process l2 gaps to l1  gaps
-#     # before_tb_gaps_pred
-
-#     last_gaps_pred = before_tb_gaps_pred / 10.0
-#     l1_rnn_init_state =  model.ff(before_tb_hidden_state)
-
-#     all_l1_dev_gaps_pred, last_times_pred, before_tb_gaps_pred, dev_gaps_pred, _, _, simulation_count \
-#                                    = dev_simulator.simulator(model.l1_rnn,
-#                                      last_times_pred,
-#                                      last_gaps_pred,
-#                                      0,
-#                                      dev_begin_tss,
-#                                      dev_t_e_plus,
-#                                      dev_t_e_plus,
-#                                      decoder_length,
-#                                      1,
-#                                      initial_state=l1_rnn_init_state)
-
-#     total_number_of_events_in_range += simulation_count
-
-#     # print(all_l1_dev_gaps_pred)
-#     # ipdb.set_trace()
-
-# def process_query_4(model, arguments, params, extra_args):
-#     (c_dev_marks_in, c_dev_gaps_in, c_dev_times_in, c_dev_seqmask_in,
-#     c_dev_gaps_out, c_dev_times_out, c_dev_seqmask_out) = arguments
-
-#     (dev_l2_marks_logits, dev_l2_gaps_pred, _, _,_, _, _, _) \
-#             = model(None, c_dev_gaps_in, c_dev_seqmask_in)
-
-#     if use_marks:
-#         dev_marks_pred = tf.argmax(dev_marks_logits, axis=-1) + 1
-#         dev_marks_pred_last = dev_marks_pred[:, -1:]
-#     else:
-#         dev_marks_pred_last = None
-
-#     mask = np.zeros(len(dev_times_out))
-
-
-#     second_last_gaps_pred = tf.gather(dev_l2_gaps_pred, c_dev_seq_lens-2, batch_dims=1)
-#     last_gaps_pred = tf.gather(dev_l2_gaps_pred, c_dev_seq_lens-1, batch_dims=1)
-#     last_times_in = tf.gather(c_dev_times_in, c_dev_seq_lens-1, batch_dims=1)
-
-#     total_number_of_events_till_tb = np.zeros(len(last_gaps_pred))
-#     total_number_of_events_till_te = np.zeros(len(last_gaps_pred))
-
-#     dev_simulator = models.SimulateHierarchicalRNN()
-
-#     _, last_times_pred, before_tb_gaps_pred, _, _, before_tb_hidden_state, simulation_count \
-#                                    = dev_simulator.simulator(model.l2_rnn,
-#                                      last_times_in,
-#                                      last_gaps_pred,
-#                                      c_dev_seq_lens,
-#                                      dev_begin_tss,
-#                                      c_dev_t_b_plus,
-#                                      c_dev_t_b_plus,
-#                                      decoder_length,
-#                                      2,
-#                                      second_last_gaps_pred,)
-    
-#     _, last_times_pred, before_tb_gaps_pred, _, _, before_tb_hidden_state, simulation_count \
-#                                    = dev_simulator.simulator(model.l2_rnn,
-#                                      last_times_pred,
-#                                      before_tb_gaps_pred,
-#                                      c_dev_seq_lens,
-#                                      dev_begin_tss,
-#                                      c_dev_t_e_plus,
-#                                      c_dev_t_e_plus,
-#                                      decoder_length,
-#                                      2,
-#                                      second_last_gaps_pred,)
-
-#     total_number_of_events_in_range = simulation_count * 10
-
-#     #TODO Process l2 gaps to l1  gaps
-#     # before_tb_gaps_pred
-
-#     last_gaps_pred = before_tb_gaps_pred / 10.0
-#     l1_rnn_init_state =  model.ff(before_tb_hidden_state)
-
-#     all_l1_dev_gaps_pred, last_times_pred, before_tb_gaps_pred, dev_gaps_pred, _, _, simulation_count \
-#                                    = dev_simulator.simulator(model.l1_rnn,
-#                                      last_times_pred,
-#                                      last_gaps_pred,
-#                                      0,
-#                                      dev_begin_tss,
-#                                      dev_t_e_plus,
-#                                      dev_t_e_plus,
-#                                      decoder_length,
-#                                      1,
-#                                      initial_state=l1_rnn_init_state)
-
-#     total_number_of_events_in_range += simulation_count
-
-#     # print(all_l1_dev_gaps_pred)
-#     # ipdb.set_trace()
-
-
-
-
 def query_processor(query, model, arguments, params, extra_args, all_normalizers):
     if query == 1:
             return process_query_1(model, arguments, params, extra_args, all_normalizers)
@@ -372,6 +224,9 @@ def run(args):
 
     if not args.training_mode:
         args.epochs = 1
+
+    query = args.query
+
     tf.random.set_seed(args.seed)
     dataset_name = args.dataset_name
     dataset_path = args.dataset_path
@@ -529,7 +384,7 @@ def run(args):
                                model=model,
                                optimizer=optimizer)
     manager = tf.train.CheckpointManager(ckpt,
-                                         os.path.join(args.output_dir, 'ckpts'),
+                                         os.path.join(args.ckpt_dir, 'ckpts'),
                                          max_to_keep=1)
     ckpt.restore(manager.latest_checkpoint)
     if manager.latest_checkpoint:
@@ -687,8 +542,6 @@ def run(args):
                 extra_args = (c_dev_seq_lens, dev_t_b_plus, dev_t_e_plus, decoder_length, dev_begin_tss)
 
                 all_normalizers = (dev_normalizer_d, dev_normalizer_a, c_dev_normalizer_d, c_dev_normalizer_a)
-
-                query = 2
 
                 if query == 1:
                     query_result = query_processor(1, model, arguments, params, extra_args, all_normalizers)

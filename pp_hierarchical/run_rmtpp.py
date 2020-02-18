@@ -66,6 +66,8 @@ def run(args):
     if not args.training_mode:
         args.epochs = 1
 
+    query = args.query
+
     tf.random.set_seed(args.seed)
     dataset_name = args.dataset_name
     dataset_path = args.dataset_path
@@ -145,8 +147,8 @@ def run(args):
     if args.verbose:
         print('\n dev_begin_tss')
         print(dev_begin_tss)
-        print('\n dev_offsets_sec_norm')
-        print(dev_offsets_sec_norm)
+        # print('\n dev_offsets_sec_norm')
+        # print(dev_offsets_sec_norm)
         print('\n dev_t_b_plus')
         print(dev_t_b_plus)
 
@@ -203,8 +205,8 @@ def run(args):
     if args.verbose:
         print('\n test_begin_tss')
         print(test_begin_tss)
-        print('\n test_offsets_sec_norm')
-        print(test_offsets_sec_norm)
+        # print('\n test_offsets_sec_norm')
+        # print(test_offsets_sec_norm)
         print('\n test_t_b_plus')
         print(test_t_b_plus)
 
@@ -247,7 +249,7 @@ def run(args):
                                model=model,
                                optimizer=optimizer)
     manager = tf.train.CheckpointManager(ckpt,
-                                         os.path.join(args.output_dir, 'ckpts'),
+                                         os.path.join(args.ckpt_dir, 'ckpts'),
                                          max_to_keep=1)
     ckpt.restore(manager.latest_checkpoint)
     if manager.latest_checkpoint:
@@ -357,8 +359,6 @@ def run(args):
                                                batch_dims=1)
                 dev_simulator = models.SimulateRMTPP()
 
-
-                query = 1
 
                 if query == 1:
                     dev_marks_logits, dev_gaps_pred, _, _, _, _ \

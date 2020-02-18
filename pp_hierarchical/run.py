@@ -47,6 +47,8 @@ parser.add_argument('--epochs', type=int, default=50,
 parser.add_argument('--patience', type=int, default=10,
                     help='Number of epochs to wait for \
                           before beginning cross-validation')
+parser.add_argument('--query', type=int, default=1,
+                    help='Query number')
 parser.add_argument('--bptt', type=int, default=20,
                     help='Truncation length for truncated bptt of rnn')
 parser.add_argument('--block_size', type=int, default=1,
@@ -86,7 +88,7 @@ def run_config(param_vals, training_mode):
     for name, val in zip(param_names, param_vals):
         param_dir = param_dir + hparams_aliases[name] + '_' + str(val) + '_'
 
-    args_vars_config['output_dir'] \
+    args_vars_config['ckpt_dir'] \
             = os.path.join(args_vars_config['output_dir'], param_dir)
     if training_mode==1.:
         args_vars_config['output_dir'] \
