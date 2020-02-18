@@ -70,7 +70,7 @@ class RMTPP(tf.keras.Model):
                                                     mask_zero=False,
                                                     name='time_feature_embedding')
         else:
-            self.time_features_layer = layers.Dense(time_embed_size, 
+            self.time_features_layer = layers.Dense(time_embed_size,
                                                     activation='sigmoid',
                                                     name='time_features_layer')
 
@@ -272,7 +272,7 @@ class HierarchicalRNN(tf.keras.Model):
 class SimulateRMTPP:
     def simulate(self, model, times, gaps_in, block_begin_ts, t_b_plus,
                  decoder_length, normalizers, marks_in=None):
-    
+
         marks_logits, gaps_pred = list(), list()
         normalizer_d, normalizer_a = normalizers
         normalizer_d = tf.squeeze(normalizer_d, axis=1)
@@ -302,7 +302,7 @@ class SimulateRMTPP:
                 step_marks_pred = tf.argmax(step_marks_logits, axis=-1) + 1
             else:
                 step_marks_pred = None
-    
+
             #print('Simul step:', simul_step, tf.squeeze(tf.squeeze(step_gaps_pred, axis=1), axis=-1))
             marks_in, gaps_in = step_marks_pred, step_gaps_pred
             marks_logits.append(step_marks_logits)
@@ -320,9 +320,9 @@ class SimulateRMTPP:
                     if pred_idxes[ex_id] == decoder_length:
                         end_idxes[ex_id] = simul_step
                         mask[ex_id] = 0.
-    
+
             simul_step += 1
-    
+
         if marks_in is not None:
             marks_logits = tf.squeeze(tf.stack(marks_logits, axis=1), axis=2)
             marks_logits = [m_l[b_idx:e_idx] for m_l, b_idx, e_idx in \
@@ -339,7 +339,7 @@ class SimulateRMTPP:
         gaps_pred = [t_l[b_idx:e_idx] for t_l, b_idx, e_idx in \
                             zip(gaps_pred, begin_idxes, end_idxes)]
         gaps_pred = tf.stack(gaps_pred, axis=0)
-        
+
         times_pred = tf.squeeze(tf.stack(times_pred, axis=1), axis=2)
 
         all_times_pred = times_pred
@@ -347,7 +347,7 @@ class SimulateRMTPP:
         times_pred = [t_l[b_idx:b_idx+1] for t_l, b_idx in \
                             zip(times_pred, begin_idxes)]
         times_pred = tf.stack(times_pred, axis=0)
-        
+
         #TODO Check this
         times_pred = tf.expand_dims(times_pred, axis=-1)
 
@@ -386,6 +386,7 @@ class SimulateHierarchicalRNN:
         pred_idxes = -1.0 * np.ones(N)
         end_pred_idxes = -1.0 * np.ones(N)
 
+        # TODO Why last_gaps_pred not added?
         # last_times_pred = tf.squeeze(last_times_in + last_gaps_pred, axis=-1)
         #last_times_pred = tf.squeeze(last_times_in, axis=-1)
         last_times_pred = last_times_in
@@ -608,3 +609,270 @@ class SimulateHierarchicalRNN:
         #ipdb.set_trace()
 
         return l1_gaps_pred
+
+
+class OffsetEmbedNetwork(layers.Layer):
+    def __init__(self,
+                 hidden_layer_size,
+                 name='OffsetEmbedNetwork',
+                 **kwargs):
+        super(OffsetEmbedNetwork, self).__init__(name=name, **kwargs)
+        self.h_1 = layers.Dense(hidden_layer_size,
+                                 activation=tf.sigmoid,
+                                 name='off_embed_1')
+        self.h_2 = layers.Dense(hidden_layer_size,
+                                 activation=tf.sigmoid,
+                                 name='off_embed_2')
+    def call(self, inputs):
+        h1 = self.h_1(inputs)
+        h2 = self.h_2(h1)
+
+        return h2
+
+class OffsetFFNetwork(layers.Layer):
+    def __init__(self,
+                 hidden_layer_size,
+                 name='OffsetFFNetwork',
+                 **kwargs):
+        super(OffsetFFNetwork, self).__init__(name=name, **kwargs)
+        self.h_1 = layers.Dense(hidden_layer_size,
+                                 activation=tf.nn.relu,
+                                 name='l1')
+        self.h_2 = layers.Dense(hidden_layer_size,
+                                 activation=tf.tanh,
+                                 name='l2')
+    def call(self, inputs):
+        h1 = self.h_1(inputs)
+        h2 = self.h_2(h1)
+
+        return h2 #TODO Play around with this network
+
+class OffsetRNN(tf.keras.Model):
+    def __init__(self, num_categories,
+                 embed_size,
+                 hidden_layer_size,
+                 name='RMTPP',
+                 use_marks=True,
+                 use_intensity=True,
+                 use_time_embed=True,
+                 **kwargs):
+        super(OffsetRNN, self).__init__(name=name, **kwargs)
+        self.use_marks = use_marks
+        self.use_intensity = use_intensity
+        self.use_time_embed = use_time_embed
+        time_embed_size = 10
+
+        if self.use_marks:
+            self.embedding_layer = layers.Embedding(num_categories+1, embed_size,
+                                                    mask_zero=False,
+                                                    name='marks_embedding')
+        if self.use_time_embed:
+            self.time_feature_embedding_layer = layers.Embedding(25, time_embed_size,
+                                                    mask_zero=False,
+                                                    name='time_feature_embedding')
+        else:
+            self.time_features_layer = layers.Dense(time_embed_size,
+                                                    activation='sigmoid',
+                                                    name='time_features_layer')
+
+        self.rnn_layer = layers.GRU(hidden_layer_size, return_sequences=True,
+                                    return_state=True, stateful=True,
+                                    name='GRU_Layer')
+        self.offset_layer = OffsetFFNetwork(hidden_layer_size)
+        self.offset_embed_layer = OffsetEmbedNetwork(hidden_layer_size)
+        self.D_layer = layers.Dense(1, name='D_layer')
+        if self.use_marks:
+            self.marks_output_layer = layers.Dense(num_categories,
+                                                   activation='softmax',
+                                                   name='marks_output_layer')
+        if self.use_intensity:
+            self.WT_layer = layers.Dense(1, activation=tf.nn.softplus, name='WT_layer')
+            self.gaps_output_layer = InverseTransformSampling()
+
+    def process_inputs(self, gaps, mask, time_features, offsets=None,
+                       offset_features=None, marks=None):
+        if gaps.ndim == 2:
+            gaps = tf.expand_dims(gaps, axis=1)
+        if mask.ndim == 1:
+            mask = tf.expand_dims(mask, axis=1)
+        if time_features.ndim == 2:
+            time_features = tf.expand_dims(time_features, axis=1)
+        if offsets is not None and offsets.ndim == 2:
+            offsets = tf.expand_dims(offsets, axis=1)
+        if offset_features is not None and offset_features.ndim == 2:
+            offset_features = tf.expand_dims(offset_features, axis=1)
+        if marks is not None and marks.ndim == 2:
+            marks = tf.expand_dims(marks, axis=1)
+
+        return gaps, mask, time_features, offsets, offset_features, marks
+
+    def process_output(self, marks_logits, gaps_pred, D, WT):
+        if marks_logits is not None and marks_logits.shape[1] == 1:
+            marks_logits = tf.squeeze(marks_logits, axis=1)
+        if gaps_pred.shape[1] == 1:
+            gaps_pred = tf.squeeze(gaps_pred, axis=1)
+        if D.shape[1] == 1:
+            D = tf.squeeze(D, axis=1)
+        if WT.shape[1] == 1:
+            WT = tf.squeeze(WT, axis=1)
+
+        return marks_logits, gaps_pred, D, WT
+
+    def call(self, gaps, mask, time_features, offsets=None,
+             offset_features=None, marks=None, initial_state=None):
+        ''' Forward pass of the RMTPP model'''
+
+        self.gaps = gaps
+        self.mask = mask
+        self.time_features = time_features
+        self.offsets = offsets
+        self.offset_features = offset_features
+        self.marks = marks
+        self.initial_state = initial_state
+        self.gaps, self.mask, self.time_features, self.offsets, \
+                self.offset_features, self.marks \
+                = self.process_inputs(self.gaps, self.mask, self.time_features,
+                                      offsets=self.offsets, offset_features=self.offset_features,
+                                      marks=self.marks)
+        # Gather input for the rnn
+        if self.use_marks:
+            self.marks_embd = self.embedding_layer(self.marks)
+        if self.use_time_embed:
+            self.time_features = tf.round(self.time_features)
+            self.time_features = tf.squeeze(self.time_features, axis=2)
+            self.time_features = self.time_feature_embedding_layer(self.time_features)
+        else:
+            self.time_features = self.time_features_layer(self.time_features)
+        if self.use_marks:
+            rnn_inputs = tf.concat([self.marks_embd, self.gaps, self.time_features], axis=-1)
+        elif time_features is not None:
+            rnn_inputs = tf.concat([self.gaps, self.time_features], axis=-1)
+        else:
+            rnn_inputs = self.gaps
+
+        self.hidden_states, self.final_state \
+                = self.rnn_layer(rnn_inputs,
+                                 initial_state=self.initial_state,
+                                 mask=self.mask)
+
+        # Generate D_next, WT_next, and gaps_pred_next
+        self.D_next = self.D_layer(self.hidden_states)
+
+        if self.use_marks:
+            self.marks_logits_next = self.marks_output_layer(self.hidden_states)
+        else:
+            self.marks_logits_next = None
+        if self.use_intensity:
+            self.WT_next = self.WT_layer(self.hidden_states)
+            self.gaps_pred_next = self.gaps_output_layer((self.D_next, self.WT_next))
+        else:
+            self.gaps_pred_next = tf.nn.softplus(self.D_next)
+            self.WT_next = tf.zeros_like(self.D_next)
+
+        # Apply mask on outputs
+        if self.use_marks:
+            self.marks_logits_next = self.marks_logits_next * self.mask
+        self.gaps_pred_next = self.gaps_pred_next * tf.expand_dims(self.mask, axis=-1)
+        self.D_next = self.D_next * tf.expand_dims(self.mask, axis=-1)
+        if self.use_intensity:
+            self.WT_next = self.WT_next * tf.expand_dims(self.mask, axis=-1)
+
+        self.marks_logits_next, self.gaps_pred_next, self.D_next, self.WT_next \
+                = self.process_output(self.marks_logits_next, self.gaps_pred_next,
+                                      self.D_next, self.WT_next)
+
+        # Generate D_off, WT_off, and gaps_pred_off: outputs after offset
+        if self.offsets is not None:
+            self.offsets_embd = self.offset_embed_layer(self.offsets)
+            hidden_states_concat = tf.concat([self.hidden_states,
+                                              self.offsets_embd,
+                                              self.offset_features],
+                                             axis=-1)
+            self.offset_states = self.offset_layer(hidden_states_concat)
+
+            self.D_off = self.D_layer(self.offset_states)
+
+            if self.use_marks:
+                self.marks_logits_off = self.marks_output_layer(self.offset_states)
+            else:
+                self.marks_logits_off = None
+            if self.use_intensity:
+                self.WT_off = self.WT_layer(self.offset_states)
+                self.gaps_pred_off = self.gaps_output_layer((self.D_off, self.WT_off))
+            else:
+                self.gaps_pred_off = tf.nn.softplus(self.D_off)
+                self.WT_off = tf.zeros_like(self.D_off)
+
+            # Apply mask on outputs
+            if self.use_marks:
+                self.marks_logits_off = self.marks_logits_off * self.mask
+            self.gaps_pred_off = self.gaps_pred_off * tf.expand_dims(self.mask, axis=-1)
+            self.D_off = self.D_off * tf.expand_dims(self.mask, axis=-1)
+            if self.use_intensity:
+                self.WT_off = self.WT_off * tf.expand_dims(self.mask, axis=-1)
+
+            self.marks_logits_off, self.gaps_pred_off, self.D_off, self.WT_off \
+                    = self.process_output(self.marks_logits_off, self.gaps_pred_off,
+                                          self.D_off, self.WT_off)
+        else:
+            self.marks_logits_off = None
+            self.gaps_pred_off = None
+            self.D_off = None
+            self.WT_off = None
+
+        return (self.marks_logits_next, self.gaps_pred_next, self.D_next, self.WT_next,
+                self.marks_logits_off, self.gaps_pred_off, self.D_off, self.WT_off)
+
+
+class SimulateOffsetRNN:
+    def simulate(self, model, times, gaps_in, block_begin_ts, t_b_plus,
+                 decoder_length, normalizers, marks_in=None):
+
+        marks_logits, gaps_pred = list(), list()
+        normalizer_d, normalizer_a = normalizers
+        normalizer_d = tf.squeeze(normalizer_d, axis=1)
+        normalizer_a = tf.squeeze(normalizer_a, axis=1)
+        times_pred = list()
+        last_gaps_pred_unnorm = (gaps_in - normalizer_a) * normalizer_d
+        last_times_pred = times + last_gaps_pred_unnorm
+        gaps_pred.append(last_gaps_pred_unnorm)
+        times_pred.append(last_times_pred)
+        time_features = reader_rmtpp.get_time_features_for_data((last_times_pred))
+        N = len(gaps_in)
+        mask = np.squeeze(np.ones_like(gaps_in), axis=-1)
+        model.rnn_layer.reset_states()
+        state = model.offset_states[:, -1]
+        for i in range(decoder_length-1):
+
+            #print('Step:', i)
+            step_marks_logits, step_gaps_pred, _, _, _, _, _, _ \
+                    = model(gaps_in, tf.constant(mask),
+                            time_features,
+                            marks=marks_in,
+                            initial_state=state)
+
+            if marks_in is not None:
+                step_marks_pred = tf.argmax(step_marks_logits, axis=-1) + 1
+            else:
+                step_marks_pred = None
+
+            marks_in, gaps_in = step_marks_pred, step_gaps_pred
+            marks_logits.append(step_marks_logits)
+            last_gaps_pred_unnorm = (step_gaps_pred - normalizer_a) * normalizer_d
+            last_times_pred = times_pred[-1] + last_gaps_pred_unnorm
+            gaps_pred.append(last_gaps_pred_unnorm)
+            times_pred.append(last_times_pred)
+            time_features = reader_rmtpp.get_time_features_for_data((last_times_pred))
+
+        if marks_in is not None:
+            marks_logits = tf.squeeze(tf.stack(marks_logits, axis=1), axis=2)
+
+        gaps_pred = tf.stack(gaps_pred, axis=1)
+        self.all_gaps_pred = gaps_pred
+
+        last_gaps_pred = gaps_pred[:, -1:]
+
+        times_pred = tf.squeeze(tf.stack(times_pred, axis=1), axis=2)
+        all_times_pred = times_pred
+
+        return marks_logits, gaps_pred, times_pred, last_gaps_pred, all_times_pred

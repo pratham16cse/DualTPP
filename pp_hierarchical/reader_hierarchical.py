@@ -12,7 +12,7 @@ from tensorflow.keras import layers
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 
 import reader_rmtpp
-from reader_rmtpp import get_hour_of_day_ts
+#from reader_rmtpp import get_hour_of_day_ts
 
 def read_data(filename):
     with open(filename, 'r') as f:
@@ -41,7 +41,7 @@ def get_num_events_per_hour(data):
     #for x in times:
     #    print(x, pd.Timestamp(x, unit='s', tz='utc').floor('H'),
     #          datetime.timestamp(pd.Timestamp(x, unit='s', tz='utc').floor('H')),
-    #          get_hour_of_day_ts(x))
+    #          reader_rmtpp.get_hour_of_day_ts(x))
     times_grouped = times.groupby(lambda x: pd.Timestamp(times[x], unit='s', tz='utc').floor('H')).agg('count')
     #plt.bar(times_grouped.index, times_grouped.tolist(), width=0.02)
     plt.bar(range(len(times_grouped.index)), times_grouped.values)
@@ -218,7 +218,7 @@ def create_train_dev_test_split(data, block_size, decoder_length):
             dev_marks.append(marks[dev_start_idx:dev_end_idx])
             dev_times.append(times[dev_start_idx:dev_end_idx])
             dev_l1_idxes.append(l1_idxes[dev_start_idx:dev_end_idx])
-            dev_begin_tss.append(get_hour_of_day_ts(times[dev_start_idx]) * 3600.)
+            dev_begin_tss.append(reader_rmtpp.get_hour_of_day_ts(times[dev_start_idx]) * 3600.)
             dev_b2s_idxes.append(seq_idx)
 
             test_start_idx = block_begin_idxes[idx+(3*block_size-1)]#-decoder_length-1
@@ -226,7 +226,7 @@ def create_train_dev_test_split(data, block_size, decoder_length):
             test_marks.append(marks[test_start_idx:test_end_idx])
             test_times.append(times[test_start_idx:test_end_idx])
             test_l1_idxes.append(l1_idxes[test_start_idx:test_end_idx])
-            test_begin_tss.append(get_hour_of_day_ts(times[test_start_idx]) * 3600.)
+            test_begin_tss.append(reader_rmtpp.get_hour_of_day_ts(times[test_start_idx]) * 3600.)
             test_b2s_idxes.append(seq_idx)
 
     train_marks = train_marks * 5

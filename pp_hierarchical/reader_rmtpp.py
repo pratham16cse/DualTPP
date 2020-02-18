@@ -10,6 +10,8 @@ from tensorflow import keras
 from tensorflow.keras import layers
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 
+import reader_hierarchical
+
 
 def read_multiseq_data(data_path):
     marks_seqs, times_seqs = dict(), dict()
@@ -544,6 +546,11 @@ def get_preprocessed_(data, block_size, decoder_length, normalization):
 
 def get_preprocessed_data(dataset_name, dataset_path, block_size, decoder_length, normalization):
     marks, times = read_data(dataset_name, dataset_path)
+
+    # pre-aggregate K=10 events into single event. The time of aggregated
+    # event is represented by the time of occurrence of the K^{th} event
+    marks, times, _ = reader_hierarchical.get_compound_events((marks, times), K=10)
+
     data = get_preprocessed_((marks, times), block_size, decoder_length,
                              normalization)
     return data

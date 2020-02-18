@@ -11,6 +11,7 @@ from operator import itemgetter
 
 import run_rmtpp
 import run_hierarchical
+import run_offsetrnn
 
 hparams_aliases = json.loads(open('hparams_aliases.json', 'r').read())
 hparams = json.loads(open('hparams.json', 'r').read())
@@ -111,6 +112,8 @@ def run_config(param_vals, training_mode):
         result = run_rmtpp.run(args_config)
     elif args.alg_name in ['hierarchical']:
         result = run_hierarchical.run(args_config)
+    elif args.alg_name in ['offsetrnn']:
+        result = run_offsetrnn.run(args_config)
 
     result['output_dir'] = args_config.output_dir
     for name, val in zip(param_names, param_vals):
