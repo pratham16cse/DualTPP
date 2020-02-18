@@ -358,7 +358,7 @@ class SimulateHierarchicalRNN:
 
     def simulator(self, model_rnn, last_times_in, last_gaps_pred,
                   seq_lens, block_begin_ts, t_b_plus, t_e_plus,
-                  decoder_length, layer,
+                  decoder_length, layer, normalizers,
                   second_last_gaps_pred=None,
                   initial_state=None):
         # ----- Start: Simulation of Layer in RNN ----- #
@@ -369,6 +369,8 @@ class SimulateHierarchicalRNN:
         hidden_states = list()
         gaps_pred = list()
         times_pred = list()
+
+        normalizer_d, normalizer_a = normalizers
 
         N = len(last_gaps_pred)
 
@@ -400,24 +402,26 @@ class SimulateHierarchicalRNN:
             hidden_states.append(initial_state)
 
         if second_last_gaps_pred is not None:
+            second_last_gaps_pred = (second_last_gaps_pred - normalizer_a) * normalizer_d
             gaps_pred.append(second_last_gaps_pred)
         gaps_inputs = last_gaps_pred
 
         simul_step = 1
 
-        # ipdb.set_trace()
         time_features = reader_rmtpp.get_time_features_for_data((times_pred[-1]))
+
         while any(times_pred[-1]<t_b_plus) or any(end_pred_idxes<decoder_length) or any(times_pred[-1]<t_e_plus):
 
             prev_hidden_state = model_rnn.hidden_states[:, -1]
-            print('layer', layer, 'simul_step:', simul_step)
+            # print('layer', layer, 'simul_step:', simul_step)
 
             _, step_gaps_pred, _, _ \
                      = model_rnn(gaps_inputs, tf.constant(mask), time_features)
 
             hidden_states.append(prev_hidden_state)
-            gaps_pred.append(gaps_inputs)
-            last_times_pred = times_pred[-1] + gaps_inputs
+            gaps_inputs_unnorm = (gaps_inputs - normalizer_a) * normalizer_d 
+            gaps_pred.append(gaps_inputs_unnorm)
+            last_times_pred = times_pred[-1] + gaps_inputs_unnorm
             gaps_inputs = step_gaps_pred
             times_pred.append(last_times_pred)
             time_features = reader_rmtpp.get_time_features_for_data((times_pred[-1]))
@@ -466,6 +470,7 @@ class SimulateHierarchicalRNN:
         #times_pred = tf.expand_dims(times_pred, axis=-1)
         self.all_times_pred = all_times_pred
 
+        
         return all_gaps_pred, times_pred, before_tb_gaps_pred, after_tb_gaps_pred_till_decoder_len, \
                after_tb_gaps_pred_till_te, before_tb_hidden_state, end_idxes
 

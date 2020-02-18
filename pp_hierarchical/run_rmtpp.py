@@ -48,9 +48,12 @@ def DTW(time_preds, time_true):
     distance = 0
     for time_preds_, clipped_time_true_ in zip(time_preds, clipped_time_true):
         #TODO This is not right way
+        #Because of this dtw is very high as timestamp is very high
         if np.shape(time_preds_)[0] == 0:
+            continue
             time_preds_ = np.array([0.0]).reshape(-1, 1)
         if np.shape(clipped_time_true_)[0] == 0:
+            continue
             clipped_time_true_ = np.array([0.0]).reshape(-1, 1)
         d, cost_matrix, acc_cost_matrix, path = dtw(time_preds_, clipped_time_true_, dist=euclidean_norm)
         distance += d
@@ -62,6 +65,8 @@ def run(args):
 
     if not args.training_mode:
         args.epochs = 1
+
+    query = args.query
 
     tf.random.set_seed(args.seed)
     dataset_name = args.dataset_name
@@ -136,14 +141,14 @@ def run(args):
     dev_normalizer_d = data['dev_normalizer_d']
     dev_normalizer_a = data['dev_normalizer_a']
     print(dev_offsets, dev_normalizer_d)
-    dev_offsets_sec_norm = dev_offsets/dev_normalizer_d + dev_normalizer_a
+    # dev_offsets_sec_norm = dev_offsets/dev_normalizer_d + dev_normalizer_a
     #dev_t_b_plus = dev_begin_tss + dev_offsets_sec_norm
 
     if args.verbose:
         print('\n dev_begin_tss')
         print(dev_begin_tss)
-        print('\n dev_offsets_sec_norm')
-        print(dev_offsets_sec_norm)
+        # print('\n dev_offsets_sec_norm')
+        # print(dev_offsets_sec_norm)
         print('\n dev_t_b_plus')
         print(dev_t_b_plus)
 
@@ -163,8 +168,8 @@ def run(args):
         test_offsets = tf.zeros_like(test_offsets)
     test_t_b_plus = test_begin_tss + test_offsets
 
-    dev_offsets_sec_norm_t_e = dev_offsets_t_e/dev_normalizer_d + dev_normalizer_a
-    dev_t_e_plus = dev_t_b_plus + dev_offsets_sec_norm_t_e
+    # dev_offsets_sec_norm_t_e = dev_offsets_t_e/dev_normalizer_d + dev_normalizer_a
+    # dev_t_e_plus = dev_t_b_plus + dev_offsets_sec_norm_t_e
 
     if args.verbose:
         print('\n test_begin_tss')
@@ -194,14 +199,14 @@ def run(args):
     test_normalizer_d = data['test_normalizer_d']
     test_normalizer_a = data['test_normalizer_a']
     print(test_offsets, test_normalizer_d)
-    test_offsets_sec_norm = test_offsets/test_normalizer_d + test_normalizer_a
+    # test_offsets_sec_norm = test_offsets/test_normalizer_d + test_normalizer_a
     #test_t_b_plus = test_begin_tss + test_offsets_sec_norm
 
     if args.verbose:
         print('\n test_begin_tss')
         print(test_begin_tss)
-        print('\n test_offsets_sec_norm')
-        print(test_offsets_sec_norm)
+        # print('\n test_offsets_sec_norm')
+        # print(test_offsets_sec_norm)
         print('\n test_t_b_plus')
         print(test_t_b_plus)
 
@@ -355,67 +360,39 @@ def run(args):
                 dev_simulator = models.SimulateRMTPP()
 
 
-                # Query 1
-                dev_marks_logits, dev_gaps_pred, _, _, _, _ \
-                        = dev_simulator.simulate(model,
-                                                last_dev_times_in,
-                                                last_dev_gaps_pred,
-                                                dev_begin_tss,
-                                                dev_t_b_plus,
-                                                decoder_length,
-                                                normalizers=(dev_normalizer_d, dev_normalizer_a),
-                                                marks_in=dev_marks_pred_last)
+                if query == 1:
+                    dev_marks_logits, dev_gaps_pred, _, _, _, _ \
+                            = dev_simulator.simulate(model,
+                                                    last_dev_times_in,
+                                                    last_dev_gaps_pred,
+                                                    dev_begin_tss,
+                                                    dev_t_b_plus,
+                                                    decoder_length,
+                                                    normalizers=(dev_normalizer_d, dev_normalizer_a),
+                                                    marks_in=dev_marks_pred_last)
+                elif query == 2:
+                    _, _, last_dev_time_pred, last_dev_gaps_pred, _, _ \
+                            = dev_simulator.simulate(model,
+                                                    last_dev_times_in,
+                                                    last_dev_gaps_pred,
+                                                    dev_begin_tss,
+                                                    dev_t_b_plus,
+                                                    0,
+                                                    normalizers=(dev_normalizer_d, dev_normalizer_a),
+                                                    marks_in=dev_marks_pred_last)
 
-                # #Query 2 and 3
-                # _, _, last_dev_time_pred, last_dev_gaps_pred, _, _ \
-                #         = dev_simulator.simulate(model,
-                #                                 last_dev_times_in,
-                #                                 last_dev_gaps_pred,
-                #                                 dev_begin_tss,
-                #                                 dev_t_b_plus,
-                #                                 0,
-                #                                 normalizers=(dev_normalizer_d, dev_normalizer_a),
-                #                                 initial_timestamp=initial_timestamp,
-                #                                 marks_in=dev_marks_pred_last)
+                    #TODO Next time when model is passed it should be updated
 
-                # _, _, _, _, all_times_pred, simul_count \
-                #         = dev_simulator.simulate(model,
-                #                                 last_dev_time_pred,
-                #                                 last_dev_gaps_pred,
-                #                                 dev_begin_tss,
-                #                                 dev_t_e_plus,
-                #                                 0,
-                #                                 normalizers=(dev_normalizer_d, dev_normalizer_a),
-                #                                 initial_timestamp=initial_timestamp,
-                #                                 marks_in=None)
-
-                # # print('Events between t_b_plus and t_e_plus are at:', all_times_pred.numpy().tolist())
-                # # print('Number of events between t_b_plus and t_e_plus are:', simul_count)
-
-                # total_number_of_events_in_range = np.array(simul_count)
-                # actual_event_count = np.array(event_bw_range_tb_te[0])
-                # error_in_event_count = np.mean((total_number_of_events_in_range-actual_event_count)**2)
-
-                # print('total_number_of_events_in_range', total_number_of_events_in_range)
-                # print('Actual count of events:', actual_event_count)
-                # # print('dev_t_b_plus', dev_t_b_plus)
-                # # print('dev_t_e_plus', dev_t_e_plus)
-
-                # actual_dev_event_in_range = event_bw_range_tb_te[1]
-                # actual_dev_gaps_in_range = event_bw_range_tb_te[2]
-                # dev_gaps_pred = dev_simulator.all_gaps_pred
-
-                # dev_gaps_pred_in_range = (dev_gaps_pred[:, 1:] - dev_normalizer_a) * dev_normalizer_d
-                # dev_gaps_pred_in_range = dev_gaps_pred_in_range.numpy()
-
-                # dev_gaps_pred_in_range = [np.trim_zeros(dev_gaps_pred_in_range[idx], 'b') for idx in range(len(dev_t_b_plus))]
-                # dtw_cost_in_range = DTW(dev_gaps_pred_in_range, actual_dev_gaps_in_range)
-
-                # # print('actual_dev_event_in_range', actual_dev_event_in_range)
-                # # print('dev_gaps_pred_in_range', dev_gaps_pred_in_range)
-                # # print('actual_dev_gaps_in_range', actual_dev_gaps_in_range)
-                # print('dtw_cost_in_range', dtw_cost_in_range)
-                # print('error_in_event_count', error_in_event_count)
+                    last_dev_gaps_pred = (last_dev_gaps_pred / dev_normalizer_d) + dev_normalizer_a
+                    _, _, _, _, all_dev_times_pred, total_number_of_events_in_range \
+                            = dev_simulator.simulate(model,
+                                                    last_dev_time_pred,
+                                                    last_dev_gaps_pred,
+                                                    dev_begin_tss,
+                                                    dev_t_e_plus,
+                                                    0,
+                                                    normalizers=(dev_normalizer_d, dev_normalizer_a),
+                                                    marks_in=None)
 
                 #Query 4
                 # dev_marks_logits, dev_gaps_pred, _, _ = model(dev_gaps_in,
@@ -509,19 +486,51 @@ def run(args):
             #dev_gaps_pred = (dev_gaps_pred - dev_normalizer_a) * dev_normalizer_d
             #test_gaps_pred = (test_gaps_pred - test_normalizer_a) * test_normalizer_d
 
-            dev_gap_metric(dev_gaps_out[:, 1:], dev_gaps_pred[:, 1:])
-            test_gap_metric(test_gaps_out[:, 1:], test_gaps_pred[:, 1:])
+            if query == 1:
+                dev_gap_metric(dev_gaps_out[:, 1:], dev_gaps_pred[:, 1:])
+                test_gap_metric(test_gaps_out[:, 1:], test_gaps_pred[:, 1:])
+                dev_gap_err = dev_gap_metric.result()
+                test_gap_err = test_gap_metric.result()
+                dev_gap_err = dev_gap_err.numpy()
+                test_gap_err = test_gap_err.numpy()
+                dev_gap_metric.reset_states()
+                test_gap_metric.reset_states()
 
-            dev_gap_err = dev_gap_metric.result()
-            test_gap_err = test_gap_metric.result()
+            elif query == 2:
+                total_number_of_events_in_range = np.array(total_number_of_events_in_range)
+                actual_event_count = np.array(event_bw_range_tb_te[0])
+                error_in_event_count = np.mean((total_number_of_events_in_range-actual_event_count)**2)
+
+                # import ipdb
+                # ipdb.set_trace()
+
+                #TODO: Why total count can not be zero
+                print('total_number_of_events_in_range\n', total_number_of_events_in_range)
+                print('Actual count of events:\n', actual_event_count)
+
+                actual_dev_event_in_range = event_bw_range_tb_te[1]
+                actual_dev_gaps_in_range = event_bw_range_tb_te[2]
+
+                dev_time_pred_in_range = all_dev_times_pred
+                dev_time_pred_in_range = dev_time_pred_in_range.numpy()
+
+                dev_time_pred_in_range = [dev_time_pred_in_range[idx][:total_number_of_events_in_range[idx]+1] for idx in range(len(dev_t_b_plus))]
+                dtw_cost_in_range_for_time = DTW(dev_time_pred_in_range, actual_dev_event_in_range)
+
+                # print('dev_gaps_pred_in_range', dev_gaps_pred_in_range)
+                # print('actual_dev_event_in_range', actual_dev_event_in_range)
+                # print('actual_dev_gaps_in_range', actual_dev_gaps_in_range)
+                print('dtw_cost_in_range_for_time', dtw_cost_in_range_for_time)
+                print('error_in_event_count', error_in_event_count)
+
+                dev_gap_err = dtw_cost_in_range_for_time
+                test_gap_err = error_in_event_count
+
             with dev_summary_writer.as_default():
                 tf.summary.scalar('dev_gap_err', dev_gap_err, step=epoch)
             with test_summary_writer.as_default():
                 tf.summary.scalar('test_gap_err', test_gap_err, step=epoch)
                 #TODO Add marks summary later
-
-            dev_gap_metric.reset_states()
-            test_gap_metric.reset_states()
 
             if args.verbose:
                 print('\ndev_gaps_pred')
@@ -625,8 +634,8 @@ def run(args):
 
 
     return {
-            'best_dev_gap_error': float(best_dev_gap_error.numpy()),
-            'best_test_gap_error': float(best_test_gap_error.numpy()),
+            'best_dev_gap_error': float(best_dev_gap_error),
+            'best_test_gap_error': float(best_test_gap_error),
             'best_epoch': best_epoch,
             'average_inference_time': np.mean(inference_times),
            }

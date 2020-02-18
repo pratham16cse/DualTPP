@@ -48,6 +48,8 @@ parser.add_argument('--epochs', type=int, default=50,
 parser.add_argument('--patience', type=int, default=10,
                     help='Number of epochs to wait for \
                           before beginning cross-validation')
+parser.add_argument('--query', type=int, default=1,
+                    help='Query number')
 parser.add_argument('--bptt', type=int, default=20,
                     help='Truncation length for truncated bptt of rnn')
 parser.add_argument('--block_size', type=int, default=1,
