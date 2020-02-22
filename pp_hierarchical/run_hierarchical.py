@@ -270,8 +270,9 @@ def run(args):
     dev_times_out = data['dev_times_out']
     dev_begin_tss = data['dev_begin_tss']
     dev_offsets = tf.random.uniform(shape=(num_sequences, 1)) * 3600. * block_size # Sampling offsets
-    if args.training_mode:
-        dev_offsets = tf.zeros_like(dev_offsets)
+    #TODO Can not do this with simulator because of events prediction bw block_ts and t_b_plud
+    # if args.training_mode:
+    #     dev_offsets = tf.zeros_like(dev_offsets)
     dev_t_b_plus = dev_begin_tss + dev_offsets
     sample_hours = 5.
     dev_offsets_t_e = tf.random.uniform(shape=(num_sequences, 1)) * 60. * sample_hours # Sampling offsets for t_e_+
@@ -629,24 +630,24 @@ def run(args):
                 # print('dev_t_e_plus', dev_t_e_plus)
 
                 actual_dev_event_in_range = event_bw_range_tb_te[1]
-                actual_dev_gaps_in_range = event_bw_range_tb_te[2]
+                # actual_dev_gaps_in_range = event_bw_range_tb_te[2]
 
-                dev_gaps_pred_in_range = dev_gaps_pred[:, 1:]
-                dev_gaps_pred_in_range = dev_gaps_pred_in_range.numpy()
+                # dev_gaps_pred_in_range = dev_gaps_pred[:, 1:]
+                # dev_gaps_pred_in_range = dev_gaps_pred_in_range.numpy()
 
-                dev_gaps_pred_in_range = [np.trim_zeros(dev_gaps_pred_in_range[idx], 'b') for idx in range(len(dev_t_b_plus))]
-                dtw_cost_in_range = DTW(dev_gaps_pred_in_range, actual_dev_gaps_in_range)
+                # dev_gaps_pred_in_range = [np.trim_zeros(dev_gaps_pred_in_range[idx], 'b') for idx in range(len(dev_t_b_plus))]
+                # dtw_cost_in_range = DTW(dev_gaps_pred_in_range, actual_dev_gaps_in_range)
 
                 dev_time_pred_in_range = all_times_pred_in_range[:, 1:]
                 dev_time_pred_in_range = dev_time_pred_in_range.numpy()
 
-                dev_time_pred_in_range = [dev_time_pred_in_range[idx][:total_number_of_events_in_range[idx]-1] for idx in range(len(dev_t_b_plus))]
+                dev_time_pred_in_range = [dev_time_pred_in_range[idx][:total_number_of_events_in_range[idx]] for idx in range(len(dev_t_b_plus))]
                 dtw_cost_in_range_for_time = DTW(dev_time_pred_in_range, actual_dev_event_in_range)
 
                 # print('dev_gaps_pred_in_range', dev_gaps_pred_in_range)
                 # print('actual_dev_event_in_range', actual_dev_event_in_range)
                 # print('actual_dev_gaps_in_range', actual_dev_gaps_in_range)
-                print('dtw_cost_in_range', dtw_cost_in_range)
+                # print('dtw_cost_in_range', dtw_cost_in_range)
                 print('dtw_cost_in_range_for_time', dtw_cost_in_range_for_time)
                 print('error_in_event_count', error_in_event_count)
 

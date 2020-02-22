@@ -351,7 +351,7 @@ class SimulateRMTPP:
         #TODO Check this
         times_pred = tf.expand_dims(times_pred, axis=-1)
 
-        return marks_logits, gaps_pred, times_pred, last_gaps_pred, all_times_pred, begin_idxes
+        return marks_logits, gaps_pred, times_pred, last_gaps_pred, all_times_pred, begin_idxes+1
 
 
 class SimulateHierarchicalRNN:
@@ -472,7 +472,7 @@ class SimulateHierarchicalRNN:
 
         
         return all_gaps_pred, times_pred, before_tb_gaps_pred, after_tb_gaps_pred_till_decoder_len, \
-               after_tb_gaps_pred_till_te, before_tb_hidden_state, end_idxes
+               after_tb_gaps_pred_till_te, before_tb_hidden_state, end_idxes-1
 
 
     def simulate(self, model, c_times_in, c_gaps_pred, c_seq_lens,

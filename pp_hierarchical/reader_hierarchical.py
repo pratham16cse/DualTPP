@@ -584,7 +584,7 @@ def get_preprocessed_data(dataset_name, dataset_path, block_size, decoder_length
 
     # pre-aggregate K=10 events into single event. The time of aggregated
     # event is represented by the time of occurrence of the K^{th} event
-    marks, times, _ = get_compound_events((marks, times), K=10)
+    # marks, times, _ = get_compound_events((marks, times), K=10)
 
     c_marks, c_times, level_1_idxes \
             = get_compound_events((marks, times), K=compound_event_size)

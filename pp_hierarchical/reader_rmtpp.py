@@ -549,7 +549,7 @@ def get_preprocessed_data(dataset_name, dataset_path, block_size, decoder_length
 
     # pre-aggregate K=10 events into single event. The time of aggregated
     # event is represented by the time of occurrence of the K^{th} event
-    marks, times, _ = reader_hierarchical.get_compound_events((marks, times), K=10)
+    # marks, times, _ = reader_hierarchical.get_compound_events((marks, times), K=10)
 
     data = get_preprocessed_((marks, times), block_size, decoder_length,
                              normalization)
