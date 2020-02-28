@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from bisect import bisect_right
 import os, sys
-# import ipdb
+import ipdb
 import time
 import datetime
 
@@ -219,6 +219,101 @@ def DTW(time_preds, time_true):
     distance = distance / len(clipped_time_true)
 
     return distance
+
+
+def plot_create_l2(data, args, gaps_out, gaps_pred, epoch, step):
+    # gaps_in_norm = data['train_gaps_in_norm']
+    # ipdb.set_trace()
+    c_train_normalizer_d = data['c_train_normalizer_d'][step,:]
+    gaps_out *= c_train_normalizer_d
+    gaps_pred *= c_train_normalizer_d
+    # gaps_in_unnorm = (gaps_in_norm * c_train_normalizer_d).numpy()
+    # seq_lens = data['c_train_seq_lens']
+    # end_of_input_seq = seq_lens - 20
+    # gaps_in_unnorm_lst = list()
+    # for x in range(len(gaps_in_unnorm)):
+    #     gaps_in_unnorm_lst.append(gaps_in_unnorm[x, end_of_input_seq[x][0]:seq_lens[x][0]])
+    # gaps_in_unnorm = np.array(gaps_in_unnorm_lst)
+
+
+    plot_dir = os.path.join(args.output_dir, 'plots', 'train_plots_l2')
+    os.makedirs(plot_dir, exist_ok=True)
+    idx = 1
+    true_gaps_plot = gaps_out.numpy()[idx]
+    pred_gaps_plot = gaps_pred.numpy()[idx]
+
+    # import ipdb
+    # ipdb.set_trace()
+    # inp_tru_gaps = gaps_in_unnorm[idx]
+
+    # true_gaps_plot = list(inp_tru_gaps) + list(true_gaps_plot)
+    # pred_gaps_plot = list(inp_tru_gaps) + list(pred_gaps_plot)
+
+    name_plot = os.path.join(plot_dir, 'epoch_' + str(epoch) + '_step_' + str(step))
+
+    assert len(true_gaps_plot) == len(pred_gaps_plot)
+
+    fig_pred_gaps = plt.figure()
+    ax1 = fig_pred_gaps.add_subplot(111)
+    ax1.plot(list(range(1, len(pred_gaps_plot)+1)), pred_gaps_plot, 'r*-', label='Pred gaps')
+    ax1.plot(list(range(1, len(true_gaps_plot)+1)), true_gaps_plot, 'bo-', label='True gaps')
+    ax1.plot([20-0.5, 20-0.5],
+             [0, max([max(true_gaps_plot), max(pred_gaps_plot)])],
+             'g-')
+    ax1.set_xlabel('Index')
+    ax1.set_ylabel('Gaps')
+    plt.grid()
+
+    plt.savefig(name_plot+'.png')
+    plt.close()
+
+def plot_create(data, args, gaps_out, gaps_pred, epoch, step):
+    # gaps_in_norm = data['train_gaps_in_norm']
+    # ipdb.set_trace()
+    train_normalizer_d = data['train_normalizer_d'][step,:]
+    gaps_out *= train_normalizer_d
+    gaps_pred *= train_normalizer_d
+    # gaps_in_unnorm = (gaps_in_norm * train_normalizer_d).numpy()
+    # seq_lens = data['c_train_seq_lens']
+    # end_of_input_seq = seq_lens - 20
+    # gaps_in_unnorm_lst = list()
+    # for x in range(len(gaps_in_unnorm)):
+    #     gaps_in_unnorm_lst.append(gaps_in_unnorm[x, end_of_input_seq[x][0]:seq_lens[x][0]])
+    # gaps_in_unnorm = np.array(gaps_in_unnorm_lst)
+
+
+    plot_dir = os.path.join(args.output_dir, 'plots', 'train_plots')
+    os.makedirs(plot_dir, exist_ok=True)
+    idx = 1
+    gaps_out = gaps_out[:,0,:,:]
+    gaps_pred = gaps_pred[:,0,:,:]
+    true_gaps_plot = gaps_out.numpy()[idx]
+    pred_gaps_plot = gaps_pred.numpy()[idx]
+
+    # import ipdb
+    # ipdb.set_trace()
+    # inp_tru_gaps = gaps_in_unnorm[idx]
+
+    # true_gaps_plot = list(inp_tru_gaps) + list(true_gaps_plot)
+    # pred_gaps_plot = list(inp_tru_gaps) + list(pred_gaps_plot)
+
+    name_plot = os.path.join(plot_dir, 'epoch_' + str(epoch) + '_step_' + str(step))
+
+    assert len(true_gaps_plot) == len(pred_gaps_plot)
+
+    fig_pred_gaps = plt.figure()
+    ax1 = fig_pred_gaps.add_subplot(111)
+    ax1.plot(list(range(1, len(pred_gaps_plot)+1)), pred_gaps_plot, 'r*-', label='Pred gaps')
+    ax1.plot(list(range(1, len(true_gaps_plot)+1)), true_gaps_plot, 'bo-', label='True gaps')
+    ax1.plot([20-0.5, 20-0.5],
+             [0, max([max(true_gaps_plot), max(pred_gaps_plot)])],
+             'g-')
+    ax1.set_xlabel('Index')
+    ax1.set_ylabel('Gaps')
+    plt.grid()
+
+    plt.savefig(name_plot+'.png')
+    plt.close()
 
 def run(args):
 
@@ -465,6 +560,8 @@ def run(args):
                 # TODO Make sure that padding is considered during evaluation
                 if use_marks:
                     train_mark_metric(marks_batch_out, marks_logits)
+                plot_create(data, args, gaps_batch_out, l1_gaps_pred, epoch, step)
+                plot_create_l2(data, args, c_gaps_batch_out, l2_gaps_pred, epoch, step)
                 train_gap_metric(gaps_batch_out, l1_gaps_pred)
 
                 print('Training loss (for one batch) at step %s: %s %s %s %s' \

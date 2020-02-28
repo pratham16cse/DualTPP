@@ -402,13 +402,15 @@ def get_preprocessed_(data, block_size, decoder_length, normalization):
                         train_marks_out, train_gaps_out, train_times_out, train_seqmask_out,
                         train_time_feature)
 
+    # import ipdb
+    # ipdb.set_trace()
     (train_gaps_in_norm, train_gaps_out_norm,
      train_normalizer_d, train_normalizer_a) \
             = get_normalized_dataset((train_gaps_in, train_gaps_out),
                                      normalization=normalization)
 
-    print('train_time_feature', train_time_feature)
-    print('train_times_in', train_times_in)
+    # print('train_time_feature', train_time_feature)
+    # print('train_times_in', train_times_in)
     train_dataset = tf.data.Dataset.from_tensor_slices((train_marks_in,
                                                         train_gaps_in_norm,
                                                         train_times_in,
