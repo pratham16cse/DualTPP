@@ -41,7 +41,7 @@ def process_query_1(model, arguments, params, extra_args, all_normalizers):
     c_dev_normalizers = (c_dev_normalizer_d, c_dev_normalizer_a)
     dev_normalizers = (dev_normalizer_d, dev_normalizer_a)
 
-    (dev_l2_marks_logits, dev_l2_gaps_pred, _, _,_, _, _, _) \
+    (dev_l2_marks_logits, dev_l2_gaps_pred, _, _,_, _, _, _, _) \
             = model(c_dev_gaps_in, c_dev_seqmask_in, c_dev_time_feature)
 
     if use_marks:
@@ -111,7 +111,7 @@ def process_query_2(model, arguments, params, extra_args, all_normalizers):
     c_dev_normalizers = (c_dev_normalizer_d, c_dev_normalizer_a)
     dev_normalizers = (dev_normalizer_d, dev_normalizer_a)
 
-    (dev_l2_marks_logits, dev_l2_gaps_pred, _, _,_, _, _, _) \
+    (dev_l2_marks_logits, dev_l2_gaps_pred, _, _,_, _, _, _, _) \
             = model(c_dev_gaps_in, c_dev_seqmask_in, c_dev_time_feature)
 
     if use_marks:
@@ -285,8 +285,8 @@ def plot_create(data, args, gaps_out, gaps_pred, epoch, step):
     plot_dir = os.path.join(args.output_dir, 'plots', 'train_plots')
     os.makedirs(plot_dir, exist_ok=True)
     idx = 1
-    gaps_out = gaps_out[:,0,:,:]
-    gaps_pred = gaps_pred[:,0,:,:]
+    gaps_out = gaps_out[:,1,:,:]
+    gaps_pred = gaps_pred[:,1,:,:]
     true_gaps_plot = gaps_out.numpy()[idx]
     pred_gaps_plot = gaps_pred.numpy()[idx]
 
@@ -524,9 +524,10 @@ def run(args):
                 with tf.GradientTape() as tape:
 
                     (l2_marks_logits, l2_gaps_pred, l2_D, l2_WT,
-                     l1_marks_logits, l1_gaps_pred, l1_D, l1_WT) \
+                     l1_marks_logits, l1_gaps_pred, l1_D, l1_WT,
+                     all_state_transform_cost) \
                             = model(c_gaps_batch_in, c_seqmask_batch_in, c_batch_time_feature,
-                                    gaps_batch_in, seqmask_batch_in, batch_time_feature)
+                                    gaps_batch_in, seqmask_batch_in, batch_time_feature, compound_event_size)
 
                     # Apply mask on l1_gaps_pred
                     l1_gaps_pred = l1_gaps_pred * tf.expand_dims(tf.expand_dims(c_seqmask_batch_in, axis=-1), axis=-1)
@@ -542,7 +543,11 @@ def run(args):
                         gap_loss_fn = models.NegativeLogLikelihood(l1_D, l1_WT)
                     c_gap_loss = c_gap_loss_fn(c_gaps_batch_out, l2_gaps_pred)
                     gap_loss = gap_loss_fn(gaps_batch_out, l1_gaps_pred)
-                    loss = mark_loss + c_gap_loss + gap_loss
+                    state_transform_cost = tf.reduce_mean(all_state_transform_cost)
+                    state_transform_cost *= 0.0
+                    print('all_state_transform_cost', all_state_transform_cost)
+                    print('state_transform_cost', state_transform_cost)
+                    loss = mark_loss + c_gap_loss + gap_loss + state_transform_cost
                     train_losses.append(gap_loss.numpy())
                     train_c_losses.append(c_gap_loss.numpy())
                     with train_summary_writer.as_default():
@@ -564,8 +569,8 @@ def run(args):
                 plot_create_l2(data, args, c_gaps_batch_out, l2_gaps_pred, epoch, step)
                 train_gap_metric(gaps_batch_out, l1_gaps_pred)
 
-                print('Training loss (for one batch) at step %s: %s %s %s %s' \
-                        % (step, float(loss), float(mark_loss), float(c_gap_loss), float(gap_loss)))
+                print('Training loss (for one batch) at step %s: %s %s %s %s %s' \
+                        % (step, float(loss), float(mark_loss), float(c_gap_loss), float(gap_loss), float(state_transform_cost)))
 
                 # ----- Training nowcasting plots for layer 2 and layer 1 ----- #
                 # For testdata:
@@ -662,7 +667,7 @@ def run(args):
                     in enumerate(c_test_dataset):
 
                 (test_l2_marks_logits, test_l2_gaps_pred, _, _,
-                 _, _, _, _) \
+                 _, _, _, _, _) \
                         = model(c_test_gaps_in, c_test_seqmask_in, c_test_time_feature)
 
                 if use_marks:
@@ -761,7 +766,7 @@ def run(args):
                 print('\ndev_gaps_pred')
                 print(dev_gaps_pred[:, 1:])
                 print('\ndev_gaps_out')
-                print(dev_gaps_out[:, 1:])
+                print(dev_gaps_out[:, 1:, 0])
 
             if args.generate_plots:
                 # ----- Dev nowcasting plots for layer 2 ----- #

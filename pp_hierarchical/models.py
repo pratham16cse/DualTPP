@@ -21,9 +21,9 @@ class InverseTransformSampling(layers.Layer):
 
   def call(self, inputs):
     D, WT = inputs
-    u = tf.ones_like(D) * tf.range(0.0, 1.0, 1/500)
+    u = tf.ones_like(D) * tf.range(0.0, 1.0, 1.0/500.0)
     c = -tf.exp(D)
-    val = one_by(WT) * tf.math.log(WT * one_by(c) * tf.math.log(1.0 - u) + 1)
+    val = one_by(WT) * tf.math.log(WT * one_by(c) * tf.math.log(1.0 - u) + 1.0)
     val = tf.reduce_mean(val, axis=-1, keepdims=True)
     return val
 
@@ -211,10 +211,12 @@ class HierarchicalRNN(tf.keras.Model):
                             use_intensity=use_intensity,
                             use_time_embed=use_time_embed)
         self.ff = FeedForward(hidden_layer_size)
+        self.cosinloss = tf.keras.losses.CosineSimilarity(axis=1)
+        self.MAE = tf.keras.metrics.MeanAbsoluteError()
 
     def call(self, l2_gaps, l2_mask, l2_time_features,
              l1_gaps=None, l1_mask=None, l1_time_features=None,
-             l2_marks=None, l1_marks=None, debug=False):
+             compound_event_size=10, l2_marks=None, l1_marks=None, debug=False):
 
         # Gather input for the rnn
         if self.use_marks:
@@ -229,21 +231,36 @@ class HierarchicalRNN(tf.keras.Model):
         self.l2_marks_logits, self.l2_gaps_pred, self.l2_D, self.l2_WT \
                  = self.l2_rnn(l2_gaps, l2_mask, l2_time_features, marks=l2_marks)
 
+
         # Transform compound-hidden-states using FF
         self.state_transformed = self.ff(self.l2_rnn.hidden_states)
 
+
         # For each transformed compound-hidden-state,
         # predict next decoder_length simple events.
+        self.state_transformed_cost = list()
         if l1_gaps is not None:
             self.l1_D, self.l1_WT = list(), list()
             self.l1_marks_logits, self.l1_gaps_pred = list(), list()
             l1_mask = tf.tile(tf.expand_dims(l1_mask, axis=-1), [1, 1, l1_gaps.shape[2]])
+            comp_hidden_state_l1_layer = None
             for idx in range(self.state_transformed.shape[1]):
+
+                if idx > 0:
+                    comp_hidden_state_l2_layer = self.state_transformed[:,idx]
+                    self.state_transformed_cost.append(tf.reduce_mean(
+                         1.0 - tf.reduce_mean(comp_hidden_state_l1_layer * comp_hidden_state_l2_layer, axis=1)))
+                    # self.state_transformed_cost.append(self.MAE(comp_hidden_state_l1_layer, comp_hidden_state_l2_layer))
+
                 l1_m_logits, l1_g_pred, l1_D, l1_WT \
                         = self.l1_rnn(l1_gaps[:, idx],
                                       l1_mask[:, idx],
                                       l1_time_features[:, idx],
-                                      initial_state=self.state_transformed[:, idx])
+                                      initial_state=comp_hidden_state_l1_layer)
+                                      # initial_state=self.state_transformed[:, idx])
+
+                comp_hidden_state_l1_layer = self.l1_rnn.hidden_states[:,compound_event_size-1,:]
+
                 self.l1_D.append(l1_D)
                 self.l1_WT.append(l1_WT)
                 self.l1_marks_logits.append(l1_m_logits)
@@ -252,6 +269,7 @@ class HierarchicalRNN(tf.keras.Model):
 
             self.l1_D = tf.stack(self.l1_D, axis=1)
             self.l1_WT = tf.stack(self.l1_WT, axis=1)
+            self.state_transformed_cost = tf.stack(self.state_transformed_cost, axis=0)
             self.l1_gaps_pred = tf.stack(self.l1_gaps_pred, axis=1)
             if self.use_marks:
                 self.l1_marks_logits = tf.stack(self.l1_marks_logits, axis=1)
@@ -263,7 +281,8 @@ class HierarchicalRNN(tf.keras.Model):
             self.l1_D, self.l1_WT = None, None
 
         return (self.l2_marks_logits, self.l2_gaps_pred, self.l2_D, self.l2_WT,
-                self.l1_marks_logits, self.l1_gaps_pred, self.l1_D, self.l1_WT)
+                self.l1_marks_logits, self.l1_gaps_pred, self.l1_D, self.l1_WT,
+                self.state_transformed_cost)
 
     def reset_states(self):
         self.l1_rnn.reset_states()

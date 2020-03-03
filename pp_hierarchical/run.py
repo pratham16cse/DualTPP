@@ -12,6 +12,8 @@ from operator import itemgetter
 import run_rmtpp
 import run_hierarchical
 import run_offsetrnn
+import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 hparams_aliases = json.loads(open('hparams_aliases.json', 'r').read())
 hparams = json.loads(open('hparams.json', 'r').read())
