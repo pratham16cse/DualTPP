@@ -220,6 +220,52 @@ def DTW(time_preds, time_true):
 
     return distance
 
+def plot_create_l1_parts(data, args, gaps_out, gaps_pred, epoch, step, sm_step):
+    # gaps_in_norm = data['train_gaps_in_norm']
+    # ipdb.set_trace()
+    train_normalizer_d = data['train_normalizer_d'][step,:]
+    gaps_out *= train_normalizer_d
+    gaps_pred *= train_normalizer_d
+    # gaps_in_unnorm = (gaps_in_norm * train_normalizer_d).numpy()
+    # seq_lens = data['c_train_seq_lens']
+    # end_of_input_seq = seq_lens - 20
+    # gaps_in_unnorm_lst = list()
+    # for x in range(len(gaps_in_unnorm)):
+    #     gaps_in_unnorm_lst.append(gaps_in_unnorm[x, end_of_input_seq[x][0]:seq_lens[x][0]])
+    # gaps_in_unnorm = np.array(gaps_in_unnorm_lst)
+
+
+    plot_dir = os.path.join(args.output_dir, 'plots', 'train_plots')
+    os.makedirs(plot_dir, exist_ok=True)
+    idx = 1
+    true_gaps_plot = gaps_out.numpy()[idx]
+    pred_gaps_plot = gaps_pred.numpy()[idx]
+
+    # import ipdb
+    # ipdb.set_trace()
+    # inp_tru_gaps = gaps_in_unnorm[idx]
+
+    # true_gaps_plot = list(inp_tru_gaps) + list(true_gaps_plot)
+    # pred_gaps_plot = list(inp_tru_gaps) + list(pred_gaps_plot)
+
+    name_plot = os.path.join(plot_dir, 'epoch_' + str(epoch) + '_step_' + str(step) + '_sm_step_' + str(sm_step))
+
+    assert len(true_gaps_plot) == len(pred_gaps_plot)
+
+    fig_pred_gaps = plt.figure()
+    ax1 = fig_pred_gaps.add_subplot(111)
+    ax1.plot(list(range(1, len(pred_gaps_plot)+1)), pred_gaps_plot, 'r*-', label='Pred gaps')
+    ax1.plot(list(range(1, len(true_gaps_plot)+1)), true_gaps_plot, 'bo-', label='True gaps')
+    ax1.plot([20-0.5, 20-0.5],
+             [0, max([max(true_gaps_plot), max(pred_gaps_plot)])],
+             'g-')
+    ax1.set_xlabel('Index')
+    ax1.set_ylabel('Gaps')
+    plt.grid()
+
+    plt.savefig(name_plot+'.png')
+    plt.close()
+
 
 def plot_create_l2(data, args, gaps_out, gaps_pred, epoch, step):
     # gaps_in_norm = data['train_gaps_in_norm']
@@ -542,9 +588,22 @@ def run(args):
                         c_gap_loss_fn = models.NegativeLogLikelihood(l2_D, l2_WT)
                         gap_loss_fn = models.NegativeLogLikelihood(l1_D, l1_WT)
                     c_gap_loss = c_gap_loss_fn(c_gaps_batch_out, l2_gaps_pred)
-                    gap_loss = gap_loss_fn(gaps_batch_out, l1_gaps_pred)
+
+                    small_step = tf.shape(gaps_batch_out)[1].numpy().tolist()
+                    gap_loss = 0.0
+
+                    for sm_step in range(small_step):
+                        gap_loss_sm = gap_loss_fn(gaps_batch_out[:,sm_step], l1_gaps_pred[:,sm_step])
+                        plot_create_l1_parts(data, args, gaps_batch_out[:,sm_step], l1_gaps_pred[:,sm_step], epoch, step, sm_step)
+                        gap_loss += gap_loss_sm
+
+                    gap_loss /= small_step
+                    gap_loss_tmp = gap_loss_fn(gaps_batch_out, l1_gaps_pred)
+
+                    print("Gap loss full vs parts", gap_loss_tmp, gap_loss)
+
+
                     state_transform_cost = tf.reduce_mean(all_state_transform_cost)
-                    state_transform_cost *= 0.0
                     print('all_state_transform_cost', all_state_transform_cost)
                     print('state_transform_cost', state_transform_cost)
                     loss = mark_loss + c_gap_loss + gap_loss + state_transform_cost
@@ -565,7 +624,7 @@ def run(args):
                 # TODO Make sure that padding is considered during evaluation
                 if use_marks:
                     train_mark_metric(marks_batch_out, marks_logits)
-                plot_create(data, args, gaps_batch_out, l1_gaps_pred, epoch, step)
+                # plot_create(data, args, gaps_batch_out, l1_gaps_pred, epoch, step)
                 plot_create_l2(data, args, c_gaps_batch_out, l2_gaps_pred, epoch, step)
                 train_gap_metric(gaps_batch_out, l1_gaps_pred)
 
