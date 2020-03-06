@@ -41,7 +41,7 @@ def process_query_1(model, arguments, params, extra_args, all_normalizers):
     c_dev_normalizers = (c_dev_normalizer_d, c_dev_normalizer_a)
     dev_normalizers = (dev_normalizer_d, dev_normalizer_a)
 
-    (dev_l2_marks_logits, dev_l2_gaps_pred, _, _,_, _, _, _, _) \
+    (dev_l2_marks_logits, dev_l2_gaps_pred, _, _,_, _, _, _, _, _) \
             = model(c_dev_gaps_in, c_dev_seqmask_in, c_dev_time_feature)
 
     if use_marks:
@@ -111,7 +111,7 @@ def process_query_2(model, arguments, params, extra_args, all_normalizers):
     c_dev_normalizers = (c_dev_normalizer_d, c_dev_normalizer_a)
     dev_normalizers = (dev_normalizer_d, dev_normalizer_a)
 
-    (dev_l2_marks_logits, dev_l2_gaps_pred, _, _,_, _, _, _, _) \
+    (dev_l2_marks_logits, dev_l2_gaps_pred, _, _,_, _, _, _, _, _) \
             = model(c_dev_gaps_in, c_dev_seqmask_in, c_dev_time_feature)
 
     if use_marks:
@@ -558,6 +558,7 @@ def run(args):
         print('Start of epoch %d' % (epoch,))
 
         # Iterate over the batches of the dataset.
+        l2_rnn_final_state = None
         if args.training_mode:
             for step, (c_marks_batch_in, c_gaps_batch_in, c_times_batch_in, c_seqmask_batch_in,
                        c_marks_batch_out, c_gaps_batch_out, c_times_batch_out, c_seqmask_batch_out,
@@ -567,66 +568,80 @@ def run(args):
                        batch_time_feature) \
                                in enumerate(c_train_dataset):
 
-                with tf.GradientTape() as tape:
+                small_step = tf.shape(gaps_batch_out)[1].numpy().tolist()
+                l2_rnn_initial_state = l2_rnn_final_state
 
-                    (l2_marks_logits, l2_gaps_pred, l2_D, l2_WT,
-                     l1_marks_logits, l1_gaps_pred, l1_D, l1_WT,
-                     all_state_transform_cost) \
-                            = model(c_gaps_batch_in, c_seqmask_batch_in, c_batch_time_feature,
-                                    gaps_batch_in, seqmask_batch_in, batch_time_feature, compound_event_size)
+                for sm_step in range(small_step):
 
-                    # Apply mask on l1_gaps_pred
-                    l1_gaps_pred = l1_gaps_pred * tf.expand_dims(tf.expand_dims(c_seqmask_batch_in, axis=-1), axis=-1)
-                    #TODO Compute MASKED-losses manually instead of using tf helper functions
+                    with tf.GradientTape() as tape:
 
-                    # Compute the loss for this minibatch.
-                    if use_marks:
-                        mark_loss = mark_loss_fn(marks_batch_out, marks_logits)
-                    else:
-                        mark_loss = 0.0
-                    if use_intensity:
-                        c_gap_loss_fn = models.NegativeLogLikelihood(l2_D, l2_WT)
-                        gap_loss_fn = models.NegativeLogLikelihood(l1_D, l1_WT)
-                    c_gap_loss = c_gap_loss_fn(c_gaps_batch_out, l2_gaps_pred)
+                        l1_size = tf.shape(gaps_batch_out)[2].numpy().tolist()
+                        new_gaps_batch_in =  gaps_batch_in[:,sm_step,:,:]
+                        new_gaps_batch_out =  gaps_batch_out[:,sm_step,:,:]
+                        new_seqmask_batch_in =  tf.tile(seqmask_batch_in[:,sm_step:sm_step+1], [1,l1_size])
+                        new_batch_time_feature = batch_time_feature[:,sm_step,:,:]
+                        all_l1_gaps_batch_in = gaps_batch_in
+                        all_l1_gaps_seqmask_in = tf.tile(tf.expand_dims(seqmask_batch_in, axis=-1), [1,1,l1_size])
+                        all_l1_batch_time_feature = batch_time_feature
 
-                    small_step = tf.shape(gaps_batch_out)[1].numpy().tolist()
-                    gap_loss = 0.0
+                        (l2_marks_logits, l2_gaps_pred, l2_D, l2_WT,
+                         l1_marks_logits, l1_gaps_pred, l1_D, l1_WT,
+                         all_state_transform_cost, l2_rnn_final_state) \
+                                = model(c_gaps_batch_in, c_seqmask_batch_in, c_batch_time_feature,
+                                        new_gaps_batch_in, new_seqmask_batch_in, new_batch_time_feature, 
+                                        compound_event_size, sm_step, l2_rnn_initial_state,
+                                        all_l1_gaps_batch_in, all_l1_gaps_seqmask_in, all_l1_batch_time_feature)
 
-                    for sm_step in range(small_step):
-                        gap_loss_sm = gap_loss_fn(gaps_batch_out[:,sm_step], l1_gaps_pred[:,sm_step])
-                        plot_create_l1_parts(data, args, gaps_batch_out[:,sm_step], l1_gaps_pred[:,sm_step], epoch, step, sm_step)
-                        gap_loss += gap_loss_sm
+                        # Apply mask on l1_gaps_pred
+                        l1_gaps_pred = l1_gaps_pred * tf.expand_dims(new_seqmask_batch_in, axis=-1)
+                        #TODO Compute MASKED-losses manually instead of using tf helper functions
 
-                    gap_loss /= small_step
-                    gap_loss_tmp = gap_loss_fn(gaps_batch_out, l1_gaps_pred)
+                        # Compute the loss for this minibatch.
+                        if use_marks:
+                            mark_loss = mark_loss_fn(marks_batch_out, marks_logits)
+                        else:
+                            mark_loss = 0.0
+                        if use_intensity:
+                            c_gap_loss_fn = models.NegativeLogLikelihood(l2_D, l2_WT)
+                            gap_loss_fn = models.NegativeLogLikelihood(l1_D, l1_WT)
 
-                    print("Gap loss full vs parts", gap_loss_tmp, gap_loss)
+                        c_gap_loss = c_gap_loss_fn(c_gaps_batch_out, l2_gaps_pred)
 
+                        gap_loss_sm = gap_loss_fn(new_gaps_batch_out, l1_gaps_pred)
+                        plot_create_l1_parts(data, args, new_gaps_batch_out, l1_gaps_pred, epoch, step, sm_step)
+                        gap_loss = gap_loss_sm
 
-                    state_transform_cost = tf.reduce_mean(all_state_transform_cost)
-                    print('all_state_transform_cost', all_state_transform_cost)
-                    print('state_transform_cost', state_transform_cost)
-                    loss = mark_loss + c_gap_loss + gap_loss + state_transform_cost
-                    train_losses.append(gap_loss.numpy())
-                    train_c_losses.append(c_gap_loss.numpy())
-                    with train_summary_writer.as_default():
-                        tf.summary.scalar('c_gap_loss', c_gap_loss, step=global_step)
-                        tf.summary.scalar('gap_loss', gap_loss, step=global_step)
-                        tf.summary.scalar('mark_loss', mark_loss, step=global_step)
-                        tf.summary.scalar('loss', loss, step=global_step)
+                        state_transform_cost = 0.0
+                        state_transform_cost = tf.reduce_mean(all_state_transform_cost)
+                        # print('all_state_transform_cost', all_state_transform_cost)
+                        # print('state_transform_cost', state_transform_cost)
 
-                c_train_gap_metric(c_gaps_batch_out, l2_gaps_pred)
-                c_train_gap_err = c_train_gap_metric.result()
+                        loss = mark_loss + c_gap_loss + gap_loss + state_transform_cost
 
-                grads = tape.gradient(loss, model.trainable_weights)
-                optimizer.apply_gradients(zip(grads, model.trainable_weights))
+                        print('Training loss (for one batch) at step %s small_step %s: %s %s %s %s %s' \
+                        % (step, sm_step, float(loss), float(mark_loss), float(c_gap_loss), float(gap_loss), float(state_transform_cost)))
+
+                        train_losses.append(gap_loss.numpy())
+                        train_c_losses.append(c_gap_loss.numpy())
+                        with train_summary_writer.as_default():
+                            tf.summary.scalar('c_gap_loss', c_gap_loss, step=global_step)
+                            tf.summary.scalar('gap_loss', gap_loss, step=global_step)
+                            tf.summary.scalar('mark_loss', mark_loss, step=global_step)
+                            tf.summary.scalar('loss', loss, step=global_step)
+
+                        c_train_gap_metric(c_gaps_batch_out, l2_gaps_pred)
+                        c_train_gap_err = c_train_gap_metric.result()
+
+                        grads = tape.gradient(loss, model.trainable_weights)
+                        optimizer.apply_gradients(zip(grads, model.trainable_weights))
 
                 # TODO Make sure that padding is considered during evaluation
                 if use_marks:
                     train_mark_metric(marks_batch_out, marks_logits)
                 # plot_create(data, args, gaps_batch_out, l1_gaps_pred, epoch, step)
                 plot_create_l2(data, args, c_gaps_batch_out, l2_gaps_pred, epoch, step)
-                train_gap_metric(gaps_batch_out, l1_gaps_pred)
+                #TODO Make this work
+                # train_gap_metric(gaps_batch_out, l1_gaps_pred)
 
                 print('Training loss (for one batch) at step %s: %s %s %s %s %s' \
                         % (step, float(loss), float(mark_loss), float(c_gap_loss), float(gap_loss), float(state_transform_cost)))
@@ -726,7 +741,7 @@ def run(args):
                     in enumerate(c_test_dataset):
 
                 (test_l2_marks_logits, test_l2_gaps_pred, _, _,
-                 _, _, _, _, _) \
+                 _, _, _, _, _, _) \
                         = model(c_test_gaps_in, c_test_seqmask_in, c_test_time_feature)
 
                 if use_marks:

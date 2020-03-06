@@ -183,11 +183,19 @@ class FeedForward(layers.Layer):
         self.st_l2 = layers.Dense(hidden_layer_size,
                                  activation=tf.sigmoid,
                                  name='st_l2')
+        self.st_l3 = layers.Dense(hidden_layer_size,
+                                 activation=tf.nn.relu,
+                                 name='st_l3')
+        self.st_l4 = layers.Dense(hidden_layer_size,
+                                 activation=tf.nn.relu,
+                                 name='st_l4')
     def call(self, inputs):
         st_1 = self.st_l1(inputs)
         st_2 = self.st_l2(st_1)
+        st_3 = self.st_l2(st_2)
+        st_4 = self.st_l2(st_3)
 
-        return st_2 #TODO Play around with this network
+        return st_4 #TODO Play around with this network
 
 class HierarchicalRNN(tf.keras.Model):
     def __init__(self,
@@ -213,10 +221,14 @@ class HierarchicalRNN(tf.keras.Model):
         self.ff = FeedForward(hidden_layer_size)
         self.cosinloss = tf.keras.losses.CosineSimilarity(axis=1)
         self.MAE = tf.keras.metrics.MeanAbsoluteError()
+        self.MSE = tf.keras.metrics.MeanSquaredError()
 
     def call(self, l2_gaps, l2_mask, l2_time_features,
              l1_gaps=None, l1_mask=None, l1_time_features=None,
-             compound_event_size=10, l2_marks=None, l1_marks=None, debug=False):
+             compound_event_size=10, sm_step=-1, l2_rnn_initial_state=None, 
+             all_l1_gaps_batch_in = None, all_l1_gaps_seqmask_in = None,
+             all_l1_batch_time_feature = None,
+             l2_marks=None, l1_marks=None, debug=False):
 
         # Gather input for the rnn
         if self.use_marks:
@@ -229,7 +241,7 @@ class HierarchicalRNN(tf.keras.Model):
 
         # Forward pass for the compound-event rnn
         self.l2_marks_logits, self.l2_gaps_pred, self.l2_D, self.l2_WT \
-                 = self.l2_rnn(l2_gaps, l2_mask, l2_time_features, marks=l2_marks)
+                 = self.l2_rnn(l2_gaps, l2_mask, l2_time_features, marks=l2_marks, initial_state=l2_rnn_initial_state)
 
 
         # Transform compound-hidden-states using FF
@@ -239,38 +251,61 @@ class HierarchicalRNN(tf.keras.Model):
         # For each transformed compound-hidden-state,
         # predict next decoder_length simple events.
         self.state_transformed_cost = list()
+
         if l1_gaps is not None:
-            self.l1_D, self.l1_WT = list(), list()
-            self.l1_marks_logits, self.l1_gaps_pred = list(), list()
-            l1_mask = tf.tile(tf.expand_dims(l1_mask, axis=-1), [1, 1, l1_gaps.shape[2]])
+        #     self.l1_D, self.l1_WT = list(), list()
+        #     self.l1_marks_logits, self.l1_gaps_pred = list(), list()
+        #     l1_mask = tf.tile(tf.expand_dims(l1_mask, axis=-1), [1, 1, l1_gaps.shape[2]])
             comp_hidden_state_l1_layer = None
             for idx in range(self.state_transformed.shape[1]):
+                st_gaps_in = all_l1_gaps_batch_in[:, idx]
+                st_gaps_seqmask = all_l1_gaps_seqmask_in[:, idx]
+                st_time_feature = all_l1_batch_time_feature[:, idx]
 
                 if idx > 0:
                     comp_hidden_state_l2_layer = self.state_transformed[:,idx]
-                    self.state_transformed_cost.append(tf.reduce_mean(
-                         1.0 - tf.reduce_mean(comp_hidden_state_l1_layer * comp_hidden_state_l2_layer, axis=1)))
-                    # self.state_transformed_cost.append(self.MAE(comp_hidden_state_l1_layer, comp_hidden_state_l2_layer))
+                    # self.state_transformed_cost.append(tf.reduce_mean(
+                    #     - tf.reduce_sum(comp_hidden_state_l1_layer * comp_hidden_state_l2_layer, axis=1)))
+                    self.state_transformed_cost.append(self.MAE(comp_hidden_state_l1_layer, comp_hidden_state_l2_layer))
+                    # self.state_transformed_cost.append(self.cosinloss(comp_hidden_state_l1_layer, comp_hidden_state_l2_layer))
+                    # self.state_transformed_cost.append(self.MSE(comp_hidden_state_l1_layer, comp_hidden_state_l2_layer))
 
-                l1_m_logits, l1_g_pred, l1_D, l1_WT \
-                        = self.l1_rnn(l1_gaps[:, idx],
-                                      l1_mask[:, idx],
-                                      l1_time_features[:, idx],
-                                      initial_state=comp_hidden_state_l1_layer)
-                                      # initial_state=self.state_transformed[:, idx])
+                _, _, _, _ \
+                = self.l1_rnn(st_gaps_in,
+                              st_gaps_seqmask,
+                              st_time_feature,
+                              initial_state=self.state_transformed[:, idx])
+                              # initial_state=comp_hidden_state_l1_layer)
+                              # )
 
                 comp_hidden_state_l1_layer = self.l1_rnn.hidden_states[:,compound_event_size-1,:]
 
-                self.l1_D.append(l1_D)
-                self.l1_WT.append(l1_WT)
-                self.l1_marks_logits.append(l1_m_logits)
-                self.l1_gaps_pred.append(l1_g_pred)
-                self.l1_rnn.reset_states() #TODO What happens if this line is removed?
-
-            self.l1_D = tf.stack(self.l1_D, axis=1)
-            self.l1_WT = tf.stack(self.l1_WT, axis=1)
             self.state_transformed_cost = tf.stack(self.state_transformed_cost, axis=0)
-            self.l1_gaps_pred = tf.stack(self.l1_gaps_pred, axis=1)
+            self.l1_rnn.reset_states()
+
+            #     self.l1_D.append(l1_D)
+            #     self.l1_WT.append(l1_WT)
+            #     self.l1_marks_logits.append(l1_m_logits)
+            #     self.l1_gaps_pred.append(l1_g_pred)
+            #     # self.l1_rnn.reset_states() #TODO What happens if this line is removed?
+
+            # self.l1_D = tf.stack(self.l1_D, axis=1)
+            # self.l1_WT = tf.stack(self.l1_WT, axis=1)
+            # self.l1_gaps_pred = tf.stack(self.l1_gaps_pred, axis=1)
+
+            initial_state = self.state_transformed[:, sm_step]
+            #TODO l1_rnn.reset_state(initial_state)
+            l1_m_logits, l1_g_pred, l1_D, l1_WT \
+                    = self.l1_rnn(l1_gaps,
+                                  l1_mask,
+                                  l1_time_features,
+                                  initial_state=initial_state)
+
+            self.l1_D = l1_D
+            self.l1_WT = l1_WT
+            self.l1_gaps_pred = l1_g_pred
+            self.l1_marks_logits = l1_m_logits
+
             if self.use_marks:
                 self.l1_marks_logits = tf.stack(self.l1_marks_logits, axis=1)
             else:
@@ -282,7 +317,7 @@ class HierarchicalRNN(tf.keras.Model):
 
         return (self.l2_marks_logits, self.l2_gaps_pred, self.l2_D, self.l2_WT,
                 self.l1_marks_logits, self.l1_gaps_pred, self.l1_D, self.l1_WT,
-                self.state_transformed_cost)
+                self.state_transformed_cost, self.l2_rnn.final_state)
 
     def reset_states(self):
         self.l1_rnn.reset_states()
@@ -417,7 +452,7 @@ class SimulateHierarchicalRNN:
         # ipdb.set_trace()
         if model_rnn.hidden_states.shape[1]>1:
             hidden_states.append(model_rnn.hidden_states[:, -2])
-        else:
+        elif initial_state is not None:
             hidden_states.append(initial_state)
 
         if second_last_gaps_pred is not None:
