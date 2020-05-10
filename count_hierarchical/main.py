@@ -6,7 +6,7 @@ from argparse import Namespace
 import multiprocessing as MP
 from operator import itemgetter
 import datetime
-from generator import generate_dataset
+from generator import generate_dataset, generate_twitter_dataset
 
 import run
 import utils
@@ -18,7 +18,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('dataset_name', type=str, help='dataset_name')
 parser.add_argument('model_name', type=str, help='model_name')
 
-parser.add_argument('--epochs', type=int, default=1,
+parser.add_argument('--epochs', type=int, default=50,
                     help='number of training epochs')
 parser.add_argument('--patience', type=int, default=2,
                     help='Number of epochs to wait for \
@@ -38,7 +38,7 @@ parser.add_argument('--seed', type=int,
                     default=42)
 
 # Bin size T_i - T_(i-1) in seconds
-parser.add_argument('--bin_size', type=int, default=360,
+parser.add_argument('--bin_size', type=int, default=0,
                     help='Number of seconds in a bin')
 
 # F(T_(i-1), T_(i-2) ..... , T_(i-r)) -> T(i)
@@ -78,23 +78,43 @@ if args.dataset_name == 'all':
     dataset_names.append('sin')
     dataset_names.append('hawkes')
     dataset_names.append('sin_hawkes_overlay')
+    dataset_names.append('taxi')
+    dataset_names.append('twitter')
 else:
     dataset_names.append(args.dataset_name)
+
+twitter_dataset_names = list()
+if 'twitter' in dataset_names:
+    dataset_names.remove('twitter')
+    twitter_dataset_names.append('Trump')
+    twitter_dataset_names.append('Verdict')
+    #twitter_dataset_names.append('Movie')
+    #twitter_dataset_names.append('Fight')
+    #twitter_dataset_names.append('jaya')
+
+for data_name in twitter_dataset_names:
+    dataset_names.append(data_name)
+
 args.dataset_name = dataset_names
 
 model_names = list()
 if args.model_name == 'all':
     model_names.append('hierarchical')
     model_names.append('rmtpp_mse')
-    model_names.append('rmtpp_nll')
+    #model_names.append('rmtpp_nll')
+    model_names.append('rmtpp_count')
 else:
     model_names.append(args.model_name)
 args.model_name = model_names
 
-
+automate_bin_sz = False
+if args.bin_size == 0:
+    automate_bin_sz = True
 
 id_process = os.getpid()
 time_current = datetime.datetime.now().isoformat()
+
+print(args)
 
 print("********************************************************************")
 print("PID: %s" % str(id_process))
@@ -110,28 +130,38 @@ print("####################################################################")
 np.random.seed(args.seed)
 print("Generating Datasets\n")
 generate_dataset()
+generate_twitter_dataset(twitter_dataset_names)
 print("####################################################################")
 
 event_count_result = dict()
 for dataset_name in dataset_names:
     print("Processing", dataset_name, "Datasets\n")
+    if automate_bin_sz:
+        args.bin_size = utils.get_optimal_bin_size(dataset_name)
+        print('New bin size is', args.bin_size)
     dataset = utils.get_processed_data(dataset_name, args)
 
     test_data_out_bin = dataset['test_data_out_bin']
     event_count_preds_true = test_data_out_bin
 
     per_model_count = dict()
+    per_model_save = dict()
     per_model_count['true'] = event_count_preds_true
     for model_name in model_names:
         print("--------------------------------------------------------------------")
         print("Running", model_name, "Model\n")
 
-        result = run.run_model(dataset_name, model_name, dataset, args)
+        if model_name == 'rmtpp_count':
+            model, result = run.run_model(dataset_name, model_name, dataset, args, per_model_save)
+        else:
+            model, result = run.run_model(dataset_name, model_name, dataset, args)
         per_model_count[model_name] = result
+        per_model_save[model_name] = model
         print('Got result', 'for model', model_name, 'on dataset', dataset_name)
 
-    for idx in range(5):
+    for idx in range(10):
         utils.generate_plots(args, dataset_name, dataset, per_model_count, test_sample_idx=idx)
 
     event_count_result[dataset_name] = per_model_count
     print("####################################################################")
+
