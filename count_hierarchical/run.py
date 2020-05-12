@@ -52,13 +52,14 @@ class MeanSquareLoss(tf.keras.losses.Loss):
 		error = gaps_true - gaps_pred
 		return tf.reduce_mean(error * error)
 
-def run_rmtpp(model, optimizer, data, NLL_loss, rmtpp_epochs=10):
+def run_rmtpp(args, model, optimizer, data, NLL_loss, rmtpp_epochs=10):
 	[train_dataset_gaps, dev_data_in_gaps, dev_data_out_gaps, train_norm_gaps] = data
 	[train_norm_a_gaps, train_norm_d_gaps] = train_norm_gaps
 
-	os.makedirs('saved_models/training_rmtpp/', exist_ok=True)
-	checkpoint_path = "saved_models/training_rmtpp/cp.ckpt"
+	os.makedirs('saved_models/training_rmtpp_'+args.current_dataset+'/', exist_ok=True)
+	checkpoint_path = "saved_models/training_rmtpp_"+args.current_dataset+"/cp_"+args.current_dataset+".ckpt"
 	best_dev_gap_mse = np.inf
+	best_dev_epoch = 0
 
 	train_losses = list()
 	for epoch in range(rmtpp_epochs):
@@ -93,8 +94,8 @@ def run_rmtpp(model, optimizer, data, NLL_loss, rmtpp_epochs=10):
 			# print(float(train_gap_mae), float(train_gap_mse))
 
 			step_cnt += 1
-			print('Training loss (for one batch) at step %s: %s' \
-					 %(sm_step, float(loss)))
+			#print('Training loss (for one batch) at step %s: %s' \
+			#		 %(sm_step, float(loss)))
 		
 		# Dev calculations
 		dev_gaps_pred, _, _, _, _ = model(dev_data_in_gaps)
@@ -109,6 +110,7 @@ def run_rmtpp(model, optimizer, data, NLL_loss, rmtpp_epochs=10):
 		dev_gap_metric_mse.reset_states()
 		if best_dev_gap_mse > dev_gap_mse:
 			best_dev_gap_mse = dev_gap_mse
+			best_dev_epoch = epoch
 			print('Saving model at epoch', epoch)
 			model.save_weights(checkpoint_path)
 
@@ -118,7 +120,11 @@ def run_rmtpp(model, optimizer, data, NLL_loss, rmtpp_epochs=10):
 			%(float(dev_gap_mae), float(dev_gap_mse)))
 		train_losses.append(step_train_loss)
 
-	print("Loading best model")
+	plt.plot(range(len(train_losses)), train_losses)
+	plt.savefig('Outputs/train_rmtpp_'+args.current_dataset+'_loss.png')
+	plt.close()
+
+	print("Loading best model from epoch", best_dev_epoch)
 	model.load_weights(checkpoint_path)
 	dev_gaps_pred, _, _, _, _ = model(dev_data_in_gaps)
 	dev_gaps_pred_unnorm = utils.denormalize_avg(dev_gaps_pred, 
@@ -387,7 +393,7 @@ def run_rmtpp_mse(args, data, test_data):
 	model_mse, optimizer_mse = models.build_rmtpp_model(args)
 	model_mse.summary()
 	print('\nTraining Model with Mean Square Loss')
-	train_loss_mse = run_rmtpp(model_mse, optimizer_mse, data, 
+	train_loss_mse = run_rmtpp(args, model_mse, optimizer_mse, data, 
 								NLL_loss=False, rmtpp_epochs=rmtpp_epochs)
 
 	next_hidden_state = None
@@ -437,7 +443,7 @@ def run_rmtpp_nll(args, data, test_data):
 	model_nll, optimizer_nll = models.build_rmtpp_model(args)
 	model_nll.summary()
 	print('\nTraining Model with Log Likelihood')
-	train_loss_nll = run_rmtpp(model_nll, optimizer_nll, data, 
+	train_loss_nll = run_rmtpp(args, model_nll, optimizer_nll, data, 
 								NLL_loss=True, rmtpp_epochs=rmtpp_epochs)
 
 	next_hidden_state = None
@@ -511,6 +517,101 @@ def run_hierarchical(args, data, test_data):
 	event_count_preds_cnt = test_predictions_cnt
 	return model_cnt, event_count_preds_cnt
 
+def run_count_model(args, data, test_data):
+	train_data_in_bin, train_data_out_bin = data
+	test_data_in_bin, test_data_out_bin, test_mean_bin, test_std_bin = test_data
+
+	validation_split = 0.2
+	dataset_size = len(train_data_in_bin)
+	train_data_size = dataset_size - round(validation_split*dataset_size)
+
+	train_data_in_bin = train_data_in_bin.astype(np.float32)
+	train_data_out_bin = train_data_out_bin.astype(np.float32)
+	test_data_in_bin = test_data_in_bin.astype(np.float32)
+	test_data_out_bin = test_data_out_bin.astype(np.float32)
+
+	dev_data_in_bin = train_data_in_bin[train_data_size:]
+	dev_data_out_bin = train_data_out_bin[train_data_size:]
+	train_data_in_bin = train_data_in_bin[:train_data_size]
+	train_data_out_bin = train_data_out_bin[:train_data_size]
+
+	batch_size = args.batch_size
+	train_dataset = tf.data.Dataset.from_tensor_slices((train_data_in_bin,
+													train_data_out_bin)).batch(batch_size,
+													drop_remainder=True)
+
+	num_epochs = args.epochs * 100
+	distribution_name = 'Gaussian'
+	model, optimizer = models.build_count_model(args, distribution_name)
+	model.summary()
+
+	os.makedirs('saved_models/training_count_'+args.current_dataset+'/', exist_ok=True)
+	checkpoint_path = "saved_models/training_count_"+args.current_dataset+"/cp_"+args.current_dataset+".ckpt"
+	best_dev_gap_mse = np.inf
+	best_dev_epoch = 0
+
+	train_losses = list()
+	for epoch in range(num_epochs):
+		#print('Starting epoch', epoch)
+		step_train_loss = 0.0
+		step_cnt = 0
+		for sm_step, (bin_count_batch_in, bin_count_batch_out) in enumerate(train_dataset):
+			with tf.GradientTape() as tape:
+				bin_counts_pred, distribution_params = model(bin_count_batch_in)
+
+				loss_fn = models.NegativeLogLikelihood_CountModel(distribution_params, distribution_name)
+				loss = loss_fn(bin_count_batch_out, None)
+
+				step_train_loss+=loss.numpy()
+				
+				grads = tape.gradient(loss, model.trainable_weights)
+				optimizer.apply_gradients(zip(grads, model.trainable_weights))
+
+			step_cnt += 1
+			# print('Training loss (for one batch) at step %s: %s' \
+			# 		 %(sm_step, float(loss)))
+		
+		# Dev calculations
+		dev_bin_count_pred, _ = model(dev_data_in_bin)		
+		dev_gap_metric_mae(dev_bin_count_pred, dev_data_out_bin)
+		dev_gap_metric_mse(dev_bin_count_pred, dev_data_out_bin)
+		dev_gap_mae = dev_gap_metric_mae.result()
+		dev_gap_mse = dev_gap_metric_mse.result()
+		dev_gap_metric_mae.reset_states()
+		dev_gap_metric_mse.reset_states()
+
+		if best_dev_gap_mse > dev_gap_mse:
+			best_dev_gap_mse = dev_gap_mse
+			best_dev_epoch = epoch
+			print('Saving model at epoch', epoch)
+			model.save_weights(checkpoint_path)
+
+		step_train_loss /= step_cnt
+		print('Training loss after epoch %s: %s' %(epoch, float(step_train_loss)))
+		print('MAE and MSE of Dev data %s: %s' \
+			%(float(dev_gap_mae), float(dev_gap_mse)))
+		train_losses.append(step_train_loss)
+
+	plt.plot(range(len(train_losses)), train_losses)
+	plt.savefig('Outputs/train_count_'+args.current_dataset+'_loss.png')
+	plt.close()
+
+	print("Loading best model from epoch", best_dev_epoch)
+	model.load_weights(checkpoint_path)
+	dev_bin_count_pred, _ = model(dev_data_in_bin)		
+	dev_gap_metric_mae(dev_bin_count_pred, dev_data_out_bin)
+	dev_gap_metric_mse(dev_bin_count_pred, dev_data_out_bin)
+	dev_gap_mae = dev_gap_metric_mae.result()
+	dev_gap_mse = dev_gap_metric_mse.result()
+	dev_gap_metric_mae.reset_states()
+	dev_gap_metric_mse.reset_states()
+	print('MAE and MSE of Dev data %s: %s' \
+		%(float(dev_gap_mae), float(dev_gap_mse)))
+
+	test_bin_count_pred_norm, _ = model(test_data_in_bin)		
+	test_bin_count_pred = utils.denormalize_data(test_bin_count_pred_norm, test_mean_bin, test_std_bin)
+	return model, test_bin_count_pred.numpy()
+
 def run_rmtpp_count_reinit(args, models, data, test_data):
 	model_cnt, model_rmtpp = models
 	[test_data_in_bin, test_data_out_bin, test_end_hr_bins,
@@ -529,6 +630,9 @@ def run_rmtpp_count_reinit(args, models, data, test_data):
 	all_events_in_bin_pred = list()
 
 	test_predictions_norm_cnt = model_cnt.predict(test_data_in_bin)
+	if len(test_predictions_norm_cnt) == 3:
+		test_predictions_norm_cnt = test_predictions_norm_cnt[0]
+
 	test_predictions_cnt = utils.denormalize_data(test_predictions_norm_cnt, test_mean_bin, test_std_bin)
 	event_count_preds_cnt = np.round(test_predictions_cnt)
 	event_count_preds_true = test_data_out_bin
@@ -608,6 +712,9 @@ def run_rmtpp_count_cont_rmtpp(args, models, data, test_data):
 	all_events_in_bin_pred = list()
 
 	test_predictions_norm_cnt = model_cnt.predict(test_data_in_bin)
+	if len(test_predictions_norm_cnt) == 3:
+		test_predictions_norm_cnt = test_predictions_norm_cnt[0]
+
 	test_predictions_cnt = utils.denormalize_data(test_predictions_norm_cnt, test_mean_bin, test_std_bin)
 	event_count_preds_cnt = np.round(test_predictions_cnt)
 	event_count_preds_true = test_data_out_bin
@@ -1096,6 +1203,19 @@ def run_model(dataset_name, model_name, dataset, args, prev_models=None):
 		event_count_preds_cnt = run_hierarchical(args, data, test_data)
 		model, result = event_count_preds_cnt
 
+	if model_name is 'count_model':
+		train_data_in_bin = dataset['train_data_in_bin']
+		train_data_out_bin = dataset['train_data_out_bin']
+		test_data_in_bin = dataset['test_data_in_bin']
+		test_data_out_bin = dataset['test_data_out_bin']
+		test_mean_bin = dataset['test_mean_bin']
+		test_std_bin = dataset['test_std_bin']
+
+		data = [train_data_in_bin, train_data_out_bin]
+		test_data = [test_data_in_bin, test_data_out_bin, test_mean_bin, test_std_bin]
+		event_count_preds_cnt = run_count_model(args, data, test_data)
+		model, result = event_count_preds_cnt
+
 	if model_name in ['rmtpp_mse', 'rmtpp_nll', 'rmtpp_count']:
 		train_data_in_gaps = dataset['train_data_in_gaps']
 		train_data_out_gaps = dataset['train_data_out_gaps']
@@ -1147,6 +1267,8 @@ def run_model(dataset_name, model_name, dataset, args, prev_models=None):
 
 			model_cnt, model_rmtpp = prev_models['hierarchical'], prev_models['rmtpp_mse']
 			models = model_cnt, model_rmtpp
+			test_data_in_bin = test_data_in_bin.astype(np.float32)
+			test_data_out_bin = test_data_out_bin.astype(np.float32)
 			test_data = [test_data_in_bin, test_data_out_bin, test_end_hr_bins,
 			test_data_in_time_end_bin, test_data_in_gaps_bin, test_mean_bin, test_std_bin,
 			test_gap_in_bin_norm_a, test_gap_in_bin_norm_d]

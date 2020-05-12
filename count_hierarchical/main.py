@@ -18,7 +18,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('dataset_name', type=str, help='dataset_name')
 parser.add_argument('model_name', type=str, help='model_name')
 
-parser.add_argument('--epochs', type=int, default=50,
+parser.add_argument('--epochs', type=int, default=15,
                     help='number of training epochs')
 parser.add_argument('--patience', type=int, default=2,
                     help='Number of epochs to wait for \
@@ -87,7 +87,7 @@ twitter_dataset_names = list()
 if 'twitter' in dataset_names:
     dataset_names.remove('twitter')
     twitter_dataset_names.append('Trump')
-    twitter_dataset_names.append('Verdict')
+    #twitter_dataset_names.append('Verdict')
     #twitter_dataset_names.append('Movie')
     #twitter_dataset_names.append('Fight')
     #twitter_dataset_names.append('jaya')
@@ -100,8 +100,9 @@ args.dataset_name = dataset_names
 model_names = list()
 if args.model_name == 'all':
     model_names.append('hierarchical')
+    model_names.append('count_model')
     model_names.append('rmtpp_mse')
-    #model_names.append('rmtpp_nll')
+    model_names.append('rmtpp_nll')
     model_names.append('rmtpp_count')
 else:
     model_names.append(args.model_name)
@@ -137,6 +138,7 @@ event_count_result = dict()
 for dataset_name in dataset_names:
     print("Processing", dataset_name, "Datasets\n")
     if automate_bin_sz:
+        args.current_dataset = dataset_name
         args.bin_size = utils.get_optimal_bin_size(dataset_name)
         print('New bin size is', args.bin_size)
     dataset = utils.get_processed_data(dataset_name, args)

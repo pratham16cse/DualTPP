@@ -39,17 +39,22 @@ def generate_plots(args, dataset_name, dataset, per_model_count, test_sample_idx
 	rmtpp_mse_pred = true_pred
 	rmtpp_nll_pred = true_pred
 	hierarchical_pred = true_pred
+	count_model_pred = true_pred
 	if 'rmtpp_mse' in per_model_count:
 		rmtpp_mse_pred = per_model_count['rmtpp_mse']
 	if 'rmtpp_nll' in per_model_count:
 		rmtpp_nll_pred = per_model_count['rmtpp_nll']
 	if 'hierarchical' in per_model_count:
 		hierarchical_pred = per_model_count['hierarchical']
+	if 'count_model' in per_model_count:
+		count_model_pred = per_model_count['count_model']
+
 
 	event_count_preds_true = true_pred
 	event_count_preds_mse = rmtpp_mse_pred
 	event_count_preds_nll = rmtpp_nll_pred
 	event_count_preds_cnt = hierarchical_pred
+	event_count_preds_count = count_model_pred
 
 	test_data_in_bin = dataset['test_data_in_bin']
 	test_mean_bin = dataset['test_mean_bin']
@@ -63,8 +68,10 @@ def generate_plots(args, dataset_name, dataset, per_model_count, test_sample_idx
 	rmtpp_mse_pred = event_count_preds_mse[test_sample_idx].astype(np.float32)
 	rmtpp_nll_pred = event_count_preds_nll[test_sample_idx].astype(np.float32)
 	hierarchical_pred = event_count_preds_cnt[test_sample_idx].astype(np.float32)
+	count_model_pred = event_count_preds_count[test_sample_idx].astype(np.float32)
 
 	plt.plot(x, true_inp_bins.tolist()+hierarchical_pred.tolist(), label='hierarchical_pred')
+	plt.plot(x, true_inp_bins.tolist()+count_model_pred.tolist(), label='count_model_pred')
 	plt.plot(x, true_inp_bins.tolist()+rmtpp_mse_pred.tolist(), label='rmtpp_mse_pred')
 	plt.plot(x, true_inp_bins.tolist()+rmtpp_nll_pred.tolist(), label='rmtpp_nll_pred')
 	plt.plot(x, true_inp_bins.tolist()+true_pred.tolist(), label='true_pred')
@@ -247,7 +254,7 @@ def get_interval_count_less_than_threshold(times_out, interval_size, threshold):
 
 	return interval_range_count_less
 
-def get_interval_count_with_threshold(test_out_times_in_bin, interval_size, threshold=None):
+def get_interval_count_with_threshold(test_out_times_in_bin, interval_size, dataset_name, threshold=None):
 	test_sample_count = len(test_out_times_in_bin)
 
 	if threshold == -1:
@@ -292,15 +299,35 @@ def get_interval_count_with_threshold(test_out_times_in_bin, interval_size, thre
 	else:
 		threshold_more = np.ones(test_sample_count)
 		threshold_less = np.ones(test_sample_count)
+		more_factor = {
+			'sin': 1.0,
+			'hawkes': 1.2,
+			'sin_hawkes_overlay': 1.05,
+			'Trump': 1.1,
+			'Verdict': 1.6,
+			'Delhi': 1.4,
+			'taxi': 1.05,
+		}
+
+		less_factor = {
+			'sin': 0.85,
+			'hawkes': 0.85,
+			'sin_hawkes_overlay': 0.85,
+			'Trump': 0.95,
+			'Verdict': 0.4,
+			'Delhi': 0.6,
+			'taxi': 0.95,
+		}
+
 		for idx in range(test_sample_count):
 			bins_count = round((test_out_times_in_bin[idx][-1] - test_out_times_in_bin[idx][0])/interval_size)
 			avg_events_count = (len(test_out_times_in_bin[idx])/bins_count)
-			avg_events_count_more = round(avg_events_count * 1.05)
+			avg_events_count_more = round(avg_events_count * more_factor[dataset_name])
 			avg_events_count_more = max(1, avg_events_count_more)
-			avg_events_count_less = round(avg_events_count * 0.85)
+			avg_events_count_less = round(avg_events_count * less_factor[dataset_name])
 			avg_events_count_less = max(1, avg_events_count_less)
-			threshold_more[idx] = avg_events_count
-			threshold_less[idx] = avg_events_count
+			threshold_more[idx] = avg_events_count_more
+			threshold_less[idx] = avg_events_count_less
 		threshold_more = np.array(threshold_more)
 		threshold_less = np.array(threshold_less)
 
@@ -393,7 +420,7 @@ def get_processed_data(dataset_name, args):
 
 	interval_size = 360
 	[interval_range_count_less, interval_range_count_more, less_threshold, more_threshold] = \
-	get_interval_count_with_threshold(test_out_times_in_bin, interval_size)
+	get_interval_count_with_threshold(test_out_times_in_bin, interval_size, dataset_name)
 
 	test_end_hr_bins = np.expand_dims(test_end_hr_bins, axis=-1)
 	test_data_in_time_end_bin = np.expand_dims(test_data_in_time_end_bin, axis=-1)
