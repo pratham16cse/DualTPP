@@ -418,7 +418,7 @@ def get_processed_data(dataset_name, args):
 	 test_out_event_count_true, test_out_all_event_true] = \
 	get_rand_interval_count(test_out_times_in_bin)
 
-	interval_size = 360
+	interval_size = args.interval_size
 	[interval_range_count_less, interval_range_count_more, less_threshold, more_threshold] = \
 	get_interval_count_with_threshold(test_out_times_in_bin, interval_size, dataset_name)
 
@@ -459,6 +459,7 @@ def get_processed_data(dataset_name, args):
 		'less_threshold': less_threshold,
 		'more_threshold': more_threshold,
 		'interval_size': interval_size,
+		'test_out_times_in_bin': test_out_times_in_bin,
 	}
 
 	return dataset

@@ -56,7 +56,9 @@ parser.add_argument('--out_bin_sz', type=int,
 parser.add_argument('--enc_len', type=int, default=80,
                     help='Input length for rnn of rmtpp')
 
-
+# interval_size = 360
+parser.add_argument('--interval_size', type=int, default=360,
+                    help='Interval size for threshold query')
 
 parser.add_argument('--batch_size', type=int, default=32,
                     help='Input batch size')
@@ -83,14 +85,14 @@ if args.dataset_name == 'all':
 else:
     dataset_names.append(args.dataset_name)
 
+print(dataset_names)
+
 twitter_dataset_names = list()
 if 'twitter' in dataset_names:
     dataset_names.remove('twitter')
     twitter_dataset_names.append('Trump')
-    #twitter_dataset_names.append('Verdict')
-    #twitter_dataset_names.append('Movie')
-    #twitter_dataset_names.append('Fight')
-    #twitter_dataset_names.append('jaya')
+    twitter_dataset_names.append('Verdict')
+    twitter_dataset_names.append('Delhi')
 
 for data_name in twitter_dataset_names:
     dataset_names.append(data_name)
@@ -99,8 +101,8 @@ args.dataset_name = dataset_names
 
 model_names = list()
 if args.model_name == 'all':
-    model_names.append('hierarchical')
     model_names.append('count_model')
+    model_names.append('hierarchical')
     model_names.append('rmtpp_mse')
     model_names.append('rmtpp_nll')
     model_names.append('rmtpp_count')
@@ -112,10 +114,10 @@ automate_bin_sz = False
 if args.bin_size == 0:
     automate_bin_sz = True
 
+print('args', args)
+
 id_process = os.getpid()
 time_current = datetime.datetime.now().isoformat()
-
-print(args)
 
 print("********************************************************************")
 print("PID: %s" % str(id_process))

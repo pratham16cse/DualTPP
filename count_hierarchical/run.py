@@ -81,7 +81,10 @@ def run_rmtpp(args, model, optimizer, data, NLL_loss, rmtpp_epochs=10):
 		next_initial_state = None
 		for sm_step, (gaps_batch_in, gaps_batch_out) in enumerate(train_dataset_gaps):
 			with tf.GradientTape() as tape:
-				gaps_pred, D, WT, _, next_initial_state = model(gaps_batch_in, initial_state=next_initial_state)
+				# TODO: Make sure to pass correct next_stat
+				gaps_pred, D, WT, next_initial_state, _ = model(gaps_batch_in, 
+						initial_state=next_initial_state, 
+						next_state_sno=args.batch_size)
 
 				# Compute the loss for this minibatch.
 				if NLL_loss:
@@ -176,6 +179,7 @@ def run_rmtpp_init(args, data, test_data, NLL_loss=False):
 	test_data_input_gaps_bin = test_data_in_gaps_bin.astype(np.float32)
 	all_event_count_preds = list()
 	all_times_pred_from_beg = None
+	#TODO: Should we pass more event than 80 for better prediction
 	for dec_idx in range(dec_len):
 		print('Simulating dec_idx', dec_idx)
 		all_gaps_pred, all_times_pred, next_hidden_state = simulate(model, 
@@ -599,12 +603,11 @@ def run_rmtpp_count_cont_rmtpp(args, models, data, test_data):
 
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 # Plain rmtpp model to generate events independent of bin boundary
-def run_rmtpp_for_count(args, models, data, test_data, query_data):
+def run_rmtpp_for_count(args, models, data, test_data, query_data=None, simul_end_time=None):
 	_, model_rmtpp = models
 	[test_data_in_bin, test_data_out_bin, test_end_hr_bins,
 	test_data_in_time_end_bin, test_data_in_gaps_bin, test_mean_bin, test_std_bin,
 	test_gap_in_bin_norm_a, test_gap_in_bin_norm_d] = test_data
-	[t_b_plus, t_e_plus, true_count] = query_data
 
 	enc_len = args.enc_len
 	dec_len = args.out_bin_sz
@@ -616,8 +619,12 @@ def run_rmtpp_for_count(args, models, data, test_data, query_data):
 	test_data_init_time = test_data_in_time_end_bin.astype(np.float32)
 	test_data_input_gaps_bin = test_data_in_gaps_bin.astype(np.float32)
 
-	t_b_plus = np.expand_dims(t_b_plus, axis=-1)
-	t_e_plus = np.expand_dims(t_e_plus, axis=-1)
+	if simul_end_time is None:
+		[t_b_plus, t_e_plus, true_count] = query_data
+		t_b_plus = np.expand_dims(t_b_plus, axis=-1)
+		t_e_plus = np.expand_dims(t_e_plus, axis=-1)
+	else:
+		t_e_plus = np.expand_dims(simul_end_time, axis=-1)
 
 	_, all_times_pred, _ = simulate(model_rmtpp,
 										test_data_init_time,
@@ -787,7 +794,7 @@ def compute_hierarchical_mae(all_event_pred_uncut, query_data, all_event_true, c
 # Query 2 and 3
 def compute_threshold_loss(all_event_pred_uncut, query_data):
 	[interval_range_count_less, interval_range_count_more,
-	less_threshold, more_threshold, interval_size] = query_data
+	less_threshold, more_threshold, interval_size, _] = query_data
 
 	all_times_pred = list()
 	for idx in range(len(all_event_pred_uncut)):
@@ -824,11 +831,10 @@ def compute_threshold_loss(all_event_pred_uncut, query_data):
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 # Interval pdf prediction loss
 # Query 2 and 3
-def compute_time_range_pdf(all_run_count_fun, all_run_count_fun_name, model_data, query_data, dataset_name, query_1_data):
+def compute_time_range_pdf(all_run_count_fun, all_run_count_fun_name, model_data, query_data, dataset_name):
 	[arguments, models, data, test_data] = model_data
-	[interval_range_count_less, interval_range_count_more, 
-	less_threshold, more_threshold, interval_size] = query_data
-	[test_time_out_tb_plus, test_time_out_te_plus, test_out_event_count_true] = query_1_data
+	[interval_range_count_less, interval_range_count_more, less_threshold,
+	more_threshold, interval_size, test_out_times_in_bin] = query_data
 
 	[test_data_in_bin, test_data_out_bin, test_end_hr_bins,
 	test_data_in_time_end_bin, test_data_in_gaps_bin, test_mean_bin, test_std_bin,
@@ -838,6 +844,25 @@ def compute_time_range_pdf(all_run_count_fun, all_run_count_fun_name, model_data
 	no_points = 500
 
 	x_range = np.round(np.array([(test_data_in_time_end_bin), (test_data_in_time_end_bin+(arguments.bin_size*arguments.out_bin_sz))]))[:,:,0].T.astype(int)
+
+	interval_counts_more_true = np.zeros((len(test_data_in_time_end_bin), no_points))
+	interval_counts_less_true = np.zeros((len(test_data_in_time_end_bin), no_points))
+
+	for batch_idx in range(len(test_data_in_time_end_bin)):
+		all_begins = np.linspace(x_range[batch_idx][0], x_range[batch_idx][1], no_points)
+		for begin_idx in range(len(all_begins)):
+			interval_start_cand = np.array([all_begins[begin_idx]])
+			interval_end_cand = np.array([all_begins[begin_idx] + interval_size])
+			interval_count_in_range_pred = count_events(np.expand_dims(np.array(test_out_times_in_bin[batch_idx]), axis=0), 
+														interval_start_cand, interval_end_cand)
+			if more_threshold[batch_idx] <= interval_count_in_range_pred:
+				interval_counts_more_true[batch_idx][begin_idx]+=1.0
+
+			if less_threshold[batch_idx] >= interval_count_in_range_pred:
+				interval_counts_less_true[batch_idx][begin_idx]+=1.0
+
+	# interval_counts_more_true = interval_counts_more_true / np.expand_dims(np.sum(interval_counts_more_true, axis=1), axis=-1)
+	# interval_counts_less_true = interval_counts_less_true / np.expand_dims(np.sum(interval_counts_less_true, axis=1), axis=-1)
 
 	more_results = list()
 	less_results = list()
@@ -855,7 +880,8 @@ def compute_time_range_pdf(all_run_count_fun, all_run_count_fun_name, model_data
 			#print('Simulating sample number', each_sim_idx)
 
 			if all_run_count_fun_name[run_count_fun_idx] == 'run_rmtpp_for_count':
-				_, all_event_pred_uncut = all_run_count_fun[run_count_fun_idx](arguments, models, data, test_data, query_1_data)
+				simul_end_time = x_range[:,1]
+				_, all_event_pred_uncut = all_run_count_fun[run_count_fun_idx](arguments, models, data, test_data, simul_end_time=simul_end_time)
 			else:
 				_, all_event_pred_uncut = all_run_count_fun[run_count_fun_idx](arguments, models, data, test_data)
 
@@ -882,7 +908,7 @@ def compute_time_range_pdf(all_run_count_fun, all_run_count_fun_name, model_data
 						interval_position_more += 1.0
 
 					if less_threshold[batch_idx] >= interval_count_in_range_pred:
-						interval_counts_less[batch_idx][begin_idx]+=1
+						interval_counts_less[batch_idx][begin_idx]+=1.0
 						interval_counts_less_rank[batch_idx][begin_idx]+=(1.0/interval_position_less)
 						interval_position_less += 1.0
 
@@ -899,7 +925,10 @@ def compute_time_range_pdf(all_run_count_fun, all_run_count_fun_name, model_data
 	all_begins = np.linspace(x_range[:,0], x_range[:,1], no_points).T
 	crps_loss_more = -1*np.ones((len(all_run_count_fun)))
 	crps_loss_less = -1*np.ones((len(all_run_count_fun)))
+	cross_entropy_more = -1*np.ones((len(all_run_count_fun)))
+	cross_entropy_less = -1*np.ones((len(all_run_count_fun)))
 	for run_count_fun_idx in range(len(all_run_count_fun)):
+		# CRPS calculations
 		all_counts_sum_more = np.sum(more_results_rank[run_count_fun_idx], axis=1)
 		all_counts_sum_less = np.sum(less_results_rank[run_count_fun_idx], axis=1)
 
@@ -912,6 +941,22 @@ def compute_time_range_pdf(all_run_count_fun, all_run_count_fun_name, model_data
 		crps_loss_more[run_count_fun_idx] = np.mean(ps.crps_ensemble(interval_range_count_more, all_begins, weights=more_results_rank[run_count_fun_idx]/all_counts_sum_more))
 		crps_loss_less[run_count_fun_idx] = np.mean(ps.crps_ensemble(interval_range_count_less, all_begins, weights=less_results_rank[run_count_fun_idx]/all_counts_sum_more))
 
+		# Cross Entropy calculations
+		all_counts_sum_more = np.sum(more_results[run_count_fun_idx], axis=1)
+		all_counts_sum_less = np.sum(less_results[run_count_fun_idx], axis=1)
+
+		more_results[run_count_fun_idx][(all_counts_sum_more == 0)] = np.ones_like(more_results[run_count_fun_idx][(all_counts_sum_more == 0)])
+		less_results[run_count_fun_idx][(all_counts_sum_less == 0)] = np.ones_like(less_results[run_count_fun_idx][(all_counts_sum_less == 0)])
+
+		all_counts_sum_more = np.expand_dims(np.sum(more_results[run_count_fun_idx], axis=1), axis=-1)
+		all_counts_sum_less = np.expand_dims(np.sum(less_results[run_count_fun_idx], axis=1), axis=-1)
+
+		cross_entropy_more[run_count_fun_idx] = np.sum((interval_counts_more_true * (1.0 - more_results[run_count_fun_idx]/all_counts_sum_more)) +\
+												((1.0 - interval_counts_more_true) * more_results[run_count_fun_idx]/all_counts_sum_more))
+
+		cross_entropy_less[run_count_fun_idx] = np.sum((interval_counts_less_true * (1.0 - less_results[run_count_fun_idx]/all_counts_sum_less)) +\
+												((1.0 - interval_counts_less_true) * less_results[run_count_fun_idx]/all_counts_sum_less))
+
 	print("CRPS for More")
 	for run_count_fun_idx in range(len(all_run_count_fun)):
 		print("Model", all_run_count_fun_name[run_count_fun_idx], ": Score =", crps_loss_more[run_count_fun_idx])
@@ -919,6 +964,14 @@ def compute_time_range_pdf(all_run_count_fun, all_run_count_fun_name, model_data
 	print("CRPS for Less")
 	for run_count_fun_idx in range(len(all_run_count_fun)):
 		print("Model", all_run_count_fun_name[run_count_fun_idx], ": Score =", crps_loss_less[run_count_fun_idx])
+
+	print("Cross Entropy for More")
+	for run_count_fun_idx in range(len(all_run_count_fun)):
+		print("Model", all_run_count_fun_name[run_count_fun_idx], ": Score =", cross_entropy_more[run_count_fun_idx])
+
+	print("Cross Entropy for Less")
+	for run_count_fun_idx in range(len(all_run_count_fun)):
+		print("Model", all_run_count_fun_name[run_count_fun_idx], ": Score =", cross_entropy_less[run_count_fun_idx])
 
 	# Plots
 	os.makedirs('Outputs/'+dataset_name+'_threshold_less/', exist_ok=True)
@@ -1061,6 +1114,7 @@ def run_model(dataset_name, model_name, dataset, args, prev_models=None):
 			less_threshold = dataset['less_threshold']
 			more_threshold = dataset['more_threshold']
 			interval_size = dataset['interval_size']
+			test_out_times_in_bin = dataset['test_out_times_in_bin']
 
 			model_cnt, model_rmtpp = prev_models['count_model'], prev_models['rmtpp_mse']
 			models = model_cnt, model_rmtpp
@@ -1074,7 +1128,8 @@ def run_model(dataset_name, model_name, dataset, args, prev_models=None):
 			compute_depth = 5
 
 			query_1_data = [test_time_out_tb_plus, test_time_out_te_plus, test_out_event_count_true]
-			query_2_data = [interval_range_count_less, interval_range_count_more, less_threshold, more_threshold, interval_size]
+			query_2_data = [interval_range_count_less, interval_range_count_more, 
+							less_threshold, more_threshold, interval_size, test_out_times_in_bin]
 
 			old_stdout = sys.stdout
 			sys.stdout=open("Outputs/count_model_"+dataset_name+".txt","w")
@@ -1087,7 +1142,7 @@ def run_model(dataset_name, model_name, dataset, args, prev_models=None):
 			model_data = [args, models, data, test_data]
 			all_run_count_fun = [run_rmtpp_count_cont_rmtpp, run_rmtpp_count_reinit, run_rmtpp_for_count]
 			all_run_count_fun_name = ['run_rmtpp_count_cont_rmtpp', 'run_rmtpp_count_reinit', 'run_rmtpp_for_count']
-			compute_time_range_pdf(all_run_count_fun, all_run_count_fun_name, model_data, query_2_data, dataset_name, query_1_data)
+			compute_time_range_pdf(all_run_count_fun, all_run_count_fun_name, model_data, query_2_data, dataset_name)
 			print("____________________________________________________________________")
 			print("")
 			print("Prediction for rmtpp_count_with_cont_simu model")
@@ -1105,7 +1160,7 @@ def run_model(dataset_name, model_name, dataset, args, prev_models=None):
 			print("____________________________________________________________________")
 			print("")
 			print("Prediction for plain_rmtpp_count model")
-			result, all_times_bin_pred = run_rmtpp_for_count(args, models, data, test_data, query_1_data)
+			result, all_times_bin_pred = run_rmtpp_for_count(args, models, data, test_data, query_data=query_1_data)
 			deep_mae = compute_hierarchical_mae(all_times_bin_pred, query_1_data, test_out_all_event_true, compute_depth)
 			threshold_mae = compute_threshold_loss(all_times_bin_pred, query_2_data)
 			print("deep_mae", deep_mae)

@@ -40,7 +40,7 @@ class RMTPP(tf.keras.Model):
             self.WT_layer = layers.Dense(1, activation=tf.nn.softplus, name='WT_layer')
             self.gaps_output_layer = InverseTransformSampling()
 
-    def call(self, gaps, initial_state=None):
+    def call(self, gaps, initial_state=None, next_state_sno=1):
         ''' Forward pass of the RMTPP model'''
 
         self.gaps = gaps
@@ -66,7 +66,7 @@ class RMTPP(tf.keras.Model):
             self.gaps_pred = tf.nn.softplus(self.D)
             self.WT = tf.zeros_like(self.D)
         
-        next_initial_state = self.hidden_states[:,0]
+        next_initial_state = self.hidden_states[:,next_state_sno-1]
         final_state = self.hidden_states[:,-1]
         return self.gaps_pred, self.D, self.WT, next_initial_state, final_state
 
