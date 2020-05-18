@@ -1,7 +1,56 @@
 import numpy as np
 import os, sys
+import abc
 import matplotlib.pyplot as plt
 from bisect import bisect_right
+
+class Intensity(object):
+    __metaclass__ = abc.ABCMeta
+
+    @abc.abstractmethod
+    def getValue(self, t):
+        return
+
+class IntensityHomogenuosPoisson(Intensity):
+
+    def __init__(self, lam):
+        self.lam = lam
+
+    def getValue(self, t):
+        return self.lam
+
+    def getUpperBound(self, from_t, to_t):
+        return self.lam
+
+def generate_sample(intensity, T, n):
+    Sequnces = []
+    i = 0
+    while True:
+        seq = []
+        t = 0
+        print('Inside generate_sample', i)
+        while len(seq)<T:
+            intens1 = intensity.getUpperBound(t,T)
+            intens1 = intens1[i]
+            dt = np.random.exponential(1/intens1)
+            new_t = t + dt
+            #if new_t > T:
+            #    break
+
+            intens2 = intensity.getValue(new_t)
+            intens2 = intens2[i]
+            u = np.random.uniform()
+            if intens2/intens1 >= u:
+                seq.append(new_t)
+            t = new_t
+        #if len(seq)>1:
+        if len(seq):
+            Sequnces.append(seq)
+            i+=1
+        if i==n:
+            break
+    return Sequnces
+
 
 def normalize_data(data):
 	mean = np.mean(data)

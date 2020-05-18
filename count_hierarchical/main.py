@@ -56,7 +56,11 @@ parser.add_argument('--out_bin_sz', type=int,
 parser.add_argument('--enc_len', type=int, default=80,
                     help='Input length for rnn of rmtpp')
 
-# interval_size = 360
+# wgan_enc_len = 60  # For WGAN
+parser.add_argument('--wgan_enc_len', type=int, default=60,
+                    help='Input length for rnn of WGAN')
+
+# interval_size = 360  # For RMTPP
 parser.add_argument('--interval_size', type=int, default=360,
                     help='Interval size for threshold query')
 
@@ -101,6 +105,7 @@ args.dataset_name = dataset_names
 
 model_names = list()
 if args.model_name == 'all':
+    model_names.append('wgan')
     model_names.append('count_model')
     model_names.append('hierarchical')
     model_names.append('rmtpp_mse')
@@ -114,10 +119,10 @@ automate_bin_sz = False
 if args.bin_size == 0:
     automate_bin_sz = True
 
-print('args', args)
-
 id_process = os.getpid()
 time_current = datetime.datetime.now().isoformat()
+
+print('args', args)
 
 print("********************************************************************")
 print("PID: %s" % str(id_process))
@@ -168,4 +173,3 @@ for dataset_name in dataset_names:
 
     event_count_result[dataset_name] = per_model_count
     print("####################################################################")
-

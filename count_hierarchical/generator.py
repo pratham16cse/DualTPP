@@ -77,8 +77,9 @@ def create_taxi_data():
 	taxi_timestamps = np.array(taxi_timestamps)
 	taxi_timestamps -= taxi_timestamps[0]
 	taxi_timestamps = taxi_timestamps
-	if 'taxi' in downsampling:
-		taxi_timestamps = downsampling_dataset(taxi_timestamps, 'taxi')
+	dataset_name = 'taxi'
+	if dataset_name in downsampling:
+		taxi_timestamps = downsampling_dataset(taxi_timestamps, dataset_name)
 	taxi_gaps = taxi_timestamps[1:] - taxi_timestamps[:-1]
 	plt.plot(taxi_gaps[:100])
 	plt.ylabel('Gaps')
@@ -143,4 +144,3 @@ def generate_twitter_dataset(twitter_dataset_names):
 			gaps, timestamps = create_twitter_data(dataset_name)
 			np.savetxt(dataset_name+'.txt', timestamps)
 	os.chdir('../')
-
