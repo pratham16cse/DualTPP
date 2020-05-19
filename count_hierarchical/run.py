@@ -355,8 +355,6 @@ def run_wgan(args, data, test_data):
 			Write expressions for D_loss and G_loss
 			Write training loops for the model
 			Add # WGAN Lipschitz constraint
-		TODO:
-
 	'''
 	LAMBDA_LP = 0.1 # Penality for Lipschtiz divergence
 
@@ -365,6 +363,7 @@ def run_wgan(args, data, test_data):
 
 	G_optimizer = keras.optimizers.Adam(args.learning_rate)
 	D_optimizer = keras.optimizers.Adam(args.learning_rate)
+	pre_train_optimizer = keras.optimizers.Adam(args.learning_rate)
 
 	[train_dataset_gaps, dev_data_in_gaps, dev_data_out_gaps, train_norm_gaps] = data
 	[train_norm_a_gaps, train_norm_d_gaps] = train_norm_gaps
@@ -406,6 +405,29 @@ def run_wgan(args, data, test_data):
 	checkpoint_path = "saved_models/training_wgan_"+args.current_dataset+"/cp_"+args.current_dataset+".ckpt"
 	best_dev_gap_mse = np.inf
 	best_dev_epoch = 0
+
+	# pre-train wgan model
+	pre_train_losses = list()
+	print('pre-training started')
+	bch_cnt = 0
+	for sm_step, (_, gaps_batch) in enumerate(train_dataset_gaps):
+		gaps_batch_in = gaps_batch[:, :wgan_enc_len]
+		gaps_batch_out = gaps_batch[:, wgan_enc_len:]
+		train_z_seqs_batch = train_z_seqs[sm_step*args.batch_size:(sm_step+1)*args.batch_size]
+		with tf.GradientTape() as pre_train_tape:
+			gaps_pred = model.generator(train_z_seqs_batch, gaps_batch_in)
+
+			bch_pre_train_loss = tf.reduce_mean(tf.abs(gaps_pred - gaps_batch_out))
+                        
+			pre_train_losses.append(bch_pre_train_loss.numpy())
+			
+		pre_train_grads = pre_train_tape.gradient(bch_pre_train_loss, model.trainable_weights)
+		pre_train_optimizer.apply_gradients(zip(pre_train_grads, model.trainable_weights))
+
+		bch_cnt += 1
+	print('pre-training done, losses=', pre_train_losses)
+	# pre-train done
+
 
 	train_losses = list()
 	for epoch in range(args.epochs):
@@ -668,7 +690,7 @@ def simulate_wgan(model, times_in, gaps_in, t_b_plus, normalizers, prev_hidden_s
 		z_seqs_in = tf.convert_to_tensor(z_seqs_in)
 
 		step_gaps_pred \
-				= model.generator(z_seqs_in, g_init_state=model.g_state)
+				= model.generator(z_seqs_in, g_init_state=g_init_state)
 
 		# step_gaps_pred = step_gaps_pred[:,-1:]
 		step_gaps_pred = tf.squeeze(step_gaps_pred, axis=-1)
