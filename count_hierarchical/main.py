@@ -18,7 +18,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('dataset_name', type=str, help='dataset_name')
 parser.add_argument('model_name', type=str, help='model_name')
 
-parser.add_argument('--epochs', type=int, default=15,
+parser.add_argument('--epochs', type=int, default=20,
                     help='number of training epochs')
 parser.add_argument('--patience', type=int, default=2,
                     help='Number of epochs to wait for \
@@ -95,8 +95,8 @@ twitter_dataset_names = list()
 if 'twitter' in dataset_names:
     dataset_names.remove('twitter')
     twitter_dataset_names.append('Trump')
-    twitter_dataset_names.append('Verdict')
-    twitter_dataset_names.append('Delhi')
+    #twitter_dataset_names.append('Verdict')
+    #twitter_dataset_names.append('Delhi')
 
 for data_name in twitter_dataset_names:
     dataset_names.append(data_name)
@@ -152,6 +152,7 @@ for dataset_name in dataset_names:
 
     test_data_out_bin = dataset['test_data_out_bin']
     event_count_preds_true = test_data_out_bin
+    count_var = None
 
     per_model_count = dict()
     per_model_save = dict()
@@ -164,12 +165,18 @@ for dataset_name in dataset_names:
             model, result = run.run_model(dataset_name, model_name, dataset, args, per_model_save)
         else:
             model, result = run.run_model(dataset_name, model_name, dataset, args)
+
+        if model_name == 'count_model':
+            count_var = result['count_var'].numpy()
+            result = result['count_preds']
+
         per_model_count[model_name] = result
         per_model_save[model_name] = model
         print('Got result', 'for model', model_name, 'on dataset', dataset_name)
 
     for idx in range(10):
-        utils.generate_plots(args, dataset_name, dataset, per_model_count, test_sample_idx=idx)
+        utils.generate_plots(args, dataset_name, dataset, per_model_count, test_sample_idx=idx, count_var=count_var)
 
     event_count_result[dataset_name] = per_model_count
     print("####################################################################")
+

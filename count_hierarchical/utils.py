@@ -28,7 +28,6 @@ def generate_sample(intensity, T, n):
     while True:
         seq = []
         t = 0
-        print('Inside generate_sample', i)
         while len(seq)<T:
             intens1 = intensity.getUpperBound(t,T)
             intens1 = intens1[i]
@@ -80,7 +79,7 @@ def get_optimal_bin_size(dataset_name):
 	events_count = len(timestamps)
 	return int(round((time_interval*50) / events_count))
 
-def generate_plots(args, dataset_name, dataset, per_model_count, test_sample_idx=1):
+def generate_plots(args, dataset_name, dataset, per_model_count, test_sample_idx=1, count_var=None):
 	inp_seq_len_plot = 10
 	dec_len = args.out_bin_sz
 
@@ -89,6 +88,7 @@ def generate_plots(args, dataset_name, dataset, per_model_count, test_sample_idx
 	rmtpp_nll_pred = true_pred
 	hierarchical_pred = true_pred
 	count_model_pred = true_pred
+	wgan_pred = true_pred
 	if 'rmtpp_mse' in per_model_count:
 		rmtpp_mse_pred = per_model_count['rmtpp_mse']
 	if 'rmtpp_nll' in per_model_count:
@@ -97,6 +97,8 @@ def generate_plots(args, dataset_name, dataset, per_model_count, test_sample_idx
 		hierarchical_pred = per_model_count['hierarchical']
 	if 'count_model' in per_model_count:
 		count_model_pred = per_model_count['count_model']
+	if 'wgan' in per_model_count:
+		wgan_pred = per_model_count['wgan']
 
 
 	event_count_preds_true = true_pred
@@ -104,6 +106,7 @@ def generate_plots(args, dataset_name, dataset, per_model_count, test_sample_idx
 	event_count_preds_nll = rmtpp_nll_pred
 	event_count_preds_cnt = hierarchical_pred
 	event_count_preds_count = count_model_pred
+	event_count_preds_wgan = wgan_pred
 
 	test_data_in_bin = dataset['test_data_in_bin']
 	test_mean_bin = dataset['test_mean_bin']
@@ -118,16 +121,24 @@ def generate_plots(args, dataset_name, dataset, per_model_count, test_sample_idx
 	rmtpp_nll_pred = event_count_preds_nll[test_sample_idx].astype(np.float32)
 	hierarchical_pred = event_count_preds_cnt[test_sample_idx].astype(np.float32)
 	count_model_pred = event_count_preds_count[test_sample_idx].astype(np.float32)
+	wgan_pred = event_count_preds_wgan[test_sample_idx].astype(np.float32)
+	count_model_std = np.sqrt(count_var[test_sample_idx].astype(np.float32))
+	count_model_std_up = np.concatenate((true_inp_bins, count_model_pred))
+	count_model_std_down = np.concatenate((true_inp_bins, count_model_pred))
+	count_model_std_up[-dec_len:] = count_model_pred+count_model_std
+	count_model_std_down[-dec_len:] = count_model_pred-count_model_std
 
 	plt.plot(x, true_inp_bins.tolist()+hierarchical_pred.tolist(), label='hierarchical_pred')
 	plt.plot(x, true_inp_bins.tolist()+count_model_pred.tolist(), label='count_model_pred')
+	plt.plot(x, true_inp_bins.tolist()+wgan_pred.tolist(), label='wgan_pred')
 	plt.plot(x, true_inp_bins.tolist()+rmtpp_mse_pred.tolist(), label='rmtpp_mse_pred')
 	plt.plot(x, true_inp_bins.tolist()+rmtpp_nll_pred.tolist(), label='rmtpp_nll_pred')
 	plt.plot(x, true_inp_bins.tolist()+true_pred.tolist(), label='true_pred')
+	plt.fill_between(x, count_model_std_down, count_model_std_up, color='gray', alpha=0.5)
 
 	plt.axvline(x=inp_seq_len_plot-1, color='k', linestyle='--')
 	plt.legend(loc='upper left')
-	plt.savefig('Outputs/'+dataset_name+'_'+str(test_sample_idx)+'.png')
+	plt.savefig('Outputs/'+dataset_name+'_'+str(test_sample_idx)+'.svg', format='svg', dpi=1200)
 	plt.close()
 
 def create_bin(times, bin_size):
