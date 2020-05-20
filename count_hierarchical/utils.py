@@ -62,6 +62,9 @@ def normalize_data_given_param(data, mean, std):
 def denormalize_data(data, mean, std):
 	return (data * std) + mean
 
+def denormalize_data_var(data, mean, std):
+	return (data * std * std)
+
 def normalize_avg(data):
 	norm_a = 0.0
 	norm_d = np.mean(data)

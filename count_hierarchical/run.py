@@ -250,7 +250,9 @@ def run_hierarchical(args, data, test_data):
 def run_count_model(args, data, test_data):
 	validation_split = 0.2
 	num_epochs = args.epochs * 100
+	patience = args.patience * 100
 	distribution_name = 'Gaussian'
+	#distribution_name = 'var_model'
 
 	train_data_in_bin, train_data_out_bin = data
 	test_data_in_bin, test_data_out_bin, test_mean_bin, test_std_bin = test_data
@@ -282,6 +284,8 @@ def run_count_model(args, data, test_data):
 	best_dev_epoch = 0
 
 	train_losses = list()
+	var_sample = list()
+	dev_mae_list = list()
 	for epoch in range(num_epochs):
 		#print('Starting epoch', epoch)
 		step_train_loss = 0.0
@@ -291,7 +295,7 @@ def run_count_model(args, data, test_data):
 				bin_counts_pred, distribution_params = model(bin_count_batch_in)
 
 				loss_fn = models.NegativeLogLikelihood_CountModel(distribution_params, distribution_name)
-				loss = loss_fn(bin_count_batch_out, None)
+				loss = loss_fn(bin_count_batch_out, bin_counts_pred)
 
 				step_train_loss+=loss.numpy()
 				
@@ -310,7 +314,7 @@ def run_count_model(args, data, test_data):
 		dev_gap_metric_mae.reset_states()
 		dev_gap_metric_mse.reset_states()
 
-		if best_dev_gap_mse > dev_gap_mse:
+		if best_dev_gap_mse > dev_gap_mse and patience <= epoch:
 			best_dev_gap_mse = dev_gap_mse
 			best_dev_epoch = epoch
 			print('Saving model at epoch', epoch)
@@ -322,8 +326,25 @@ def run_count_model(args, data, test_data):
 			%(float(dev_gap_mae), float(dev_gap_mse)))
 		train_losses.append(step_train_loss)
 
+		dev_mae_list.append(dev_gap_mae)
+		if epoch%10 == 0:
+			_, [_, test_distribution_var] = model(test_data_in_bin)
+			var_sample.append(test_distribution_var[0])
+	
+	var_sample = np.array(var_sample)
+	for dec_idx in range(args.out_bin_sz//2):
+		plt.plot(range(len(var_sample)), var_sample[:,dec_idx], label='dec_idx_'+str(dec_idx))
+
+	plt.legend(loc='upper right')
+	plt.savefig('Outputs/count_model_test_var_'+distribution_name+'_'+args.current_dataset+'_test_id_0.png')
+	plt.close()
+
 	plt.plot(range(len(train_losses)), train_losses)
-	plt.savefig('Outputs/train_count_'+args.current_dataset+'_loss.png')
+	plt.savefig('Outputs/count_model_train_loss_'+distribution_name+'_'+args.current_dataset+'.png')
+	plt.close()
+
+	plt.plot(range(len(dev_mae_list)), dev_mae_list)
+	plt.savefig('Outputs/count_model_dev_mae_'+distribution_name+'_'+args.current_dataset+'.png')
 	plt.close()
 
 	print("Loading best model from epoch", best_dev_epoch)
@@ -340,6 +361,7 @@ def run_count_model(args, data, test_data):
 
 	test_bin_count_pred_norm, test_distribution_params = model(test_data_in_bin)		
 	test_bin_count_pred = utils.denormalize_data(test_bin_count_pred_norm, test_mean_bin, test_std_bin)
+	test_distribution_params[1] = utils.denormalize_data_var(test_distribution_params[1], test_mean_bin, test_std_bin)
 	return model, {"count_preds": test_bin_count_pred.numpy(), "count_var": test_distribution_params[1]}
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 

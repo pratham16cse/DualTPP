@@ -18,7 +18,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('dataset_name', type=str, help='dataset_name')
 parser.add_argument('model_name', type=str, help='model_name')
 
-parser.add_argument('--epochs', type=int, default=20,
+parser.add_argument('--epochs', type=int, default=15,
                     help='number of training epochs')
 parser.add_argument('--patience', type=int, default=2,
                     help='Number of epochs to wait for \
@@ -118,6 +118,9 @@ args.model_name = model_names
 automate_bin_sz = False
 if args.bin_size == 0:
     automate_bin_sz = True
+
+if args.patience >= args.epochs:
+    args.patience = 0
 
 id_process = os.getpid()
 time_current = datetime.datetime.now().isoformat()

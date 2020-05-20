@@ -112,9 +112,12 @@ class NegativeLogLikelihood_CountModel(tf.keras.losses.Loss):
         elif self.distribution_name == 'Gaussian':
             self.mu = distribution_params[0]
             self.var = distribution_params[1]
+        elif self.distribution_name == 'var_model':
+            self.output_variance = distribution_params[1]
 
     def call(self, y_true, y_pred):
         count_distribution = None
+        loss = None
 
         if self.distribution_name == 'NegativeBinomial':
             nb_distribution = tfp.distributions.NegativeBinomial(
@@ -122,6 +125,7 @@ class NegativeLogLikelihood_CountModel(tf.keras.losses.Loss):
                 name='NegativeBinomial'
             )
             count_distribution = nb_distribution
+            loss = -tf.reduce_mean(count_distribution.log_prob(y_true))
 
         elif self.distribution_name == 'Gaussian':
             gaussian_distribution = tfp.distributions.Normal(
@@ -129,8 +133,15 @@ class NegativeLogLikelihood_CountModel(tf.keras.losses.Loss):
                 name='Normal'
             )
             count_distribution = gaussian_distribution
+            loss = -tf.reduce_mean(count_distribution.log_prob(y_true))
 
-        return -tf.reduce_mean(count_distribution.log_prob(y_true))
+        elif self.distribution_name == 'var_model':
+            count_loss = tf.reduce_mean((y_true - y_pred) * (y_true - y_pred))
+            assumed_var = ((y_true - y_pred)*(y_true - y_pred))
+            var_loss = tf.reduce_mean((self.output_variance - assumed_var) * (self.output_variance - assumed_var))
+            loss = count_loss + var_loss
+
+        return loss
 
 class COUNT_MODEL(tf.keras.Model):
     def __init__(self,
@@ -140,23 +151,32 @@ class COUNT_MODEL(tf.keras.Model):
                 name='count_model',
                 **kwargs):
         super(COUNT_MODEL, self).__init__(name=name, **kwargs)
+        self.distribution_name = distribution_name
+
         self.dense1 = tf.keras.layers.Dense(hidden_layer_size, activation=tf.nn.relu, name="count_dense1")
         self.dense2 = tf.keras.layers.Dense(hidden_layer_size, activation=tf.nn.relu, name="count_dense2")
         self.out_layer = tf.keras.layers.Dense(hidden_layer_size, activation=tf.nn.relu, name="out_layer")
 
-        self.out_alpha_layer = tf.keras.layers.Dense(out_bin_sz, name="out_alpha_layer")
-        self.out_mu_layer = tf.keras.layers.Dense(out_bin_sz, name="out_mu_layer")
-        self.distribution_name = distribution_name
+        if self.distribution_name in ['NegativeBinomial', 'Gaussian']:
+            self.out_alpha_layer = tf.keras.layers.Dense(out_bin_sz, name="out_alpha_layer")
+            self.out_mu_layer = tf.keras.layers.Dense(out_bin_sz, name="out_mu_layer")
+
+        elif self.distribution_name == 'var_model':
+            self.count_out_layer = tf.keras.layers.Dense(out_bin_sz, name="count_out_layer")
+            self.var_dense1 = tf.keras.layers.Dense(hidden_layer_size, activation=tf.nn.relu, name="var_count_dense1")
+            self.var_out_layer = tf.keras.layers.Dense(out_bin_sz, activation=tf.keras.activations.softplus, name="var_out_layer")
 
     def call(self, inputs, debug=False):
         hidden_state_1 = self.dense1(inputs)
         hidden_state_2 = self.dense2(hidden_state_1)
         output_state = self.out_layer(hidden_state_2)
 
-        out_alpha = self.out_alpha_layer(output_state)
-        out_mu = self.out_mu_layer(output_state)
+        bin_count_output = None
 
         if self.distribution_name == 'NegativeBinomial':
+            out_alpha = self.out_alpha_layer(output_state)
+            out_mu = self.out_mu_layer(output_state)
+
             out_alpha = (tf.math.softplus(out_alpha))
             out_mu = (tf.math.softplus(out_mu))
 
@@ -174,8 +194,12 @@ class COUNT_MODEL(tf.keras.Model):
             )
             output_samples = nb_distribution.sample(1000)
             distribution_params = [total_count, probs]
+            bin_count_output = tf.reduce_mean(output_samples, axis=0)
 
         elif self.distribution_name == 'Gaussian':
+            out_alpha = self.out_alpha_layer(output_state)
+            out_mu = self.out_mu_layer(output_state)
+
             out_var = (tf.math.softplus(out_alpha))
 
             gaussian_distribution = tfp.distributions.Normal(
@@ -184,8 +208,15 @@ class COUNT_MODEL(tf.keras.Model):
             )
             output_samples = gaussian_distribution.sample(1000)
             distribution_params = [out_mu, out_var]
+            bin_count_output = tf.reduce_mean(output_samples, axis=0)
 
-        bin_count_output = tf.reduce_mean(output_samples, axis=0)
+        elif self.distribution_name == 'var_model':
+            bin_count_output = self.count_out_layer(output_state)
+
+            var_hidden_state_1 = self.var_dense1(output_state)
+            output_variance = self.var_out_layer(var_hidden_state_1)
+            distribution_params = [None, output_variance]
+
         return bin_count_output, distribution_params
 
 
