@@ -384,7 +384,7 @@ def run_wgan(args, data, test_data):
 		wgan_dec_len = gaps_batch.shape[1] - wgan_enc_len
 		times_batch = tf.cumsum(gaps_batch, axis=1)
 		span_batch = times_batch[:, -1] - times_batch[:, 0]
-		lambda0 = np.ones_like(span_batch) / span_batch.numpy()
+		lambda0 = np.ones_like(span_batch) * gaps_batch.shape[1] / span_batch.numpy()
 		intensityPoisson = IntensityHomogenuosPoisson(lambda0)
 		output_span_batch = times_batch[:, -1] - times_batch[:, wgan_dec_len]
 		train_z_seqs_batch = generate_sample(intensityPoisson, wgan_dec_len, lambda0.shape[0])
@@ -396,7 +396,7 @@ def run_wgan(args, data, test_data):
 	wgan_dec_len = dev_data_gaps.shape[1] - wgan_enc_len
 	dev_data_times = tf.cumsum(dev_data_gaps, axis=1)
 	dev_span = dev_data_times[:, wgan_enc_len-1] - dev_data_times[:, 0]
-	lambda0 = np.ones_like(dev_span) / dev_span.numpy()
+	lambda0 = np.ones_like(dev_span) * dev_data_gaps.shape[1] / dev_span.numpy()
 	intensityPoisson = IntensityHomogenuosPoisson(lambda0)
 	dev_z_seqs = generate_sample(intensityPoisson, wgan_dec_len, lambda0.shape[0])
 	dev_z_seqs = tf.convert_to_tensor(dev_z_seqs)
@@ -410,24 +410,29 @@ def run_wgan(args, data, test_data):
 	pre_train_losses = list()
 	print('pre-training started')
 	bch_cnt = 0
-	for sm_step, (_, gaps_batch) in enumerate(train_dataset_gaps):
-		gaps_batch_in = gaps_batch[:, :wgan_enc_len]
-		gaps_batch_out = gaps_batch[:, wgan_enc_len:]
-		train_z_seqs_batch = train_z_seqs[sm_step*args.batch_size:(sm_step+1)*args.batch_size]
-		with tf.GradientTape() as pre_train_tape:
-			gaps_pred = model.generator(train_z_seqs_batch, gaps_batch_in)
+	#for sm_step, (_, gaps_batch) in enumerate(train_dataset_gaps):
+	#	gaps_batch_in = gaps_batch[:, :wgan_enc_len]
+	#	gaps_batch_out = gaps_batch[:, wgan_enc_len:]
+	#	train_z_seqs_batch = train_z_seqs[sm_step*args.batch_size:(sm_step+1)*args.batch_size]
+	#	with tf.GradientTape() as pre_train_tape:
+	#		gaps_pred = model.generator(train_z_seqs_batch, gaps_batch_in)
 
-			bch_pre_train_loss = tf.reduce_mean(tf.abs(gaps_pred - gaps_batch_out))
-                        
-			pre_train_losses.append(bch_pre_train_loss.numpy())
-			
-		pre_train_grads = pre_train_tape.gradient(bch_pre_train_loss, model.trainable_weights)
-		pre_train_optimizer.apply_gradients(zip(pre_train_grads, model.trainable_weights))
+	#		bch_pre_train_loss = tf.reduce_mean(tf.abs(gaps_pred - gaps_batch_out))
+    #                    
+	#		pre_train_losses.append(bch_pre_train_loss.numpy())
+	#		
+	#	pre_train_grads = pre_train_tape.gradient(bch_pre_train_loss, model.trainable_weights)
+	#	pre_train_optimizer.apply_gradients(zip(pre_train_grads, model.trainable_weights))
 
-		bch_cnt += 1
-	print('pre-training done, losses=', pre_train_losses)
-	# pre-train done
+	#	bch_cnt += 1
+	#print('pre-training done, losses=', pre_train_losses)
+	## pre-train done
 
+
+	if args.use_wgan_d:
+		print(' Training with discriminator')
+	else:
+		print(' Training without discriminator')
 
 	train_losses = list()
 	for epoch in range(args.epochs):
@@ -443,24 +448,31 @@ def run_wgan(args, data, test_data):
 			with tf.GradientTape() as g_tape, tf.GradientTape() as d_tape:
 				gaps_pred = model.generator(train_z_seqs_batch, gaps_batch_in)
 
-				D_pred = model.discriminator(gaps_batch_in, gaps_pred)
-				D_true = model.discriminator(gaps_batch_in, gaps_batch_out)
+				if args.use_wgan_d:
+					D_pred = model.discriminator(gaps_batch_in, gaps_pred)
+					D_true = model.discriminator(gaps_batch_in, gaps_batch_out)
 
-				D_loss = tf.reduce_mean(D_pred) - tf.reduce_mean(D_true)
-				G_loss = -tf.reduce_mean(D_pred)
+					D_loss = tf.reduce_mean(D_pred) - tf.reduce_mean(D_true)
+					G_loss = -tf.reduce_mean(D_pred)
 	
-				# Adding Lipschitz Constraint
-				length_ = tf.minimum(tf.shape(gaps_batch_out)[1],tf.shape(gaps_pred)[1])
-				lipschtiz_divergence = tf.abs(D_true-D_pred)/tf.sqrt(tf.reduce_sum(tf.square(gaps_batch_out[:,:length_,:]-gaps_pred[:,:length_,:]), axis=[1,2])+0.00001)
-				lipschtiz_divergence = tf.reduce_mean((lipschtiz_divergence-1)**2)
-				D_loss += LAMBDA_LP*lipschtiz_divergence
+					# Adding Lipschitz Constraint
+					length_ = tf.minimum(tf.shape(gaps_batch_out)[1],tf.shape(gaps_pred)[1])
+					lipschtiz_divergence = tf.abs(D_true-D_pred)/tf.sqrt(tf.reduce_sum(tf.square(gaps_batch_out[:,:length_,:]-gaps_pred[:,:length_,:]), axis=[1,2])+0.00001)
+					lipschtiz_divergence = tf.reduce_mean((lipschtiz_divergence-1)**2)
+					D_loss += LAMBDA_LP*lipschtiz_divergence
+				else:
+					length_ = tf.minimum(tf.shape(gaps_batch_out)[1],tf.shape(gaps_pred)[1])
+					gaps_pred_cumsum = tf.cumsum(gaps_pred, axis=1)
+					gaps_batch_out_cumsum = tf.cumsum(gaps_batch_out, axis=1)
+					G_loss = tf.reduce_mean(tf.sqrt(tf.reduce_sum(tf.square(gaps_batch_out_cumsum[:,:length_,:]-gaps_pred_cumsum[:,:length_,:]), axis=[1,2])+0.00001))
 
 				step_train_loss += G_loss.numpy()
 				
 			G_grads = g_tape.gradient(G_loss, model.trainable_weights)
 			G_optimizer.apply_gradients(zip(G_grads, model.trainable_weights))
-			D_grads = d_tape.gradient(D_loss, model.trainable_weights)
-			D_optimizer.apply_gradients(zip(D_grads, model.trainable_weights))
+			if args.use_wgan_d:
+				D_grads = d_tape.gradient(D_loss, model.trainable_weights)
+				D_optimizer.apply_gradients(zip(D_grads, model.trainable_weights))
 
 			train_gap_metric_mae(gaps_batch_out, gaps_pred)
 			train_gap_metric_mse(gaps_batch_out, gaps_pred)
@@ -679,7 +691,7 @@ def simulate_wgan(model, times_in, gaps_in, t_b_plus, normalizers, prev_hidden_s
 	#TODO: Why we simulate one event at a time like RMTPP if we can get 20 events because of wgan
 	times_in = tf.cumsum(gaps_in, axis=1)
 	span_in = times_in[:, -1] - times_in[:, 0]
-	lambda0 = times_in.shape[1] / span_in.numpy()
+	lambda0 = np.ones_like(span_in) * gaps_in.shape[1] / span_in.numpy()
 	intensityPoisson = IntensityHomogenuosPoisson(lambda0)
 
 	_, g_init_state = model.run_encoder(gaps_in)
