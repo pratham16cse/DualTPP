@@ -59,6 +59,8 @@ parser.add_argument('--enc_len', type=int, default=80,
 # wgan_enc_len = 60  # For WGAN
 parser.add_argument('--wgan_enc_len', type=int, default=60,
                     help='Input length for rnn of WGAN')
+parser.add_argument('--use_wgan_d', action='store_true', default=False,
+                    help='Whether to use WGAN discriminator or not')
 
 # interval_size = 360  # For RMTPP
 parser.add_argument('--interval_size', type=int, default=360,

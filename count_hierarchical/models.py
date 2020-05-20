@@ -310,18 +310,17 @@ class WGAN(tf.keras.Model):
         if enc_inputs is not None:
             _, g_init_state = self.run_encoder(enc_inputs)
 
+        # rnn_outputs, self.g_h_state, self.g_c_state \
+        #         = self.g_rnn_layer(g_inputs)
         rnn_outputs, self.g_h_state, self.g_c_state \
-                = self.g_rnn_layer(g_inputs)
-        # TODO: Pass proper initial state later
-        #rnn_outputs, self.g_h_state, self.g_c_state \
-        #        = self.g_rnn_layer(g_inputs,
-        #                           initial_state=g_init_state)
+                = self.g_rnn_layer(g_inputs,
+                                   initial_state=g_init_state)
 
         # Add dropout
-        rnn_outputs = tf.nn.dropout(rnn_outputs, self.keep_prob)
+        # rnn_outputs = tf.nn.dropout(rnn_outputs, self.keep_prob)
 
         # Softmax layer
-        logits_t = self.g_full_connect(rnn_outputs)+1 #abs, exp, or nothing is better
+        logits_t = self.g_full_connect(rnn_outputs)# +1 #abs, exp, or nothing is better
         #if not D_DIFF and G_DIFF: # depend on D_DIFF
         #    logits_t = tf.cumsum(logits_t,axis=1)
 
