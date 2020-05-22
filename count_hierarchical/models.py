@@ -273,7 +273,7 @@ class WGAN(tf.keras.Model):
                                          name='d_lstm_layer')
 
 
-        self.g_full_connect = layers.Dense(1, activation=tf.nn.elu, name='g_full_connect',
+        self.g_full_connect = layers.Dense(1, activation=tf.nn.softplus, name='g_full_connect',
                                            bias_initializer=tf.keras.initializers.Zeros())
 
 
