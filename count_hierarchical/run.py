@@ -1528,7 +1528,7 @@ def run_model(dataset_name, model_name, dataset, args, prev_models=None):
 							less_threshold, more_threshold, interval_size, test_out_times_in_bin]
 
 			old_stdout = sys.stdout
-			sys.stdout=open("Outputs/count_model_"+dataset_name+".txt","w")
+			sys.stdout=open("Outputs/count_model_"+dataset_name+".txt","a")
 			print("True counts")
 			print(test_out_event_count_true)
 

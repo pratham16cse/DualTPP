@@ -24,7 +24,7 @@ parser.add_argument('--patience', type=int, default=2,
                     help='Number of epochs to wait for \
                           before beginning cross-validation')
 
-parser.add_argument('--learning_rate', type=float, default=1e-2, nargs='+',
+parser.add_argument('--learning_rate', type=float, default=1e-4, nargs='+',
                    help='Learning rate for the training algorithm')
 parser.add_argument('-hls', '--hidden_layer_size', type=int, default=32, nargs='+',
                    help='Number of units in RNN')
@@ -177,6 +177,18 @@ for dataset_name in dataset_names:
 
         per_model_count[model_name] = result
         per_model_save[model_name] = model
+        print("Finished Running", model_name, "Model\n")
+
+        if model_name != 'rmtpp_count':
+            old_stdout = sys.stdout
+            sys.stdout=open("Outputs/count_model_"+dataset_name+".txt","a")
+            print("____________________________________________________________________")
+            print(model_name, 'MAE for Count Prediction:', np.mean(np.abs(per_model_count['true']-per_model_count[model_name])))
+            print(model_name, 'MAE for Count Prediction (per bin):', np.mean(np.abs(per_model_count['true']-per_model_count[model_name]), axis=0))
+            print("____________________________________________________________________")
+            sys.stdout.close()
+            sys.stdout = old_stdout
+
         print('Got result', 'for model', model_name, 'on dataset', dataset_name)
 
     for idx in range(10):
