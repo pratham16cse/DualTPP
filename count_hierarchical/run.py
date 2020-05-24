@@ -1082,9 +1082,12 @@ def run_rmtpp_count_with_optimization(args, query_models, data, test_data):
 
 	events_count_per_batch = output_event_count_pred_cumm
 
-	def fractional_belongingness(all_bins_gaps_pred, all_bins_mid_time, test_data_init_time):
+	def fractional_belongingness(all_bins_gaps_pred,
+								 all_bins_mid_time,
+								 test_data_init_time):
+
 		frac_belong = np.zeros_like(all_bins_mid_time)
-		for batch_idx in range(len(all_bins_gaps_pred)):
+		for batch_idx in range(test_data_init_time.shape[0]):
 			batch_start_time = test_data_init_time[batch_idx,0]
 			batch_per_bin_times = batch_start_time + np.cumsum(all_bins_gaps_pred[batch_idx])
 			batch_bins_mid_time = tf.expand_dims(all_bins_mid_time[batch_idx], axis=0)
@@ -1098,7 +1101,6 @@ def run_rmtpp_count_with_optimization(args, query_models, data, test_data):
 
 	def rmtpp_loglikelihood_loss(gaps, D, WT, events_count_per_batch):
 		rmtpp_loss = 0
-		gaps = tf.sparse.to_dense(tf.ragged.constant(gaps).to_sparse())
 		D = tf.sparse.to_dense(tf.ragged.constant(D).to_sparse())
 		WT = tf.sparse.to_dense(tf.ragged.constant(WT).to_sparse())
 
@@ -1110,14 +1112,21 @@ def run_rmtpp_count_with_optimization(args, query_models, data, test_data):
 		loss = -tf.reduce_mean(tf.reduce_sum(log_f_star, axis=1)/output_event_count_pred_cumm )
 		return loss
 
-	def joint_likelihood_loss(model_cnt_distribution_params, model_rmtpp_params, all_bins_gaps_pred, all_bins_mid_time, test_data_init_time, events_count_per_batch):
+	def joint_likelihood_loss(model_cnt_distribution_params,
+							  model_rmtpp_params,
+							  all_bins_gaps_pred,
+							  all_bins_mid_time,
+							  test_data_init_time,
+							  events_count_per_batch):
 
 		model_cnt_mu = model_cnt_distribution_params[0]
 		model_cnt_var = model_cnt_distribution_params[1]
 		model_rmtpp_D = model_rmtpp_params[0]
 		model_rmtpp_WT = model_rmtpp_params[1]
 
-		frac_belong = fractional_belongingness(all_bins_gaps_pred, all_bins_mid_time, test_data_init_time)
+		frac_belong = fractional_belongingness(all_bins_gaps_pred,
+											   all_bins_mid_time,
+											   test_data_init_time)
 		count_loss_fn = models.NegativeLogLikelihood_CountModel(model_cnt_distribution_params, 'Gaussian')
 		count_loss = count_loss_fn(frac_belong, None)
 
@@ -1125,11 +1134,88 @@ def run_rmtpp_count_with_optimization(args, query_models, data, test_data):
 
 		return count_loss + rmtpp_loss
 
+	class OPT(tf.keras.Model):
+		def __init__(self,
+					 model_cnt_distribution_params,
+					 model_rmtpp_params,
+					 likelihood_fn,
+					 all_bins_gaps_pred,
+					 all_bins_mid_time,
+					 test_data_init_time,
+					 events_count_per_batch,
+					 name='opt',
+					 **kwargs):
+			super(OPT, self).__init__(name=name, **kwargs)
+			
+			gaps = tf.sparse.to_dense(tf.ragged.constant(all_bins_gaps_pred).to_sparse())
+			self.gaps = tf.Variable(gaps, name='gaps', trainable=True)
 
-	def optimize_gaps(model_cnt_distribution_params, model_rmtpp_params, joint_likelihood_loss, all_bins_gaps_pred, all_bins_mid_time, test_data_init_time, events_count_per_batch):
+			self.model_cnt_distribution_params = model_cnt_distribution_params
+			self.model_rmtpp_params = model_rmtpp_params
+			self.likelihood_fn = likelihood_fn
+			self.all_bins_mid_time = all_bins_mid_time
+			self.test_data_init_time = test_data_init_time
+			self.events_count_per_batch = events_count_per_batch
+
+		def __call__(self):
+			return self.likelihood_fn(self.model_cnt_distribution_params,
+									  self.model_rmtpp_params,
+									  self.gaps,
+									  self.all_bins_mid_time,
+									  self.test_data_init_time,
+									  self.events_count_per_batch)
+
+
+	def optimize_gaps(model_cnt_distribution_params,
+					  model_rmtpp_params,
+					  joint_likelihood_loss,
+					  all_bins_gaps_pred,
+					  all_bins_mid_time,
+					  test_data_init_time,
+					  events_count_per_batch):
+
+		model = OPT(model_cnt_distribution_params,
+					model_rmtpp_params,
+					joint_likelihood_loss,
+					all_bins_gaps_pred,
+					all_bins_mid_time,
+					test_data_init_time,
+					events_count_per_batch)
+
+		#print(model.variables)
+	
+		optimizer = keras.optimizers.Adam(args.learning_rate)
+	
+		opt_losses = list()
+		print('Loss before optimization:', model())
+		for _ in range(100):
+			with tf.GradientTape() as tape:
+				nll = model()
+
+				# print(nll)
+				opt_losses.append(nll)
+		
+				grads = tape.gradient(nll, model.trainable_weights)
+				optimizer.apply_gradients(zip(grads, model.trainable_weights))
+		print('Loss after optimization:', model())
+	
+		# TODO cumsum(all_bins_gaps_pred) + test_data_init_time to get all_bins_times_pred
+		# Shape: list of 92 different length tensors
+		all_bins_gaps_pred = model.gaps.numpy() 
 		return all_bins_gaps_pred
+	
+	
+	all_bins_gaps_pred = optimize_gaps(model_cnt_distribution_params,
+									   model_rmtpp_params,
+									   joint_likelihood_loss,
+									   all_bins_gaps_pred,
+									   all_bins_mid_time,
+									   test_data_init_time,
+									   events_count_per_batch)
 
-	#TODO: Compute times from gaps
+	all_times_pred = test_data_init_time + \
+						tf.cumsum(all_bins_gaps_pred, axis=1) * tf.cast(all_bins_gaps_pred>0., tf.float32)
+	all_times_pred = tf.expand_dims(all_times_pred, axis=1).numpy()
 
 	return None, all_times_pred
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
@@ -1752,9 +1838,9 @@ def run_model(dataset_name, model_name, dataset, args, prev_models=None):
 			print("")
 			print("Prediction for run_rmtpp_count_with_optimization model")
 			_, all_times_bin_pred = run_rmtpp_count_with_optimization(args, models, data, test_data)
-			# deep_mae = compute_hierarchical_mae(all_times_bin_pred, query_1_data, test_out_all_event_true, compute_depth)
-			# threshold_mae = compute_threshold_loss(all_times_bin_pred, query_2_data)
-			# print("deep_mae", deep_mae)
+			deep_mae = compute_hierarchical_mae(all_times_bin_pred, query_1_data, test_out_all_event_true, compute_depth)
+			threshold_mae = compute_threshold_loss(all_times_bin_pred, query_2_data)
+			print("deep_mae", deep_mae)
 			print("____________________________________________________________________")
 			print("")
 			print("Running threshold query to generate pdf for all models")
