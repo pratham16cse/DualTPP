@@ -107,11 +107,11 @@ args.dataset_name = dataset_names
 
 model_names = list()
 if args.model_name == 'all':
-    model_names.append('wgan')
+    # model_names.append('wgan')
     model_names.append('count_model')
-    model_names.append('hierarchical')
+    # model_names.append('hierarchical')
     model_names.append('rmtpp_mse')
-    model_names.append('rmtpp_nll')
+    # model_names.append('rmtpp_nll')
     model_names.append('rmtpp_count')
 else:
     model_names.append(args.model_name)
@@ -146,6 +146,7 @@ generate_dataset()
 generate_twitter_dataset(twitter_dataset_names)
 print("####################################################################")
 
+os.makedirs('Outputs', exist_ok=True)
 event_count_result = dict()
 for dataset_name in dataset_names:
     print("Processing", dataset_name, "Datasets\n")
@@ -160,16 +161,20 @@ for dataset_name in dataset_names:
     count_var = None
 
     per_model_count = dict()
-    per_model_save = dict()
+    per_model_save = {
+        'wgan': None,
+        'count_model': None,
+        'hierarchical': None,
+        'rmtpp_mse': None,
+        'rmtpp_nll': None,
+        'rmtpp_count': None,
+    }
     per_model_count['true'] = event_count_preds_true
     for model_name in model_names:
         print("--------------------------------------------------------------------")
         print("Running", model_name, "Model\n")
 
-        if model_name == 'rmtpp_count':
-            model, result = run.run_model(dataset_name, model_name, dataset, args, per_model_save)
-        else:
-            model, result = run.run_model(dataset_name, model_name, dataset, args)
+        model, result = run.run_model(dataset_name, model_name, dataset, args, per_model_save)
 
         if model_name == 'count_model':
             count_var = result['count_var'].numpy()
