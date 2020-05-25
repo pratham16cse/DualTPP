@@ -24,7 +24,7 @@ parser.add_argument('--patience', type=int, default=2,
                     help='Number of epochs to wait for \
                           before beginning cross-validation')
 
-parser.add_argument('--learning_rate', type=float, default=1e-4, nargs='+',
+parser.add_argument('--learning_rate', type=float, default=1e-3, nargs='+',
                    help='Learning rate for the training algorithm')
 parser.add_argument('-hls', '--hidden_layer_size', type=int, default=32, nargs='+',
                    help='Number of units in RNN')

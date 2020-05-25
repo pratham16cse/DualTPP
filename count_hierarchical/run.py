@@ -794,8 +794,8 @@ def run_rmtpp_count_reinit(args, models, data, test_data):
 	test_data_input_gaps_bin = test_data_in_gaps_bin.astype(np.float32)
 	all_events_in_bin_pred = list()
 
-	test_predictions_norm_cnt = model_cnt.predict(test_data_in_bin)
-	if len(test_predictions_norm_cnt) == 3:
+	test_predictions_norm_cnt = model_cnt(test_data_in_bin)
+	if len(test_predictions_norm_cnt) == 2:
 		test_predictions_norm_cnt = test_predictions_norm_cnt[0]
 
 	test_predictions_cnt = utils.denormalize_data(test_predictions_norm_cnt, test_mean_bin, test_std_bin)
@@ -885,8 +885,8 @@ def run_rmtpp_count_cont_rmtpp(args, models, data, test_data):
 	test_data_input_gaps_bin = test_data_in_gaps_bin.astype(np.float32)
 	all_events_in_bin_pred = list()
 
-	test_predictions_norm_cnt = model_cnt.predict(test_data_in_bin)
-	if len(test_predictions_norm_cnt) == 3:
+	test_predictions_norm_cnt = model_cnt(test_data_in_bin)
+	if len(test_predictions_norm_cnt) == 2:
 		test_predictions_norm_cnt = test_predictions_norm_cnt[0]
 
 	test_predictions_cnt = utils.denormalize_data(test_predictions_norm_cnt, test_mean_bin, test_std_bin)
@@ -968,9 +968,9 @@ def run_rmtpp_count_with_optimization(args, query_models, data, test_data):
 	test_data_input_gaps_bin = test_data_in_gaps_bin.astype(np.float32)
 	all_events_in_bin_pred = list()
 
-	test_predictions_norm_cnt = model_cnt.predict(test_data_in_bin)
-	if len(test_predictions_norm_cnt) == 3:
-		model_cnt_distribution_params = test_predictions_norm_cnt[1:]
+	test_predictions_norm_cnt = model_cnt(test_data_in_bin)
+	if len(test_predictions_norm_cnt) == 2:
+		model_cnt_distribution_params = test_predictions_norm_cnt[1]
 		test_predictions_norm_cnt = test_predictions_norm_cnt[0]
 
 	test_predictions_cnt = utils.denormalize_data(test_predictions_norm_cnt, test_mean_bin, test_std_bin)
@@ -1058,17 +1058,6 @@ def run_rmtpp_count_with_optimization(args, query_models, data, test_data):
 		all_bins_D_pred.append(D[0,:,0].numpy())
 		all_bins_WT_pred.append(WT[0,:,0].numpy())
 
-
-		# test_bin_gaps_inp = np.concatenate([lst[idx][-1:], lst[idx+1][:-1]])
-		# test_bin_gaps_inp = np.expand_dims(np.expand_dims(test_bin_gaps_inp, axis=0), axis=-1)
-		# _, D, WT, _, batch_input_final_state = model_rmtpp(test_bin_gaps_inp, initial_state=input_final_state[batch_idx:batch_idx+1])
-		# d_lst.append(D[:,:,0].numpy())
-		# wt_lst.append(WT[:,:,0].numpy())
-
-		# all_bins_gaps_pred.append(lst)
-		# all_bins_D_pred.append(d_lst)
-		# all_bins_WT_pred.append(wt_lst)
-
 	all_bins_gaps_pred = np.array(all_bins_gaps_pred)
 	all_bins_D_pred = np.array(all_bins_D_pred)
 	all_bins_WT_pred = np.array(all_bins_WT_pred)
@@ -1081,6 +1070,7 @@ def run_rmtpp_count_with_optimization(args, query_models, data, test_data):
 	all_bins_mid_time = (all_bins_start_time+all_bins_end_time)/2
 
 	events_count_per_batch = output_event_count_pred_cumm
+	test_data_normalizer = [test_mean_bin, test_std_bin]
 
 	def fractional_belongingness(all_bins_gaps_pred,
 								 all_bins_mid_time,
@@ -1096,6 +1086,7 @@ def run_rmtpp_count_with_optimization(args, query_models, data, test_data):
 			time_diff = batch_per_bin_times - batch_bins_mid_time
 			#TODO: Here we have used log of time diff for overflow issues 
 			f_belong = tf.nn.softmax(-tf.math.log(time_diff**2 + 1e-6), axis=1)
+			f_belong = f_belong * tf.cast(tf.expand_dims(all_bins_gaps_pred[batch_idx]>0.0, axis=-1), dtype=tf.float32)
 			frac_belong[batch_idx] += tf.reduce_sum(f_belong, axis=0)
 		return frac_belong
 
@@ -1109,7 +1100,7 @@ def run_rmtpp_count_with_optimization(args, query_models, data, test_data):
 		log_f_star = (log_lambda_
 					  + one_by(WT) * tf.exp(tf.minimum(ETH, D))
 					  - one_by(WT) * lambda_)
-		loss = -tf.reduce_mean(tf.reduce_sum(log_f_star, axis=1)/output_event_count_pred_cumm )
+		loss = -tf.reduce_mean(tf.reduce_sum(log_f_star, axis=1)/events_count_per_batch)
 		return loss
 
 	def joint_likelihood_loss(model_cnt_distribution_params,
@@ -1117,18 +1108,21 @@ def run_rmtpp_count_with_optimization(args, query_models, data, test_data):
 							  all_bins_gaps_pred,
 							  all_bins_mid_time,
 							  test_data_init_time,
-							  events_count_per_batch):
+							  events_count_per_batch,
+							  test_data_normalizer):
 
 		model_cnt_mu = model_cnt_distribution_params[0]
 		model_cnt_var = model_cnt_distribution_params[1]
 		model_rmtpp_D = model_rmtpp_params[0]
 		model_rmtpp_WT = model_rmtpp_params[1]
+		test_mean_bin, test_std_bin = test_data_normalizer
 
 		frac_belong = fractional_belongingness(all_bins_gaps_pred,
 											   all_bins_mid_time,
 											   test_data_init_time)
 		count_loss_fn = models.NegativeLogLikelihood_CountModel(model_cnt_distribution_params, 'Gaussian')
-		count_loss = count_loss_fn(frac_belong, None)
+		estimated_count_norm = utils.normalize_data_given_param(frac_belong, test_mean_bin, test_std_bin)
+		count_loss = count_loss_fn(estimated_count_norm, None)
 
 		rmtpp_loss = rmtpp_loglikelihood_loss(all_bins_gaps_pred, model_rmtpp_D, model_rmtpp_WT, events_count_per_batch)
 
@@ -1143,6 +1137,7 @@ def run_rmtpp_count_with_optimization(args, query_models, data, test_data):
 					 all_bins_mid_time,
 					 test_data_init_time,
 					 events_count_per_batch,
+					 test_data_normalizer,
 					 name='opt',
 					 **kwargs):
 			super(OPT, self).__init__(name=name, **kwargs)
@@ -1156,6 +1151,7 @@ def run_rmtpp_count_with_optimization(args, query_models, data, test_data):
 			self.all_bins_mid_time = all_bins_mid_time
 			self.test_data_init_time = test_data_init_time
 			self.events_count_per_batch = events_count_per_batch
+			self.test_data_normalizer = test_data_normalizer
 
 		def __call__(self):
 			return self.likelihood_fn(self.model_cnt_distribution_params,
@@ -1163,7 +1159,8 @@ def run_rmtpp_count_with_optimization(args, query_models, data, test_data):
 									  self.gaps,
 									  self.all_bins_mid_time,
 									  self.test_data_init_time,
-									  self.events_count_per_batch)
+									  self.events_count_per_batch,
+									  self.test_data_normalizer)
 
 
 	def optimize_gaps(model_cnt_distribution_params,
@@ -1172,7 +1169,8 @@ def run_rmtpp_count_with_optimization(args, query_models, data, test_data):
 					  all_bins_gaps_pred,
 					  all_bins_mid_time,
 					  test_data_init_time,
-					  events_count_per_batch):
+					  events_count_per_batch,
+					  test_data_normalizer):
 
 		model = OPT(model_cnt_distribution_params,
 					model_rmtpp_params,
@@ -1180,7 +1178,8 @@ def run_rmtpp_count_with_optimization(args, query_models, data, test_data):
 					all_bins_gaps_pred,
 					all_bins_mid_time,
 					test_data_init_time,
-					events_count_per_batch)
+					events_count_per_batch,
+					test_data_normalizer)
 
 		#print(model.variables)
 	
@@ -1211,7 +1210,8 @@ def run_rmtpp_count_with_optimization(args, query_models, data, test_data):
 									   all_bins_gaps_pred,
 									   all_bins_mid_time,
 									   test_data_init_time,
-									   events_count_per_batch)
+									   events_count_per_batch,
+									   test_data_normalizer)
 
 	all_times_pred = test_data_init_time + \
 						tf.cumsum(all_bins_gaps_pred, axis=1) * tf.cast(all_bins_gaps_pred>0., tf.float32)
@@ -1466,7 +1466,7 @@ def compute_hierarchical_mae(all_event_pred_uncut, query_data, all_event_true, c
 	#TODO: Check for rmtpp and wgan model t_b_plus and t_e_plus index is first and last.
 	all_event_pred = trim_evens_pred(all_event_pred_uncut, t_b_plus, t_e_plus)
 	print('Event counts ', [len(x) for x in all_event_pred])
-	test_event_count_pred = np.array([len(x) for x in all_event_pred])
+	test_event_count_pred = np.array([len(x) for x in all_event_pred]).astype(np.float32)
 	event_count_mse = tf.keras.losses.MSE(true_count, test_event_count_pred).numpy()
 	event_count_mae = tf.keras.losses.MAE(true_count, test_event_count_pred).numpy()
 	print("MSE of event count in range:", event_count_mse)
