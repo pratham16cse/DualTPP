@@ -40,7 +40,8 @@ def generate_sample(intensity, T, n):
             intens2 = intens2[i]
             u = np.random.uniform()
             if intens2/intens1 >= u:
-                seq.append(new_t)
+                #seq.append(new_t)
+                seq.append(dt)
             t = new_t
         #if len(seq)>1:
         if len(seq):
@@ -94,22 +95,27 @@ def generate_plots(args, dataset_name, dataset, per_model_count, test_sample_idx
 	wgan_pred = true_pred
 	if 'rmtpp_mse' in per_model_count:
 		rmtpp_mse_pred = per_model_count['rmtpp_mse']
+		event_count_preds_mse = rmtpp_mse_pred
+		rmtpp_mse_pred = event_count_preds_mse[test_sample_idx].astype(np.float32)
 	if 'rmtpp_nll' in per_model_count:
 		rmtpp_nll_pred = per_model_count['rmtpp_nll']
+		event_count_preds_nll = rmtpp_nll_pred
+		rmtpp_nll_pred = event_count_preds_nll[test_sample_idx].astype(np.float32)
 	if 'hierarchical' in per_model_count:
 		hierarchical_pred = per_model_count['hierarchical']
+		event_count_preds_cnt = hierarchical_pred
+		hierarchical_pred = event_count_preds_cnt[test_sample_idx].astype(np.float32)
 	if 'count_model' in per_model_count:
 		count_model_pred = per_model_count['count_model']
+		event_count_preds_count = count_model_pred
+		count_model_pred = event_count_preds_count[test_sample_idx].astype(np.float32)
 	if 'wgan' in per_model_count:
 		wgan_pred = per_model_count['wgan']
-
+		event_count_preds_wgan = wgan_pred
+		wgan_pred = event_count_preds_wgan[test_sample_idx].astype(np.float32)
 
 	event_count_preds_true = true_pred
-	event_count_preds_mse = rmtpp_mse_pred
-	event_count_preds_nll = rmtpp_nll_pred
-	event_count_preds_cnt = hierarchical_pred
-	event_count_preds_count = count_model_pred
-	event_count_preds_wgan = wgan_pred
+	true_pred = event_count_preds_true[test_sample_idx].astype(np.float32)
 
 	test_data_in_bin = dataset['test_data_in_bin']
 	test_mean_bin = dataset['test_mean_bin']
@@ -119,25 +125,27 @@ def generate_plots(args, dataset_name, dataset, per_model_count, test_sample_idx
 							test_mean_bin, test_std_bin)
 	true_inp_bins = true_inp_bins.astype(np.float32)
 	x = np.arange(inp_seq_len_plot+dec_len)
-	true_pred = event_count_preds_true[test_sample_idx].astype(np.float32)
-	rmtpp_mse_pred = event_count_preds_mse[test_sample_idx].astype(np.float32)
-	rmtpp_nll_pred = event_count_preds_nll[test_sample_idx].astype(np.float32)
-	hierarchical_pred = event_count_preds_cnt[test_sample_idx].astype(np.float32)
-	count_model_pred = event_count_preds_count[test_sample_idx].astype(np.float32)
-	wgan_pred = event_count_preds_wgan[test_sample_idx].astype(np.float32)
-	count_model_std = np.sqrt(count_var[test_sample_idx].astype(np.float32))
-	count_model_std_up = np.concatenate((true_inp_bins, count_model_pred))
-	count_model_std_down = np.concatenate((true_inp_bins, count_model_pred))
-	count_model_std_up[-dec_len:] = count_model_pred+count_model_std
-	count_model_std_down[-dec_len:] = count_model_pred-count_model_std
+	if count_var is not None:
+		count_model_std = np.sqrt(count_var[test_sample_idx].astype(np.float32))
+		count_model_std_up = np.concatenate((true_inp_bins, count_model_pred))
+		count_model_std_down = np.concatenate((true_inp_bins, count_model_pred))
+		count_model_std_up[-dec_len:] = count_model_pred+count_model_std
+		count_model_std_down[-dec_len:] = count_model_pred-count_model_std
 
-	plt.plot(x, true_inp_bins.tolist()+hierarchical_pred.tolist(), label='hierarchical_pred')
-	plt.plot(x, true_inp_bins.tolist()+count_model_pred.tolist(), label='count_model_pred')
-	plt.plot(x, true_inp_bins.tolist()+wgan_pred.tolist(), label='wgan_pred')
-	plt.plot(x, true_inp_bins.tolist()+rmtpp_mse_pred.tolist(), label='rmtpp_mse_pred')
-	plt.plot(x, true_inp_bins.tolist()+rmtpp_nll_pred.tolist(), label='rmtpp_nll_pred')
+	if 'hierarchical' in per_model_count:
+		plt.plot(x, true_inp_bins.tolist()+hierarchical_pred.tolist(), label='hierarchical_pred')
+	if 'count_model' in per_model_count:
+		plt.plot(x, true_inp_bins.tolist()+count_model_pred.tolist(), label='count_model_pred')
+	if 'wgan' in per_model_count:
+		plt.plot(x, true_inp_bins.tolist()+wgan_pred.tolist(), label='wgan_pred')
+	if 'rmtpp_mse' in per_model_count:
+		plt.plot(x, true_inp_bins.tolist()+rmtpp_mse_pred.tolist(), label='rmtpp_mse_pred')
+	if 'rmtpp_nll' in per_model_count:
+		plt.plot(x, true_inp_bins.tolist()+rmtpp_nll_pred.tolist(), label='rmtpp_nll_pred')
 	plt.plot(x, true_inp_bins.tolist()+true_pred.tolist(), label='true_pred')
-	plt.fill_between(x, count_model_std_down, count_model_std_up, color='gray', alpha=0.5)
+
+	if count_var is not None:
+		plt.fill_between(x, count_model_std_down, count_model_std_up, color='gray', alpha=0.5)
 
 	plt.axvline(x=inp_seq_len_plot-1, color='k', linestyle='--')
 	plt.legend(loc='upper left')

@@ -111,7 +111,7 @@ if args.model_name == 'all':
     model_names.append('count_model')
     # model_names.append('hierarchical')
     model_names.append('rmtpp_mse')
-    # model_names.append('rmtpp_nll')
+    model_names.append('rmtpp_nll')
     model_names.append('rmtpp_count')
 else:
     model_names.append(args.model_name)
