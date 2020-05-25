@@ -800,10 +800,12 @@ def run_rmtpp_count_reinit(args, models, data, test_data):
 
 	test_predictions_cnt = utils.denormalize_data(test_predictions_norm_cnt, test_mean_bin, test_std_bin)
 	event_count_preds_cnt = np.round(test_predictions_cnt)
+	event_count_preds_cnt_min = np.min(event_count_preds_cnt, axis=0)
 	event_count_preds_true = test_data_out_bin
 
 	output_event_count_pred = tf.expand_dims(event_count_preds_cnt, axis=-1).numpy()
 
+	bin_end = None
 	for dec_idx in range(dec_len):
 		all_gaps_pred, all_times_pred, _ = simulate_with_counter(model_rmtpp, 
 												test_data_init_time, 
@@ -813,11 +815,13 @@ def run_rmtpp_count_reinit(args, models, data, test_data):
 												test_gap_in_bin_norm_d),
 												prev_hidden_state=next_hidden_state)
 
-		gaps_before_bin = all_times_pred[:,:1] - test_data_init_time
-		gaps_before_bin = gaps_before_bin * np.random.uniform(size=gaps_before_bin.shape)
-		bin_start = test_data_init_time + gaps_before_bin
+		bin_start = bin_end
+		if bin_start is None:
+			gaps_before_bin = all_times_pred[:,:1] - test_data_init_time
+			gaps_before_bin = gaps_before_bin * np.random.uniform(size=gaps_before_bin.shape)
+			bin_start = test_data_init_time + gaps_before_bin
 
-
+		prev_test_data_init_time = test_data_init_time
 		_, _, test_data_init_time, test_data_init_gaps = compute_event_in_bin(tf.expand_dims(all_times_pred, axis=-1), 
 														 output_event_count_pred[:,dec_idx,0])
 		test_data_init_time = np.expand_dims(test_data_init_time, axis=-1)
@@ -831,6 +835,10 @@ def run_rmtpp_count_reinit(args, models, data, test_data):
 
 		all_times_pred, all_gaps_pred = scaled_points(actual_bin_start, actual_bin_end, bin_start, bin_end, all_times_pred)
 
+		gaps_before_bins = all_times_pred[:,:1] - prev_test_data_init_time
+		gaps_before_bins = tf.expand_dims(gaps_before_bins, axis=-1)
+		all_gaps_pred = tf.concat([gaps_before_bins, all_gaps_pred], axis=1)
+
 		event_in_bin_preds, _, test_data_init_time, _ = compute_event_in_bin(tf.expand_dims(all_times_pred, axis=-1), 
 														 output_event_count_pred[:,dec_idx,0])
 		test_data_init_time = np.expand_dims(test_data_init_time, axis=-1)
@@ -843,15 +851,15 @@ def run_rmtpp_count_reinit(args, models, data, test_data):
 		_, test_data_input_gaps_bin_full, _, _ = compute_event_in_bin(all_gaps_pred_norm, 
 															  output_event_count_pred[:,dec_idx,0],
 															  test_data_input_gaps_bin, 
-															  enc_len+1)
+															  enc_len+int(event_count_preds_cnt_min[dec_idx]))
 		
 		all_events_in_bin_pred.append(event_in_bin_preds)
 		
-		test_data_input_gaps_bin = np.expand_dims(test_data_input_gaps_bin_full[:,1:], axis=-1)
-		test_data_input_gaps_bin = test_data_in_gaps_bin.astype(np.float32)
+		test_data_input_gaps_bin = np.expand_dims(test_data_input_gaps_bin_full[:,-enc_len:], axis=-1)
+		test_data_input_gaps_bin = test_data_input_gaps_bin.astype(np.float32)
 
-		test_data_input_gaps_bin_scaled = np.expand_dims(test_data_input_gaps_bin_full[:,:-10], axis=-1)
-		test_data_input_gaps_bin_scaled = test_data_in_gaps_bin.astype(np.float32)
+		test_data_input_gaps_bin_scaled = np.expand_dims(test_data_input_gaps_bin_full[:,:-enc_len], axis=-1)
+		test_data_input_gaps_bin_scaled = test_data_input_gaps_bin_scaled.astype(np.float32)
 		
 		_, _, _, _, next_hidden_state \
 					= model_rmtpp(test_data_input_gaps_bin_scaled, initial_state=scaled_rnn_hidden_state)
@@ -912,23 +920,26 @@ def run_rmtpp_count_cont_rmtpp(args, models, data, test_data):
 		event_past_cnt=0
 		times_pred_all_bin_lst=list()
 
+		gaps_before_bin = all_times_pred[batch_idx,:1] - test_data_init_time[batch_idx]
+		gaps_before_bin = gaps_before_bin * np.random.uniform()
+		next_bin_start = test_data_init_time[batch_idx] + gaps_before_bin
+
 		for dec_idx in range(dec_len):
+
 			times_pred_for_bin = all_times_pred[batch_idx,event_past_cnt:event_past_cnt+int(output_event_count_pred[batch_idx,dec_idx,0])]
-			
-			gaps_before_bin = all_times_pred[batch_idx,event_past_cnt:event_past_cnt+1] - test_data_init_time[batch_idx]
 			event_past_cnt += int(output_event_count_pred[batch_idx,dec_idx,0])
-			gaps_before_bin = gaps_before_bin * np.random.uniform()
-			bin_start = test_data_init_time[batch_idx] + gaps_before_bin
+
+			bin_start = next_bin_start
 
 			if event_past_cnt==0:
 				test_data_init_time[batch_idx] = all_times_pred[batch_idx,0:1]
 			else:
 				test_data_init_time[batch_idx] = all_times_pred[batch_idx,event_past_cnt-1:event_past_cnt]
 
-			# test_data_init_time[batch_idx] = all_times_pred[batch_idx,event_past_cnt-1:event_past_cnt]
 			gaps_after_bin = all_times_pred[batch_idx,event_past_cnt:event_past_cnt+1] - test_data_init_time[batch_idx]
 			gaps_after_bin = gaps_after_bin * np.random.uniform()
 			bin_end = test_data_init_time[batch_idx] + gaps_after_bin
+			next_bin_start = bin_end
 			
 			actual_bin_start = test_end_hr_bins[batch_idx,dec_idx]-bin_size
 			actual_bin_end = test_end_hr_bins[batch_idx,dec_idx]
@@ -996,13 +1007,16 @@ def run_rmtpp_count_with_optimization(args, query_models, data, test_data):
 		event_past_cnt=0
 		times_pred_all_bin_lst=list()
 
+		gaps_before_bin = all_times_pred[batch_idx,:1] - test_data_init_time[batch_idx]
+		gaps_before_bin = gaps_before_bin * np.random.uniform()
+		next_bin_start = test_data_init_time[batch_idx] + gaps_before_bin
+
 		for dec_idx in range(dec_len):
+
 			times_pred_for_bin = all_times_pred[batch_idx,event_past_cnt:event_past_cnt+int(output_event_count_pred[batch_idx,dec_idx,0])]
-			
-			gaps_before_bin = all_times_pred[batch_idx,event_past_cnt:event_past_cnt+1] - test_data_init_time[batch_idx]
 			event_past_cnt += int(output_event_count_pred[batch_idx,dec_idx,0])
-			gaps_before_bin = gaps_before_bin * np.random.uniform()
-			bin_start = test_data_init_time[batch_idx] + gaps_before_bin
+
+			bin_start = next_bin_start
 
 			if event_past_cnt==0:
 				test_data_init_time[batch_idx] = all_times_pred[batch_idx,0:1]
@@ -1012,6 +1026,7 @@ def run_rmtpp_count_with_optimization(args, query_models, data, test_data):
 			gaps_after_bin = all_times_pred[batch_idx,event_past_cnt:event_past_cnt+1] - test_data_init_time[batch_idx]
 			gaps_after_bin = gaps_after_bin * np.random.uniform()
 			bin_end = test_data_init_time[batch_idx] + gaps_after_bin
+			next_bin_start = bin_end
 			
 			actual_bin_start = test_end_hr_bins[batch_idx,dec_idx]-bin_size
 			actual_bin_end = test_end_hr_bins[batch_idx,dec_idx]
