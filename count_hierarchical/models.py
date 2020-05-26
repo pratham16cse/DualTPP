@@ -70,12 +70,12 @@ class RMTPP(tf.keras.Model):
         final_state = self.hidden_states[:,-1]
         return self.gaps_pred, self.D, self.WT, next_initial_state, final_state
 
-def build_rmtpp_model(args):
+def build_rmtpp_model(args, use_intensity):
     hidden_layer_size = args.hidden_layer_size
     batch_size = args.batch_size
     enc_len = args.enc_len
     learning_rate = args.learning_rate
-    model = RMTPP(hidden_layer_size)
+    model = RMTPP(hidden_layer_size, use_intensity=use_intensity)
     model.build(input_shape=(batch_size, enc_len, 1))
     optimizer = keras.optimizers.Adam(learning_rate)
     return model, optimizer
