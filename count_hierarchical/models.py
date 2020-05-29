@@ -30,8 +30,10 @@ class RMTPP(tf.keras.Model):
         self.rnn_layer = layers.GRU(hidden_layer_size, return_sequences=True,
                                     return_state=True, stateful=False,
                                     name='GRU_Layer')
-        
-        self.D_layer = layers.Dense(1, name='D_layer')
+        if not self.use_intensity:
+            self.D_layer = layers.Dense(1, name='D_layer')
+        else:
+            self.D_layer = layers.Dense(1, activation=tf.nn.softplus, name='D_layer')
 
         if self.use_count_model:
             self.WT_layer = layers.Dense(1, activation=tf.nn.softplus, name='WT_layer')
@@ -55,6 +57,8 @@ class RMTPP(tf.keras.Model):
 
         # Generate D, WT, and gaps_pred
         self.D = self.D_layer(self.hidden_states)
+        if self.use_intensity:
+            self.D = -self.D
         
         if self.use_intensity:
             self.WT = self.WT_layer(self.hidden_states)
