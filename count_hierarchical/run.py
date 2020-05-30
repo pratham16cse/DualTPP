@@ -876,7 +876,7 @@ def run_rmtpp_count_reinit(args, models, data, test_data, rmtpp_type):
 					= model_rmtpp(test_data_input_gaps_bin_scaled, initial_state=scaled_rnn_hidden_state)
 
 	all_events_in_bin_pred = np.array(all_events_in_bin_pred).T
-	return None, all_events_in_bin_pred
+	return event_count_preds_cnt, all_events_in_bin_pred
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 
 
@@ -968,7 +968,7 @@ def run_rmtpp_count_cont_rmtpp(args, models, data, test_data, rmtpp_type):
 		
 		all_times_pred_lst.append(times_pred_all_bin_lst)
 	all_times_pred = np.array(all_times_pred_lst)
-	return None, all_times_pred
+	return event_count_preds_cnt, all_times_pred
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 
 
@@ -2080,6 +2080,50 @@ def trim_evens_pred(all_times_pred_uncut, t_b_plus, t_e_plus):
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 
 
+def compute_full_model_acc(args, test_data, all_bins_count_pred, all_times_bin_pred, test_out_times_in_bin, dataset_name, model_name=None):
+	[test_data_in_bin, test_data_out_bin, test_end_hr_bins,
+	test_data_in_time_end_bin, test_data_in_gaps_bin, test_mean_bin, test_std_bin,
+	test_gap_in_bin_norm_a, test_gap_in_bin_norm_d] = test_data
+
+	enc_len = args.enc_len
+	dec_len = args.out_bin_sz
+	bin_size = args.bin_size
+	all_bins_count_true = test_data_out_bin
+
+
+	all_times_pred = list()
+	for idx in range(len(all_times_bin_pred)):
+		lst = list()
+		for each in all_times_bin_pred[idx]:
+			lst = lst+each.tolist()
+		all_times_pred.append(np.array(lst))
+	all_times_pred = np.array(all_times_pred)
+
+	if all_bins_count_pred is None:
+		all_bins_count_pred_lst = list()
+		for dec_idx in range(dec_len):
+			t_b_plus = test_end_hr_bins[:,dec_idx] - bin_size
+			t_e_plus = test_end_hr_bins[:,dec_idx]
+			all_bins_count_pred_lst.append(np.array(count_events(all_times_pred, t_b_plus, t_e_plus)))
+		all_bins_count_pred = np.array(all_bins_count_pred_lst).T
+
+	compute_depth = 10
+	t_b_plus = test_end_hr_bins[:,0] - bin_size
+	t_e_plus = test_end_hr_bins[:,-1]
+	deep_mae = compute_hierarchical_mae_deep(all_times_pred, test_out_times_in_bin, t_b_plus, t_e_plus, compute_depth)
+
+	old_stdout = sys.stdout
+	sys.stdout=open("Outputs/count_model_"+dataset_name+".txt","a")
+	print("____________________________________________________________________")
+	print(model_name, 'Full-eval: MAE for Count Prediction:', np.mean(np.abs(all_bins_count_true-all_bins_count_pred )))
+	print(model_name, 'Full-eval: MAE for Count Prediction (per bin):', np.mean(np.abs(all_bins_count_true-all_bins_count_pred ), axis=0))
+	print(model_name, 'Full-eval: Deep MAE for events Prediction:', deep_mae, 'at depth', compute_depth)
+	print("____________________________________________________________________")
+	sys.stdout.close()
+	sys.stdout = old_stdout
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
+
+
 #####################################################
 # 				Query Processing					#
 #####################################################
@@ -2226,7 +2270,7 @@ def compute_time_range_pdf(all_run_count_fun, all_run_count_fun_name, model_data
 				simul_end_time = x_range[:,1]
 				_, all_event_pred_uncut = all_run_count_fun[run_count_fun_idx](arguments, models, data, test_data, simul_end_time=simul_end_time)
 			else:
-				_, all_event_pred_uncut = all_run_count_fun[run_count_fun_idx](arguments, models, data, test_data)
+				_, all_event_pred_uncut = all_run_count_fun[run_count_fun_idx](arguments, models, data, test_data, rmtpp_type='mse')
 
 			all_times_pred = list()
 			for idx in range(len(all_event_pred_uncut)):
@@ -2476,6 +2520,7 @@ def run_model(dataset_name, model_name, dataset, args, prev_models=None, run_mod
 			test_data = [test_data_in_bin, test_data_out_bin, test_end_hr_bins,
 			test_data_in_time_end_bin, test_data_in_gaps_bin, test_mean_bin, test_std_bin,
 			test_gap_in_bin_norm_a, test_gap_in_bin_norm_d]
+			test_out_times_in_bin = np.array(test_out_times_in_bin)
 
 			data = None
 			compute_depth = 5
@@ -2498,6 +2543,7 @@ def run_model(dataset_name, model_name, dataset, args, prev_models=None, run_mod
 				deep_mae = compute_hierarchical_mae(all_times_bin_pred_opt, query_1_data, test_out_all_event_true, compute_depth)
 				threshold_mae = compute_threshold_loss(all_times_bin_pred_opt, query_2_data)
 				print("deep_mae", deep_mae)
+				compute_full_model_acc(args, test_data, None, all_times_bin_pred_opt, test_out_times_in_bin, dataset_name, 'run_rmtpp_count_with_optimization')
 				print("____________________________________________________________________")
 				print("")
 
@@ -2507,6 +2553,7 @@ def run_model(dataset_name, model_name, dataset, args, prev_models=None, run_mod
 				deep_mae = compute_hierarchical_mae(all_times_bin_pred_opt, query_1_data, test_out_all_event_true, compute_depth)
 				threshold_mae = compute_threshold_loss(all_times_bin_pred_opt, query_2_data)
 				print("deep_mae", deep_mae)
+				compute_full_model_acc(args, test_data, None, all_times_bin_pred_opt, test_out_times_in_bin, dataset_name, 'run_rmtpp_with_optimization_fixed_cnt')
 				print("____________________________________________________________________")
 				print("")
 
@@ -2516,6 +2563,7 @@ def run_model(dataset_name, model_name, dataset, args, prev_models=None, run_mod
 				deep_mae = compute_hierarchical_mae(all_times_bin_pred_opt, query_1_data, test_out_all_event_true, compute_depth)
 				threshold_mae = compute_threshold_loss(all_times_bin_pred_opt, query_2_data)
 				print("deep_mae", deep_mae)
+				compute_full_model_acc(args, test_data, None, all_times_bin_pred_opt, test_out_times_in_bin, dataset_name, 'run_rmtpp_with_optimization_fixed_cnt_solver')
 				print("____________________________________________________________________")
 				print("")
 
@@ -2532,37 +2580,41 @@ def run_model(dataset_name, model_name, dataset, args, prev_models=None, run_mod
 
 			if 'run_rmtpp_count_cont_rmtpp_with_nll' in run_model_flags and run_model_flags['run_rmtpp_count_cont_rmtpp_with_nll']:
 				print("Prediction for run_rmtpp_count_cont_rmtpp model with rmtpp_nll")
-				_, all_times_bin_pred = run_rmtpp_count_cont_rmtpp(args, models, data, test_data, rmtpp_type='nll')
+				all_bins_count_pred, all_times_bin_pred = run_rmtpp_count_cont_rmtpp(args, models, data, test_data, rmtpp_type='nll')
 				deep_mae = compute_hierarchical_mae(all_times_bin_pred, query_1_data, test_out_all_event_true, compute_depth)
 				threshold_mae = compute_threshold_loss(all_times_bin_pred, query_2_data)
 				print("deep_mae", deep_mae)
+				compute_full_model_acc(args, test_data, all_bins_count_pred, all_times_bin_pred, test_out_times_in_bin, dataset_name, 'run_rmtpp_count_cont_rmtpp_with_nll')
 				print("____________________________________________________________________")
 				print("")
 
 			if 'run_rmtpp_count_cont_rmtpp_with_mse' in run_model_flags and run_model_flags['run_rmtpp_count_cont_rmtpp_with_mse']:
 				print("Prediction for run_rmtpp_count_cont_rmtpp model with rmtpp_mse")
-				_, all_times_bin_pred = run_rmtpp_count_cont_rmtpp(args, models, data, test_data, rmtpp_type='mse')
+				all_bins_count_pred, all_times_bin_pred = run_rmtpp_count_cont_rmtpp(args, models, data, test_data, rmtpp_type='mse')
 				deep_mae = compute_hierarchical_mae(all_times_bin_pred, query_1_data, test_out_all_event_true, compute_depth)
 				threshold_mae = compute_threshold_loss(all_times_bin_pred, query_2_data)
 				print("deep_mae", deep_mae)
+				compute_full_model_acc(args, test_data, all_bins_count_pred, all_times_bin_pred, test_out_times_in_bin, dataset_name, 'run_rmtpp_count_cont_rmtpp_with_mse')
 				print("____________________________________________________________________")
 				print("")
 
 			if 'run_rmtpp_count_reinit_with_nll' in run_model_flags and run_model_flags['run_rmtpp_count_reinit_with_nll']:
 				print("Prediction for run_rmtpp_count_reinit model with rmtpp_nll")
-				_, all_times_bin_pred = run_rmtpp_count_reinit(args, models, data, test_data, rmtpp_type='nll')
+				all_bins_count_pred, all_times_bin_pred = run_rmtpp_count_reinit(args, models, data, test_data, rmtpp_type='nll')
 				deep_mae = compute_hierarchical_mae(all_times_bin_pred, query_1_data, test_out_all_event_true, compute_depth)
 				threshold_mae = compute_threshold_loss(all_times_bin_pred, query_2_data)
 				print("deep_mae", deep_mae)
+				compute_full_model_acc(args, test_data, all_bins_count_pred, all_times_bin_pred, test_out_times_in_bin, dataset_name, 'run_rmtpp_count_reinit_with_nll')
 				print("____________________________________________________________________")
 				print("")
 
 			if 'run_rmtpp_count_reinit_with_mse' in run_model_flags and run_model_flags['run_rmtpp_count_reinit_with_mse']:
 				print("Prediction for run_rmtpp_count_reinit model with rmtpp_mse")
-				_, all_times_bin_pred = run_rmtpp_count_reinit(args, models, data, test_data, rmtpp_type='mse')
+				all_bins_count_pred, all_times_bin_pred = run_rmtpp_count_reinit(args, models, data, test_data, rmtpp_type='mse')
 				deep_mae = compute_hierarchical_mae(all_times_bin_pred, query_1_data, test_out_all_event_true, compute_depth)
 				threshold_mae = compute_threshold_loss(all_times_bin_pred, query_2_data)
 				print("deep_mae", deep_mae)
+				compute_full_model_acc(args, test_data, all_bins_count_pred, all_times_bin_pred, test_out_times_in_bin, dataset_name, 'run_rmtpp_count_reinit_with_mse')
 				print("____________________________________________________________________")
 				print("")
 
@@ -2574,6 +2626,7 @@ def run_model(dataset_name, model_name, dataset, args, prev_models=None, run_mod
 				deep_mae = compute_hierarchical_mae(all_times_bin_pred, query_1_data, test_out_all_event_true, compute_depth)
 				threshold_mae = compute_threshold_loss(all_times_bin_pred, query_2_data)
 				print("deep_mae", deep_mae)
+				compute_full_model_acc(args, test_data, None, all_times_bin_pred, test_out_times_in_bin, dataset_name, 'run_rmtpp_for_count')
 				print("____________________________________________________________________")
 				print("")
 
@@ -2584,6 +2637,7 @@ def run_model(dataset_name, model_name, dataset, args, prev_models=None, run_mod
 				deep_mae = compute_hierarchical_mae(all_times_bin_pred, query_1_data, test_out_all_event_true, compute_depth)
 				threshold_mae = compute_threshold_loss(all_times_bin_pred, query_2_data)
 				print("deep_mae", deep_mae)
+				compute_full_model_acc(args, test_data, None, all_times_bin_pred, test_out_times_in_bin, dataset_name, 'run_wgan_for_count')
 				print("____________________________________________________________________")
 				print("")
 
