@@ -53,7 +53,7 @@ class NegativeLogLikelihood(tf.keras.losses.Loss):
 class MeanSquareLoss(tf.keras.losses.Loss):
 	def __init__(self,
 				 reduction=keras.losses.Reduction.AUTO,
-				 name='negative_log_likelihood'):
+				 name='mean_square_likelihood'):
 		super(MeanSquareLoss, self).__init__(reduction=reduction,
 													name=name)
 	
@@ -288,7 +288,7 @@ def run_count_model(args, data, test_data):
 	best_dev_epoch = 0
 
 	train_losses = list()
-	var_sample = list()
+	stddev_sample = list()
 	dev_mae_list = list()
 	for epoch in range(num_epochs):
 		#print('Starting epoch', epoch)
@@ -332,12 +332,12 @@ def run_count_model(args, data, test_data):
 
 		dev_mae_list.append(dev_gap_mae)
 		if epoch%10 == 0:
-			_, [_, test_distribution_var] = model(test_data_in_bin)
-			var_sample.append(test_distribution_var[0])
+			_, [_, test_distribution_stddev] = model(test_data_in_bin)
+			stddev_sample.append(test_distribution_stddev[0])
 	
-	var_sample = np.array(var_sample)
+	stddev_sample = np.array(stddev_sample)
 	for dec_idx in range(args.out_bin_sz//2):
-		plt.plot(range(len(var_sample)), var_sample[:,dec_idx], label='dec_idx_'+str(dec_idx))
+		plt.plot(range(len(stddev_sample)), stddev_sample[:,dec_idx], label='dec_idx_'+str(dec_idx))
 
 	plt.legend(loc='upper right')
 	plt.savefig('Outputs/count_model_test_var_'+distribution_name+'_'+args.current_dataset+'_test_id_0.png')
@@ -365,7 +365,7 @@ def run_count_model(args, data, test_data):
 
 	test_bin_count_pred_norm, test_distribution_params = model(test_data_in_bin)		
 	test_bin_count_pred = utils.denormalize_data(test_bin_count_pred_norm, test_mean_bin, test_std_bin)
-	test_distribution_params[1] = utils.denormalize_data_var(test_distribution_params[1], test_mean_bin, test_std_bin)
+	test_distribution_params[1] = utils.denormalize_data_stddev(test_distribution_params[1], test_mean_bin, test_std_bin)
 	return model, {"count_preds": test_bin_count_pred.numpy(), "count_var": test_distribution_params[1]}
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 
@@ -1174,7 +1174,7 @@ def run_rmtpp_count_with_optimization(args, query_models, data, test_data):
 							  test_data_rmtpp_normalizer):
 
 		model_cnt_mu = model_cnt_distribution_params[0]
-		model_cnt_var = model_cnt_distribution_params[1]
+		model_cnt_stddev = model_cnt_distribution_params[1]
 		model_rmtpp_D = model_rmtpp_params[0]
 		model_rmtpp_WT = model_rmtpp_params[1]
 		test_mean_bin, test_std_bin = test_data_count_normalizer
@@ -1342,7 +1342,7 @@ def run_rmtpp_with_optimization_fixed_cnt(args, query_models, data, test_data):
 							  test_data_rmtpp_normalizer):
 
 		model_cnt_mu = model_cnt_distribution_params[0]
-		model_cnt_var = model_cnt_distribution_params[1]
+		model_cnt_stddev = model_cnt_distribution_params[1]
 		model_rmtpp_D = model_rmtpp_params[0]
 		model_rmtpp_WT = model_rmtpp_params[1]
 		test_mean_bin, test_std_bin = test_data_count_normalizer
@@ -2133,7 +2133,7 @@ def compute_time_range_pdf(all_run_count_fun, all_run_count_fun_name, model_data
 #####################################################
 # 			Model Init and Run handler				#
 #####################################################
-def run_model(dataset_name, model_name, dataset, args, prev_models=None):
+def run_model(dataset_name, model_name, dataset, args, prev_models=None, run_model_flags=None):
 	print("Running for model", model_name, "on dataset", dataset_name)
 
 	tf.random.set_seed(args.seed)
@@ -2244,70 +2244,93 @@ def run_model(dataset_name, model_name, dataset, args, prev_models=None):
 			print(test_out_event_count_true)
 			print("____________________________________________________________________")
 			print("")
-			print("Prediction for run_rmtpp_count_with_optimization model")
-			_, all_times_bin_pred_opt = run_rmtpp_count_with_optimization(args, models, data, test_data)
-			deep_mae = compute_hierarchical_mae(all_times_bin_pred_opt, query_1_data, test_out_all_event_true, compute_depth)
-			threshold_mae = compute_threshold_loss(all_times_bin_pred_opt, query_2_data)
-			print("deep_mae", deep_mae)
-			print("____________________________________________________________________")
 			print("")
-			print("Prediction for run_rmtpp_with_optimization_fixed_cnt model")
-			_, all_times_bin_pred_opt = run_rmtpp_with_optimization_fixed_cnt(args, models, data, test_data)
-			deep_mae = compute_hierarchical_mae(all_times_bin_pred_opt, query_1_data, test_out_all_event_true, compute_depth)
-			threshold_mae = compute_threshold_loss(all_times_bin_pred_opt, query_2_data)
-			print("deep_mae", deep_mae)
-			#print("____________________________________________________________________")
-			#print("")
-			#print("Running threshold query to generate pdf for all models")
-			#model_data = [args, models, data, test_data]
-			#all_run_count_fun = [run_rmtpp_count_cont_rmtpp, run_rmtpp_count_reinit, run_rmtpp_for_count, run_wgan_for_count]
-			#all_run_count_fun_name = ['run_rmtpp_count_cont_rmtpp', 'run_rmtpp_count_reinit', 'run_rmtpp_for_count', 'run_wgan_for_count']
-			#compute_time_range_pdf(all_run_count_fun, all_run_count_fun_name, model_data, query_2_data, dataset_name)
-			print("____________________________________________________________________")
+
+			if 'run_rmtpp_count_with_optimization' in run_model_flags and run_model_flags['run_rmtpp_count_with_optimization']:
+				print("Prediction for run_rmtpp_count_with_optimization model")
+				_, all_times_bin_pred_opt = run_rmtpp_count_with_optimization(args, models, data, test_data)
+				deep_mae = compute_hierarchical_mae(all_times_bin_pred_opt, query_1_data, test_out_all_event_true, compute_depth)
+				threshold_mae = compute_threshold_loss(all_times_bin_pred_opt, query_2_data)
+				print("deep_mae", deep_mae)
+				print("____________________________________________________________________")
+				print("")
+
+			if 'run_rmtpp_with_optimization_fixed_cnt' in run_model_flags and run_model_flags['run_rmtpp_with_optimization_fixed_cnt']:
+				print("Prediction for run_rmtpp_with_optimization_fixed_cnt model")
+				_, all_times_bin_pred_opt = run_rmtpp_with_optimization_fixed_cnt(args, models, data, test_data)
+				deep_mae = compute_hierarchical_mae(all_times_bin_pred_opt, query_1_data, test_out_all_event_true, compute_depth)
+				threshold_mae = compute_threshold_loss(all_times_bin_pred_opt, query_2_data)
+				print("deep_mae", deep_mae)
+				print("____________________________________________________________________")
+				print("")
+
+			if 'compute_time_range_pdf' in run_model_flags and run_model_flags['compute_time_range_pdf']:
+				print("Running threshold query to generate pdf for all models")
+				model_data = [args, models, data, test_data]
+				all_run_count_fun = [run_rmtpp_count_cont_rmtpp, run_rmtpp_count_reinit, run_rmtpp_for_count, run_wgan_for_count]
+				all_run_count_fun_name = ['run_rmtpp_count_cont_rmtpp', 'run_rmtpp_count_reinit', 'run_rmtpp_for_count', 'run_wgan_for_count']
+				compute_time_range_pdf(all_run_count_fun, all_run_count_fun_name, model_data, query_2_data, dataset_name)
+				print("____________________________________________________________________")
+				print("")
+
 			print("")
-			print("Prediction for rmtpp_count_with_cont_simu model with rmtpp_nll")
-			_, all_times_bin_pred = run_rmtpp_count_cont_rmtpp(args, models, data, test_data, rmtpp_type='nll')
-			deep_mae = compute_hierarchical_mae(all_times_bin_pred, query_1_data, test_out_all_event_true, compute_depth)
-			threshold_mae = compute_threshold_loss(all_times_bin_pred, query_2_data)
-			print("deep_mae", deep_mae)
-			print("____________________________________________________________________")
+
+			if 'run_rmtpp_count_cont_rmtpp_with_nll' in run_model_flags and run_model_flags['run_rmtpp_count_cont_rmtpp_with_nll']:
+				print("Prediction for run_rmtpp_count_cont_rmtpp model with rmtpp_nll")
+				_, all_times_bin_pred = run_rmtpp_count_cont_rmtpp(args, models, data, test_data, rmtpp_type='nll')
+				deep_mae = compute_hierarchical_mae(all_times_bin_pred, query_1_data, test_out_all_event_true, compute_depth)
+				threshold_mae = compute_threshold_loss(all_times_bin_pred, query_2_data)
+				print("deep_mae", deep_mae)
+				print("____________________________________________________________________")
+				print("")
+
+			if 'run_rmtpp_count_cont_rmtpp_with_mse' in run_model_flags and run_model_flags['run_rmtpp_count_cont_rmtpp_with_mse']:
+				print("Prediction for run_rmtpp_count_cont_rmtpp model with rmtpp_mse")
+				_, all_times_bin_pred = run_rmtpp_count_cont_rmtpp(args, models, data, test_data, rmtpp_type='mse')
+				deep_mae = compute_hierarchical_mae(all_times_bin_pred, query_1_data, test_out_all_event_true, compute_depth)
+				threshold_mae = compute_threshold_loss(all_times_bin_pred, query_2_data)
+				print("deep_mae", deep_mae)
+				print("____________________________________________________________________")
+				print("")
+
+			if 'run_rmtpp_count_reinit_with_nll' in run_model_flags and run_model_flags['run_rmtpp_count_reinit_with_nll']:
+				print("Prediction for run_rmtpp_count_reinit model with rmtpp_nll")
+				_, all_times_bin_pred = run_rmtpp_count_reinit(args, models, data, test_data, rmtpp_type='nll')
+				deep_mae = compute_hierarchical_mae(all_times_bin_pred, query_1_data, test_out_all_event_true, compute_depth)
+				threshold_mae = compute_threshold_loss(all_times_bin_pred, query_2_data)
+				print("deep_mae", deep_mae)
+				print("____________________________________________________________________")
+				print("")
+
+			if 'run_rmtpp_count_reinit_with_mse' in run_model_flags and run_model_flags['run_rmtpp_count_reinit_with_mse']:
+				print("Prediction for run_rmtpp_count_reinit model with rmtpp_mse")
+				_, all_times_bin_pred = run_rmtpp_count_reinit(args, models, data, test_data, rmtpp_type='mse')
+				deep_mae = compute_hierarchical_mae(all_times_bin_pred, query_1_data, test_out_all_event_true, compute_depth)
+				threshold_mae = compute_threshold_loss(all_times_bin_pred, query_2_data)
+				print("deep_mae", deep_mae)
+				print("____________________________________________________________________")
+				print("")
+
 			print("")
-			print("Prediction for rmtpp_count_with_cont_simu model with rmtpp_mse")
-			_, all_times_bin_pred = run_rmtpp_count_cont_rmtpp(args, models, data, test_data, rmtpp_type='mse')
-			deep_mae = compute_hierarchical_mae(all_times_bin_pred, query_1_data, test_out_all_event_true, compute_depth)
-			threshold_mae = compute_threshold_loss(all_times_bin_pred, query_2_data)
-			print("deep_mae", deep_mae)
-			print("____________________________________________________________________")
-			print("")
-			print("Prediction for rmtpp_count_reinit model with rmtpp_nll")
-			_, all_times_bin_pred = run_rmtpp_count_reinit(args, models, data, test_data, rmtpp_type='nll')
-			deep_mae = compute_hierarchical_mae(all_times_bin_pred, query_1_data, test_out_all_event_true, compute_depth)
-			threshold_mae = compute_threshold_loss(all_times_bin_pred, query_2_data)
-			print("deep_mae", deep_mae)
-			print("____________________________________________________________________")
-			print("")
-			print("Prediction for rmtpp_count_reinit model with rmtpp_mse")
-			_, all_times_bin_pred = run_rmtpp_count_reinit(args, models, data, test_data, rmtpp_type='mse')
-			deep_mae = compute_hierarchical_mae(all_times_bin_pred, query_1_data, test_out_all_event_true, compute_depth)
-			threshold_mae = compute_threshold_loss(all_times_bin_pred, query_2_data)
-			print("deep_mae", deep_mae)
-			print("____________________________________________________________________")
-			print("")
-			print("Prediction for plain_rmtpp_count model")
-			result, all_times_bin_pred = run_rmtpp_for_count(args, models, data, test_data, query_data=query_1_data)
-			deep_mae = compute_hierarchical_mae(all_times_bin_pred, query_1_data, test_out_all_event_true, compute_depth)
-			threshold_mae = compute_threshold_loss(all_times_bin_pred, query_2_data)
-			print("deep_mae", deep_mae)
-			#print("____________________________________________________________________")
-			#print("")
-			#print("Prediction for plain_wgan_count model")
-			#result, all_times_bin_pred = run_wgan_for_count(args, models, data, test_data, query_data=query_1_data)
-			#model = None
-			#deep_mae = compute_hierarchical_mae(all_times_bin_pred, query_1_data, test_out_all_event_true, compute_depth)
-			#threshold_mae = compute_threshold_loss(all_times_bin_pred, query_2_data)
-			#print("deep_mae", deep_mae)
-			#print("____________________________________________________________________")
-			#print("")
+
+			if 'run_rmtpp_for_count' in run_model_flags and run_model_flags['run_rmtpp_for_count']:
+				print("Prediction for plain_rmtpp_count model")
+				result, all_times_bin_pred = run_rmtpp_for_count(args, models, data, test_data, query_data=query_1_data)
+				deep_mae = compute_hierarchical_mae(all_times_bin_pred, query_1_data, test_out_all_event_true, compute_depth)
+				threshold_mae = compute_threshold_loss(all_times_bin_pred, query_2_data)
+				print("deep_mae", deep_mae)
+				print("____________________________________________________________________")
+				print("")
+
+			if 'run_wgan_for_count' in run_model_flags and run_model_flags['run_wgan_for_count']:
+				print("Prediction for plain_wgan_count model")
+				result, all_times_bin_pred = run_wgan_for_count(args, models, data, test_data, query_data=query_1_data)
+				model = None
+				deep_mae = compute_hierarchical_mae(all_times_bin_pred, query_1_data, test_out_all_event_true, compute_depth)
+				threshold_mae = compute_threshold_loss(all_times_bin_pred, query_2_data)
+				print("deep_mae", deep_mae)
+				print("____________________________________________________________________")
+				print("")
 
 			sys.stdout.close()
 			sys.stdout = old_stdout

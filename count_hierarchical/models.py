@@ -10,7 +10,8 @@ class InverseTransformSampling(layers.Layer):
     """Uses (D, WT) to sample E[f*(g)], expected gap before next event."""
     def call(self, inputs):
         D, WT = inputs
-        u = tf.ones_like(D) * tf.range(0.0, 1.0, 1.0/500.0)
+        # u = tf.ones_like(D) * tf.range(0.0, 1.0, 1.0/500.0)
+        u = tf.ones_like(D) * tf.random.uniform([500], minval=0.0, maxval=1.0, dtype=tf.dtypes.float32)
         c = -tf.exp(D)
         val = one_by(WT) * tf.math.log(WT * one_by(c) * tf.math.log(1.0 - u) + 1.0)
         val = tf.reduce_mean(val, axis=-1, keepdims=True)
@@ -115,7 +116,7 @@ class NegativeLogLikelihood_CountModel(tf.keras.losses.Loss):
             self.probs = distribution_params[1]
         elif self.distribution_name == 'Gaussian':
             self.mu = distribution_params[0]
-            self.var = distribution_params[1]
+            self.stddev = distribution_params[1]
         elif self.distribution_name == 'var_model':
             self.output_variance = distribution_params[1]
 
@@ -133,7 +134,7 @@ class NegativeLogLikelihood_CountModel(tf.keras.losses.Loss):
 
         elif self.distribution_name == 'Gaussian':
             gaussian_distribution = tfp.distributions.Normal(
-                self.mu, self.var, validate_args=False, allow_nan_stats=True, 
+                self.mu, self.stddev, validate_args=False, allow_nan_stats=True, 
                 name='Normal'
             )
             count_distribution = gaussian_distribution
@@ -204,14 +205,15 @@ class COUNT_MODEL(tf.keras.Model):
             out_alpha = self.out_alpha_layer(output_state)
             out_mu = self.out_mu_layer(output_state)
 
-            out_var = (tf.math.softplus(out_alpha))
+            #TODO: Can this layer outputs stddev of distributions
+            out_stddev = (tf.math.softplus(out_alpha))
 
             gaussian_distribution = tfp.distributions.Normal(
-                out_mu, out_var, validate_args=False, allow_nan_stats=True, 
+                out_mu, out_stddev, validate_args=False, allow_nan_stats=True, 
                 name='Normal'
             )
             output_samples = gaussian_distribution.sample(1000)
-            distribution_params = [out_mu, out_var]
+            distribution_params = [out_mu, out_stddev]
             bin_count_output = tf.reduce_mean(output_samples, axis=0)
 
         elif self.distribution_name == 'var_model':
