@@ -1685,7 +1685,10 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(args, query_models, data, test_
 		print(test_data_init_time)
 		print('\n'),
 
-		loss = prob.solve(warm_start=True)
+		try:
+			loss = prob.solve(warm_start=True)
+		except cp.error.SolverError:
+			loss = prob.solve(solver='SCS', warm_start=True)
 
 
 		all_bins_gaps_pred = gaps.value
