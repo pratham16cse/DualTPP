@@ -63,8 +63,8 @@ def normalize_data_given_param(data, mean, std):
 def denormalize_data(data, mean, std):
 	return (data * std) + mean
 
-def denormalize_data_var(data, mean, std):
-	return (data * std * std)
+def denormalize_data_stddev(data, mean, std):
+	return (data * std)
 
 def normalize_avg(data):
 	norm_a = 0.0
@@ -126,7 +126,7 @@ def generate_plots(args, dataset_name, dataset, per_model_count, test_sample_idx
 	true_inp_bins = true_inp_bins.astype(np.float32)
 	x = np.arange(inp_seq_len_plot+dec_len)
 	if count_var is not None:
-		count_model_std = np.sqrt(count_var[test_sample_idx].astype(np.float32))
+		count_model_std = count_var[test_sample_idx].astype(np.float32)
 		count_model_std_up = np.concatenate((true_inp_bins, count_model_pred))
 		count_model_std_down = np.concatenate((true_inp_bins, count_model_pred))
 		count_model_std_up[-dec_len:] = count_model_pred+count_model_std
