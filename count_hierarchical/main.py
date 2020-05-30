@@ -107,11 +107,11 @@ args.dataset_name = dataset_names
 
 model_names = list()
 if args.model_name == 'all':
-    # model_names.append('wgan')
+    model_names.append('wgan')
     model_names.append('count_model')
     # model_names.append('hierarchical')
-    # model_names.append('rmtpp_mse')
     model_names.append('rmtpp_nll')
+    model_names.append('rmtpp_mse')
     model_names.append('rmtpp_count')
 else:
     model_names.append(args.model_name)
@@ -122,7 +122,7 @@ run_model_flags = {
 
     'run_rmtpp_count_with_optimization': False,
     'run_rmtpp_with_optimization_fixed_cnt': False,
-    'run_rmtpp_with_optimization_fixed_cnt_solver': False,
+    'run_rmtpp_with_optimization_fixed_cnt_solver': True,
 
     'run_rmtpp_count_cont_rmtpp_with_nll': True,
     'run_rmtpp_count_cont_rmtpp_with_mse': True,

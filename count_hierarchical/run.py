@@ -1668,22 +1668,27 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(args, query_models, data, test_
 
 		gaps = cp.Variable(all_bins_gaps_pred.shape)
 		gaps.value = all_bins_gaps_pred
+
 		D, WT = model_rmtpp_params[0], model_rmtpp_params[1]
 		objective = cp.Minimize(-cp.sum(rmtpp_loglikelihood_loss(gaps, D, WT, events_count_per_batch))/all_bins_gaps_pred.shape[1])
-		constraints = [cp.sum(gaps)<=all_bins_end_time-test_data_init_time, gaps>=0]
+
+		test_norm_a, test_norm_d = test_data_rmtpp_normalizer
+		init_end_diff = all_bins_end_time-test_data_init_time
+		init_end_diff_norm = utils.normalize_avg_given_param(init_end_diff, test_norm_a, test_norm_d)
+		constraints = [cp.sum(gaps)<=init_end_diff_norm, gaps>=0]
 		# TODO Need normalizer for constraints
 		prob = cp.Problem(objective, constraints)
-		print('D:')
-		print(D)
-		print('WT:')
-		print(WT)
-		print('all_bins_gaps_pred:')
-		print(all_bins_gaps_pred)
-		print('all_bins_end_time:')
-		print(all_bins_end_time)
-		print('test_data_init_time:')
-		print(test_data_init_time)
-		print('\n'),
+		#print('D:')
+		#print(D)
+		#print('WT:')
+		#print(WT)
+		#print('all_bins_gaps_pred:')
+		#print(all_bins_gaps_pred)
+		#print('all_bins_end_time:')
+		#print(all_bins_end_time)
+		#print('test_data_init_time:')
+		#print(test_data_init_time)
+		#print('\n'),
 
 		try:
 			loss = prob.solve(warm_start=True)
@@ -1692,7 +1697,7 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(args, query_models, data, test_
 
 
 		all_bins_gaps_pred = gaps.value
-		print('Loss after optimization:', loss)
+		#print('Loss after optimization:', loss)
 	
 		# Shape: list of 92 different length tensors
 		return all_bins_gaps_pred, loss
@@ -1864,7 +1869,7 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(args, query_models, data, test_
 			#all_times_pred_nc = np.array([seq[:int(cnt)] for seq, cnt in zip(all_times_pred_nc, events_count_per_batch)])
 			#all_times_pred_nc = np.expand_dims(all_times_pred_nc, axis=1)
 	
-			print('Example:', batch_idx, 'nc:', nc, 'loss:', nc_loss)
+			#print('Example:', batch_idx, 'nc:', nc, 'loss:', nc_loss)
 	
 			all_times_pred_nc_lst.append(all_times_pred_nc)
 			nc_loss_lst.append(nc_loss)
