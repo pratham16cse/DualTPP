@@ -1509,7 +1509,7 @@ def run_rmtpp_with_optimization_fixed_cnt(args, query_models, data, test_data):
 	count2pred = dict()
 	for nc in range(-num_counts, num_counts):
 		all_times_pred_lst = list()
-		output_event_count_curr = output_event_count_pred + nc 
+		output_event_count_curr = output_event_count_pred + nc
 		test_data_init_time = test_data_in_time_end_bin.astype(np.float32)
 		all_times_pred = all_times_pred_simu
 		for batch_idx in range(len(all_gaps_pred)):
@@ -1734,10 +1734,14 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(args, query_models, data, test_
 	test_predictions_norm_cnt = model_cnt(test_data_in_bin)
 	if len(test_predictions_norm_cnt) == 2:
 		model_cnt_distribution_params = test_predictions_norm_cnt[1]
-		test_predictions_norm_cnt = test_predictions_norm_cnt[0]
+		# test_predictions_norm_cnt = test_predictions_norm_cnt[0]
+		test_predictions_norm_cnt = model_cnt_distribution_params[0]
+		test_predictions_norm_stddev = model_cnt_distribution_params[1]
 
 	test_predictions_cnt = utils.denormalize_data(test_predictions_norm_cnt, test_mean_bin, test_std_bin)
+	test_predictions_stddev = utils.denormalize_data(test_predictions_norm_stddev, test_mean_bin, test_std_bin)
 	event_count_preds_cnt = np.round(test_predictions_cnt)
+	event_count_preds_stddev = np.round(test_predictions_stddev)
 	event_count_preds_true = test_data_out_bin
 
 	output_event_count_pred = tf.expand_dims(event_count_preds_cnt, axis=-1).numpy()
@@ -1745,7 +1749,8 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(args, query_models, data, test_
 	output_event_count_pred_cumm = tf.reduce_sum(event_count_preds_cnt, axis=-1).numpy()
 	full_cnt_event_all_bins_pred = max(output_event_count_pred_cumm) * np.ones_like(output_event_count_pred_cumm)
 	full_cnt_event_all_bins_pred = np.expand_dims(full_cnt_event_all_bins_pred, axis=-1)
-	full_cnt_event_all_bins_pred += num_counts
+	#full_cnt_event_all_bins_pred += num_counts
+	full_cnt_event_all_bins_pred += event_count_preds_stddev
 
 	all_gaps_pred, all_times_pred, _ = simulate_with_counter(model_rmtpp, 
 											test_data_init_time, 
@@ -1757,16 +1762,22 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(args, query_models, data, test_
 	
 	all_times_pred_simu = all_times_pred
 
+	count_sigma = 10.
 	best_all_times_pred = []
 	for batch_idx in range(len(all_gaps_pred)):
 		nc_loss_lst = []
 		all_times_pred_nc_lst = []
-		for nc in range(-num_counts, num_counts): #TODO: num_counts has to be updated
+		clipped_stddev = np.minimum(event_count_preds_stddev[batch_idx], np.ones_like(event_count_preds_stddev[batch_idx]) * count_sigma)
+		min_cnt = event_count_preds_cnt[batch_idx]-clipped_stddev
+		min_cnt = np.maximum(np.ones_like(event_count_preds_cnt[batch_idx]), min_cnt)
+		max_cnt = event_count_preds_cnt[batch_idx]+clipped_stddev
+		nc_range = np.arange(min_cnt, max_cnt)
+		for nc in nc_range:
 			event_past_cnt=0
 			all_times_pred = all_times_pred_simu
 			times_pred_all_bin_lst=list()
 			all_times_pred_lst = list()
-			output_event_count_curr = output_event_count_pred + nc 
+			output_event_count_curr = np.zeros_like(output_event_count_pred) + nc
 			test_data_init_time = test_data_in_time_end_bin.astype(np.float32)
 
 			gaps_before_bin = all_times_pred[batch_idx,:1] - test_data_init_time[batch_idx]
