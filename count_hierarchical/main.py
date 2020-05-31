@@ -123,6 +123,7 @@ run_model_flags = {
     'run_rmtpp_count_with_optimization': False,
     'run_rmtpp_with_optimization_fixed_cnt': False,
     'run_rmtpp_with_optimization_fixed_cnt_solver_with_nll': True,
+    'run_rmtpp_with_optimization_fixed_cnt_solver_with_mse': True,
 
     'run_rmtpp_count_cont_rmtpp_with_nll': True,
     'run_rmtpp_count_cont_rmtpp_with_mse': True,

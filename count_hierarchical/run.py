@@ -1669,6 +1669,11 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(args, query_models, data, test_
 		loss = log_f_star
 		return loss
 
+	def mse_loss(gaps, D, WT, events_count_per_batch):
+		#return cp.multiply(cp.power(gaps-D, 2), cp.power(WT, -2))
+		return cp.power(gaps-D, 2)
+
+
 	def optimize_gaps(model_rmtpp_params,
 					  rmtpp_loglikelihood_loss,
 					  all_bins_gaps_pred,
@@ -1682,7 +1687,13 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(args, query_models, data, test_
 		gaps.value = all_bins_gaps_pred
 
 		D, WT = model_rmtpp_params[0], model_rmtpp_params[1]
-		objective = cp.Minimize(-cp.sum(rmtpp_loglikelihood_loss(gaps, D, WT, events_count_per_batch))/all_bins_gaps_pred.shape[1])
+		if rmtpp_type=='nll':
+			objective = cp.Minimize(-cp.sum(rmtpp_loglikelihood_loss(gaps, D, WT, events_count_per_batch))/all_bins_gaps_pred.shape[1])
+		elif rmtpp_type=='mse':
+			WT = np.ones_like(WT)
+			D = all_bins_gaps_pred
+			objective = cp.Minimize(cp.sum(mse_loss(gaps, D, WT, events_count_per_batch))/all_bins_gaps_pred.shape[1])
+
 
 		test_norm_a, test_norm_d = test_data_rmtpp_normalizer
 		init_end_diff = all_bins_end_time-test_data_init_time
@@ -2616,11 +2627,21 @@ def run_model(dataset_name, model_name, dataset, args, prev_models=None, run_mod
 
 			if 'run_rmtpp_with_optimization_fixed_cnt_solver_with_nll' in run_model_flags and run_model_flags['run_rmtpp_with_optimization_fixed_cnt_solver_with_nll']:
 				print("Prediction for run_rmtpp_with_optimization_fixed_cnt_solver_with_nll model")
-				_, all_times_bin_pred_opt = run_rmtpp_with_optimization_fixed_cnt_solver(args, models, data, test_data)
+				_, all_times_bin_pred_opt = run_rmtpp_with_optimization_fixed_cnt_solver(args, models, data, test_data, rmtpp_type='nll')
 				deep_mae = compute_hierarchical_mae(all_times_bin_pred_opt, query_1_data, test_out_all_event_true, compute_depth)
 				threshold_mae = compute_threshold_loss(all_times_bin_pred_opt, query_2_data)
 				print("deep_mae", deep_mae)
 				compute_full_model_acc(args, test_data, None, all_times_bin_pred_opt, test_out_times_in_bin, dataset_name, 'run_rmtpp_with_optimization_fixed_cnt_solver_with_nll')
+				print("____________________________________________________________________")
+				print("")
+
+			if 'run_rmtpp_with_optimization_fixed_cnt_solver_with_mse' in run_model_flags and run_model_flags['run_rmtpp_with_optimization_fixed_cnt_solver_with_mse']:
+				print("Prediction for run_rmtpp_with_optimization_fixed_cnt_solver_with_mse model")
+				_, all_times_bin_pred_opt = run_rmtpp_with_optimization_fixed_cnt_solver(args, models, data, test_data, rmtpp_type='mse')
+				deep_mae = compute_hierarchical_mae(all_times_bin_pred_opt, query_1_data, test_out_all_event_true, compute_depth)
+				threshold_mae = compute_threshold_loss(all_times_bin_pred_opt, query_2_data)
+				print("deep_mae", deep_mae)
+				compute_full_model_acc(args, test_data, None, all_times_bin_pred_opt, test_out_times_in_bin, dataset_name, 'run_rmtpp_with_optimization_fixed_cnt_solver_with_mse')
 				print("____________________________________________________________________")
 				print("")
 
