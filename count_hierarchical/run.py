@@ -14,7 +14,8 @@ from operator import itemgetter
 
 import models
 import utils
-import os, sys
+import os
+import sys
 
 from utils import IntensityHomogenuosPoisson, generate_sample
 
@@ -1636,11 +1637,22 @@ def run_rmtpp_with_optimization_fixed_cnt(args, query_models, data, test_data):
 # by using solver library
 # Select the final count as the count that produces best rmtpp_loss across
 # all counts
-def run_rmtpp_with_optimization_fixed_cnt_solver(args, query_models, data, test_data):
+def run_rmtpp_with_optimization_fixed_cnt_solver(args, query_models, data, test_data, rmtpp_type='nll'):
 
 	[test_data_in_bin, test_data_out_bin, test_end_hr_bins,
 	test_data_in_time_end_bin, test_data_in_gaps_bin, test_mean_bin, test_std_bin,
 	test_gap_in_bin_norm_a, test_gap_in_bin_norm_d] = test_data
+
+	model_cnt = query_models['count_model']
+	if rmtpp_type=='nll':
+		model_rmtpp = query_models['rmtpp_nll']
+	elif rmtpp_type=='mse':
+		model_rmtpp = query_models['rmtpp_mse']
+	else:
+		assert False, "rmtpp_type must be nll or mse"
+	
+	model_check = (model_cnt is not None) and (model_rmtpp is not None)
+	assert model_check, "run_rmtpp_count_with_optimization requires count and RMTPP model"
 
 	test_end_hr_bins = test_end_hr_bins.astype(np.float32)
 	all_bins_end_time = tf.squeeze(test_end_hr_bins, axis=-1)
@@ -1705,10 +1717,7 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(args, query_models, data, test_
 
 	num_counts = 2 # Number of counts to take before and after mean
 	#model_cnt, model_rmtpp, _ = query_models
-	model_cnt = query_models['count_model']
-	model_rmtpp = query_models['rmtpp_nll']
-	model_check = (model_cnt is not None) and (model_rmtpp is not None)
-	assert model_check, "run_rmtpp_count_with_optimization requires count and RMTPP model"
+	# model_rmtpp = query_models['rmtpp_nll']
 
 
 	enc_len = args.enc_len
@@ -1752,7 +1761,7 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(args, query_models, data, test_
 	for batch_idx in range(len(all_gaps_pred)):
 		nc_loss_lst = []
 		all_times_pred_nc_lst = []
-		for nc in range(-num_counts, num_counts):
+		for nc in range(-num_counts, num_counts): #TODO: num_counts has to be updated
 			event_past_cnt=0
 			all_times_pred = all_times_pred_simu
 			times_pred_all_bin_lst=list()
@@ -1886,8 +1895,13 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(args, query_models, data, test_
 
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 # Plain rmtpp model to generate events independent of bin boundary
-def run_rmtpp_for_count(args, models, data, test_data, query_data=None, simul_end_time=None):
-	model_rmtpp = models['rmtpp_mse']
+def run_rmtpp_for_count(args, models, data, test_data, query_data=None, simul_end_time=None, rmtpp_type='mse'):
+	if rmtpp_type=='nll':
+		model_rmtpp = models['rmtpp_nll']
+	elif rmtpp_type=='mse':
+		model_rmtpp = models['rmtpp_mse']
+	else:
+		assert False, "rmtpp_type must be nll or mse"
 	model_check = (model_rmtpp is not None)
 	assert model_check, "run_rmtpp_for_count requires RMTPP model"
 
@@ -2085,6 +2099,11 @@ def trim_evens_pred(all_times_pred_uncut, t_b_plus, t_e_plus):
 	all_times_pred = [all_times_pred[idx][times_out_indices_tb[idx]:times_out_indices_te[idx]] for idx in range(len(t_b_plus))]
 	return all_times_pred
 
+def clean_dict_for_na_model(all_run_fun_pdf, run_model_flags):
+	for each in run_model_flags:
+		if (each in all_run_fun_pdf) and not (each in run_model_flags and run_model_flags[each]):
+			del all_run_fun_pdf[each]
+	return all_run_fun_pdf
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 
 
@@ -2223,7 +2242,7 @@ def compute_threshold_loss(all_event_pred_uncut, query_data):
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 # Interval pdf prediction loss
 # Query 2 and 3
-def compute_time_range_pdf(all_run_count_fun, all_run_count_fun_name, model_data, query_data, dataset_name):
+def compute_time_range_pdf(all_run_fun_pdf, model_data, query_data, dataset_name):
 	[arguments, models, data, test_data] = model_data
 	[interval_range_count_less, interval_range_count_more, less_threshold,
 	more_threshold, interval_size, test_out_times_in_bin] = query_data
@@ -2232,8 +2251,15 @@ def compute_time_range_pdf(all_run_count_fun, all_run_count_fun_name, model_data
 	test_data_in_time_end_bin, test_data_in_gaps_bin, test_mean_bin, test_std_bin,
 	test_gap_in_bin_norm_a, test_gap_in_bin_norm_d] = test_data
 
+	all_run_count_fun_name, all_run_count_fun, all_run_count_fun_rmtpp = list(), list(), list()
+	for each in all_run_fun_pdf:
+		all_run_count_fun_name.append(each)
+		all_run_count_fun.append(all_run_fun_pdf[each][0])
+		all_run_count_fun_rmtpp.append(all_run_fun_pdf[each][1])
+
 	sample_count = 50
 	no_points = 500
+	test_plots_cnts=20
 
 	x_range = np.round(np.array([(test_data_in_time_end_bin), (test_data_in_time_end_bin+(arguments.bin_size*arguments.out_bin_sz))]))[:,:,0].T.astype(int)
 
@@ -2271,14 +2297,21 @@ def compute_time_range_pdf(all_run_count_fun, all_run_count_fun_name, model_data
 		for each_sim_idx in range(sample_count):
 			# print('Simulating sample number', each_sim_idx)
 
-			if all_run_count_fun_name[run_count_fun_idx] == 'run_rmtpp_for_count':
+			if all_run_count_fun_name[run_count_fun_idx] == 'run_wgan_for_count':
 				simul_end_time = x_range[:,1]
 				_, all_event_pred_uncut = all_run_count_fun[run_count_fun_idx](arguments, models, data, test_data, simul_end_time=simul_end_time)
-			elif all_run_count_fun_name[run_count_fun_idx] == 'run_wgan_for_count':
+
+			elif (all_run_count_fun_name[run_count_fun_idx] == 'run_rmtpp_for_count_with_mse' or \
+				 all_run_count_fun_name[run_count_fun_idx] == 'run_rmtpp_for_count_with_nll'):
+
 				simul_end_time = x_range[:,1]
-				_, all_event_pred_uncut = all_run_count_fun[run_count_fun_idx](arguments, models, data, test_data, simul_end_time=simul_end_time)
+				_, all_event_pred_uncut = all_run_count_fun[run_count_fun_idx](arguments, models, data, test_data,
+																				simul_end_time=simul_end_time, 
+																				rmtpp_type=all_run_count_fun_rmtpp[run_count_fun_idx])
+
 			else:
-				_, all_event_pred_uncut = all_run_count_fun[run_count_fun_idx](arguments, models, data, test_data, rmtpp_type='mse')
+				_, all_event_pred_uncut = all_run_count_fun[run_count_fun_idx](arguments, models, data, test_data, 
+																				rmtpp_type=all_run_count_fun_rmtpp[run_count_fun_idx])
 
 			all_times_pred = list()
 			for idx in range(len(all_event_pred_uncut)):
@@ -2369,11 +2402,14 @@ def compute_time_range_pdf(all_run_count_fun, all_run_count_fun_name, model_data
 		print("Model", all_run_count_fun_name[run_count_fun_idx], ": Score =", cross_entropy_less[run_count_fun_idx])
 
 	# Plots
+	if test_plots_cnts is None:
+		test_plots_cnts = len(test_data_in_time_end_bin)
+
 	os.makedirs('Outputs/'+dataset_name+'_threshold_less/', exist_ok=True)
 	os.makedirs('Outputs/'+dataset_name+'_threshold_more/', exist_ok=True)
 	os.makedirs('Outputs/'+dataset_name+'_threshold_less_rank/', exist_ok=True)
 	os.makedirs('Outputs/'+dataset_name+'_threshold_more_rank/', exist_ok=True)
-	for batch_idx in range(len(test_data_in_time_end_bin)):
+	for batch_idx in range(test_plots_cnts):
 		all_begins = np.linspace(x_range[batch_idx][0], x_range[batch_idx][1], no_points)
 		plt.plot(all_begins, (interval_counts_more_true[batch_idx] / np.sum(interval_counts_more_true[batch_idx])), 
 				 label='True Preds')
@@ -2384,9 +2420,9 @@ def compute_time_range_pdf(all_run_count_fun, all_run_count_fun_name, model_data
 		plt.xlabel('timeline')
 		plt.ylabel('pdf_threshold_more')
 		plt.axvline(x=interval_range_count_more[batch_idx], color='red', linestyle='--')
-		img_name_cnt = 'Outputs/'+dataset_name+'_threshold_more/'+dataset_name+'_threshold_more_'+str(batch_idx)+'.png'
+		img_name_cnt = 'Outputs/'+dataset_name+'_threshold_more/'+dataset_name+'_threshold_more_'+str(batch_idx)+'.svg'
 		plt.legend(loc='upper right')
-		plt.savefig(img_name_cnt)
+		plt.savefig(img_name_cnt, format='svg', dpi=1200)
 		plt.close()
 
 		plt.plot(all_begins, (interval_counts_less_true[batch_idx] / np.sum(interval_counts_less_true[batch_idx])), 
@@ -2398,9 +2434,9 @@ def compute_time_range_pdf(all_run_count_fun, all_run_count_fun_name, model_data
 		plt.xlabel('timeline')
 		plt.ylabel('pdf_threshold_less')
 		plt.axvline(x=interval_range_count_less[batch_idx], color='red', linestyle='--')
-		img_name_cnt = 'Outputs/'+dataset_name+'_threshold_less/'+dataset_name+'_threshold_less_'+str(batch_idx)+'.png'
+		img_name_cnt = 'Outputs/'+dataset_name+'_threshold_less/'+dataset_name+'_threshold_less_'+str(batch_idx)+'.svg'
 		plt.legend(loc='upper right')
-		plt.savefig(img_name_cnt)
+		plt.savefig(img_name_cnt, format='svg', dpi=1200)
 		plt.close()
 
 		for run_count_fun_idx in range(len(all_run_count_fun)):
@@ -2410,9 +2446,9 @@ def compute_time_range_pdf(all_run_count_fun, all_run_count_fun_name, model_data
 		plt.xlabel('timeline')
 		plt.ylabel('pdf_threshold_more_rank')
 		plt.axvline(x=interval_range_count_more[batch_idx], color='red', linestyle='--')
-		img_name_cnt = 'Outputs/'+dataset_name+'_threshold_more_rank/'+dataset_name+'_threshold_more_rank_'+str(batch_idx)+'.png'
+		img_name_cnt = 'Outputs/'+dataset_name+'_threshold_more_rank/'+dataset_name+'_threshold_more_rank_'+str(batch_idx)+'.svg'
 		plt.legend(loc='upper right')
-		plt.savefig(img_name_cnt)
+		plt.savefig(img_name_cnt, format='svg', dpi=1200)
 		plt.close()
 
 		for run_count_fun_idx in range(len(all_run_count_fun)):
@@ -2422,9 +2458,9 @@ def compute_time_range_pdf(all_run_count_fun, all_run_count_fun_name, model_data
 		plt.xlabel('timeline')
 		plt.ylabel('pdf_threshold_less_rank')
 		plt.axvline(x=interval_range_count_less[batch_idx], color='red', linestyle='--')
-		img_name_cnt = 'Outputs/'+dataset_name+'_threshold_less_rank/'+dataset_name+'_threshold_less_rank_'+str(batch_idx)+'.png'
+		img_name_cnt = 'Outputs/'+dataset_name+'_threshold_less_rank/'+dataset_name+'_threshold_less_rank_'+str(batch_idx)+'.svg'
 		plt.legend(loc='upper right')
-		plt.savefig(img_name_cnt)
+		plt.savefig(img_name_cnt, format='svg', dpi=1200)
 		plt.close()
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 
@@ -2565,22 +2601,33 @@ def run_model(dataset_name, model_name, dataset, args, prev_models=None, run_mod
 				print("____________________________________________________________________")
 				print("")
 
-			if 'run_rmtpp_with_optimization_fixed_cnt_solver' in run_model_flags and run_model_flags['run_rmtpp_with_optimization_fixed_cnt_solver']:
-				print("Prediction for run_rmtpp_with_optimization_fixed_cnt_solver model")
+			if 'run_rmtpp_with_optimization_fixed_cnt_solver_with_nll' in run_model_flags and run_model_flags['run_rmtpp_with_optimization_fixed_cnt_solver_with_nll']:
+				print("Prediction for run_rmtpp_with_optimization_fixed_cnt_solver_with_nll model")
 				_, all_times_bin_pred_opt = run_rmtpp_with_optimization_fixed_cnt_solver(args, models, data, test_data)
 				deep_mae = compute_hierarchical_mae(all_times_bin_pred_opt, query_1_data, test_out_all_event_true, compute_depth)
 				threshold_mae = compute_threshold_loss(all_times_bin_pred_opt, query_2_data)
 				print("deep_mae", deep_mae)
-				compute_full_model_acc(args, test_data, None, all_times_bin_pred_opt, test_out_times_in_bin, dataset_name, 'run_rmtpp_with_optimization_fixed_cnt_solver')
+				compute_full_model_acc(args, test_data, None, all_times_bin_pred_opt, test_out_times_in_bin, dataset_name, 'run_rmtpp_with_optimization_fixed_cnt_solver_with_nll')
 				print("____________________________________________________________________")
 				print("")
 
 			if 'compute_time_range_pdf' in run_model_flags and run_model_flags['compute_time_range_pdf']:
 				print("Running threshold query to generate pdf for all models")
 				model_data = [args, models, data, test_data]
-				all_run_count_fun = [run_rmtpp_count_cont_rmtpp, run_rmtpp_count_reinit, run_rmtpp_for_count, run_wgan_for_count]
-				all_run_count_fun_name = ['run_rmtpp_count_cont_rmtpp', 'run_rmtpp_count_reinit', 'run_rmtpp_for_count', 'run_wgan_for_count']
-				compute_time_range_pdf(all_run_count_fun, all_run_count_fun_name, model_data, query_2_data, dataset_name)
+				all_run_fun_pdf = {
+					'run_rmtpp_with_optimization_fixed_cnt_solver_with_nll': [run_rmtpp_with_optimization_fixed_cnt_solver, 'nll'],
+
+					'run_rmtpp_count_cont_rmtpp_with_nll': [run_rmtpp_count_cont_rmtpp, 'nll'],
+					'run_rmtpp_count_cont_rmtpp_with_mse': [run_rmtpp_count_cont_rmtpp, 'mse'],
+					'run_rmtpp_count_reinit_with_nll': [run_rmtpp_count_reinit, 'nll'],
+					'run_rmtpp_count_reinit_with_mse': [run_rmtpp_count_reinit, 'mse'],
+
+					'run_rmtpp_for_count_with_mse': [run_rmtpp_for_count, 'mse'],
+					'run_rmtpp_for_count_with_nll': [run_rmtpp_for_count, 'nll'],
+					'run_wgan_for_count': [run_wgan_for_count, None],
+				}
+				clean_dict_for_na_model(all_run_fun_pdf, run_model_flags)
+				compute_time_range_pdf(all_run_fun_pdf, model_data, query_2_data, dataset_name)
 				print("____________________________________________________________________")
 				print("")
 
@@ -2628,13 +2675,23 @@ def run_model(dataset_name, model_name, dataset, args, prev_models=None, run_mod
 
 			print("")
 
-			if 'run_rmtpp_for_count' in run_model_flags and run_model_flags['run_rmtpp_for_count']:
-				print("Prediction for plain_rmtpp_count model")
-				result, all_times_bin_pred = run_rmtpp_for_count(args, models, data, test_data, query_data=query_1_data)
+			if 'run_rmtpp_for_count_with_mse' in run_model_flags and run_model_flags['run_rmtpp_for_count_with_mse']:
+				print("Prediction for plain_rmtpp_count model with rmtpp_mse")
+				result, all_times_bin_pred = run_rmtpp_for_count(args, models, data, test_data, query_data=query_1_data, rmtpp_type='mse')
 				deep_mae = compute_hierarchical_mae(all_times_bin_pred, query_1_data, test_out_all_event_true, compute_depth)
 				threshold_mae = compute_threshold_loss(all_times_bin_pred, query_2_data)
 				print("deep_mae", deep_mae)
-				compute_full_model_acc(args, test_data, None, all_times_bin_pred, test_out_times_in_bin, dataset_name, 'run_rmtpp_for_count')
+				compute_full_model_acc(args, test_data, None, all_times_bin_pred, test_out_times_in_bin, dataset_name, 'run_rmtpp_for_count_with_mse')
+				print("____________________________________________________________________")
+				print("")
+
+			if 'run_rmtpp_for_count_with_nll' in run_model_flags and run_model_flags['run_rmtpp_for_count_with_nll']:
+				print("Prediction for plain_rmtpp_count model with rmtpp_nll")
+				result, all_times_bin_pred = run_rmtpp_for_count(args, models, data, test_data, query_data=query_1_data, rmtpp_type='nll')
+				deep_mae = compute_hierarchical_mae(all_times_bin_pred, query_1_data, test_out_all_event_true, compute_depth)
+				threshold_mae = compute_threshold_loss(all_times_bin_pred, query_2_data)
+				print("deep_mae", deep_mae)
+				compute_full_model_acc(args, test_data, None, all_times_bin_pred, test_out_times_in_bin, dataset_name, 'run_rmtpp_for_count_with_nll')
 				print("____________________________________________________________________")
 				print("")
 
