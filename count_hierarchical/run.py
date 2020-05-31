@@ -1739,9 +1739,10 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(args, query_models, data, test_
 		test_predictions_norm_stddev = model_cnt_distribution_params[1]
 
 	test_predictions_cnt = utils.denormalize_data(test_predictions_norm_cnt, test_mean_bin, test_std_bin)
-	test_predictions_stddev = utils.denormalize_data(test_predictions_norm_stddev, test_mean_bin, test_std_bin)
+	test_predictions_stddev = utils.denormalize_data_stddev(test_predictions_norm_stddev, test_mean_bin, test_std_bin)
 	event_count_preds_cnt = np.round(test_predictions_cnt)
 	event_count_preds_stddev = np.round(test_predictions_stddev)
+	event_count_preds_stddev = np.maximum(event_count_preds_stddev, 1.) # stddev should not be less than 1.
 	event_count_preds_true = test_data_out_bin
 
 	output_event_count_pred = tf.expand_dims(event_count_preds_cnt, axis=-1).numpy()
@@ -1767,10 +1768,10 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(args, query_models, data, test_
 	for batch_idx in range(len(all_gaps_pred)):
 		nc_loss_lst = []
 		all_times_pred_nc_lst = []
-		clipped_stddev = np.minimum(event_count_preds_stddev[batch_idx], np.ones_like(event_count_preds_stddev[batch_idx]) * count_sigma)
-		min_cnt = event_count_preds_cnt[batch_idx]-clipped_stddev
-		min_cnt = np.maximum(np.ones_like(event_count_preds_cnt[batch_idx]), min_cnt)
-		max_cnt = event_count_preds_cnt[batch_idx]+clipped_stddev
+		clipped_stddev = np.minimum(event_count_preds_stddev[batch_idx], count_sigma)
+		min_cnt = event_count_preds_cnt[batch_idx] - clipped_stddev
+		min_cnt = np.maximum(1., min_cnt)
+		max_cnt = event_count_preds_cnt[batch_idx] + clipped_stddev + 1.
 		nc_range = np.arange(min_cnt, max_cnt)
 		for nc in nc_range:
 			event_past_cnt=0
@@ -1889,13 +1890,14 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(args, query_models, data, test_
 			#all_times_pred_nc = np.array([seq[:int(cnt)] for seq, cnt in zip(all_times_pred_nc, events_count_per_batch)])
 			#all_times_pred_nc = np.expand_dims(all_times_pred_nc, axis=1)
 	
-			#print('Example:', batch_idx, 'nc:', nc, 'loss:', nc_loss)
+			#print('Example:', batch_idx, 'nc:', nc, 'loss:', nc_loss, 'Mean:', event_count_preds_cnt[batch_idx])
 	
 			all_times_pred_nc_lst.append(all_times_pred_nc)
 			nc_loss_lst.append(nc_loss)
 		best_nc_idx, best_nc_loss = min(enumerate(nc_loss_lst), key=itemgetter(1))
 		best_all_times_pred_nc = all_times_pred_nc_lst[best_nc_idx]
 		best_all_times_pred.append(best_all_times_pred_nc)
+		#print('Best count:', best_all_times_pred_nc.shape)
 
 	best_all_times_pred = np.expand_dims(np.array(best_all_times_pred), axis=1)
 	# [99, dec_len, ...] Currently supports only dec_len=1
