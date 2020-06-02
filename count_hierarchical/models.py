@@ -23,10 +23,12 @@ class RMTPP(tf.keras.Model):
                  name='RMTPP',
                  use_intensity=True,
                  use_count_model=False,
+                 use_var_model=False,
                  **kwargs):
         super(RMTPP, self).__init__(name=name, **kwargs)
         self.use_intensity = use_intensity
         self.use_count_model = use_count_model
+        self.use_var_model = use_var_model
         
         self.rnn_layer = layers.GRU(hidden_layer_size, return_sequences=True,
                                     return_state=True, stateful=False,
@@ -37,6 +39,9 @@ class RMTPP(tf.keras.Model):
             self.D_layer = layers.Dense(1, activation=tf.nn.softplus, name='D_layer')
 
         if self.use_count_model:
+            self.WT_layer = layers.Dense(1, activation=tf.nn.softplus, name='WT_layer')
+
+        if self.use_var_model:
             self.WT_layer = layers.Dense(1, activation=tf.nn.softplus, name='WT_layer')
             
         if self.use_intensity:
@@ -67,6 +72,16 @@ class RMTPP(tf.keras.Model):
         elif self.use_count_model:
             self.WT = self.WT_layer(self.hidden_states)
             self.gaps_pred = self.WT
+        elif self.use_var_model:
+            self.WT = self.WT_layer(self.hidden_states) # Mean of sistribution
+            out_mean = self.D
+            out_stddev = self.WT
+            gaussian_distribution = tfp.distributions.Normal(
+                out_mean, out_stddev, validate_args=False, allow_nan_stats=True, 
+                name='Normal'
+            )
+            output_samples = gaussian_distribution.sample(1000)
+            self.gaps_pred = tf.reduce_mean(output_samples, axis=0)
         else:
             self.gaps_pred = tf.nn.softplus(self.D)
             self.WT = tf.zeros_like(self.D)
@@ -75,12 +90,12 @@ class RMTPP(tf.keras.Model):
         final_state = self.hidden_states[:,-1]
         return self.gaps_pred, self.D, self.WT, next_initial_state, final_state
 
-def build_rmtpp_model(args, use_intensity):
+def build_rmtpp_model(args, use_intensity, use_var_model=False):
     hidden_layer_size = args.hidden_layer_size
     batch_size = args.batch_size
     enc_len = args.enc_len
     learning_rate = args.learning_rate
-    model = RMTPP(hidden_layer_size, use_intensity=use_intensity)
+    model = RMTPP(hidden_layer_size, use_intensity=use_intensity, use_var_model=use_var_model)
     model.build(input_shape=(batch_size, enc_len, 1))
     optimizer = keras.optimizers.Adam(learning_rate)
     return model, optimizer
