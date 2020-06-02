@@ -1,6 +1,8 @@
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
+import tensorflow_probability as tfp
+
 
 import cvxpy as cp
 import numpy as np
@@ -1676,6 +1678,8 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(args, query_models, data, test_
 
 	def optimize_gaps(model_rmtpp_params,
 					  rmtpp_loglikelihood_loss,
+					  model_cnt_distribution_params,
+					  nc,
 					  all_bins_gaps_pred,
 					  all_bins_end_time,
 					  test_data_init_time,
@@ -1698,7 +1702,9 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(args, query_models, data, test_
 		test_norm_a, test_norm_d = test_data_rmtpp_normalizer
 		init_end_diff = all_bins_end_time-test_data_init_time
 		init_end_diff_norm = utils.normalize_avg_given_param(init_end_diff, test_norm_a, test_norm_d)
-		constraints = [cp.sum(gaps)<=init_end_diff_norm, gaps>=0]
+		constraints = [cp.sum(gaps[:nc])<=init_end_diff_norm,
+					   cp.sum(gaps[:nc+1])>=init_end_diff_norm,
+					   gaps>=0]
 		# TODO Need normalizer for constraints
 		prob = cp.Problem(objective, constraints)
 		#print('D:')
@@ -1714,12 +1720,23 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(args, query_models, data, test_
 		#print('\n'),
 
 		try:
-			loss = prob.solve(warm_start=True)
+			rmtpp_loss = prob.solve(warm_start=True)
 		except cp.error.SolverError:
-			loss = prob.solve(solver='SCS', warm_start=True)
+			rmtpp_loss = prob.solve(solver='SCS', warm_start=True)
+
+		test_mean_bin, test_std_bin = test_data_count_normalizer
+		nc_norm = utils.normalize_data_given_param(nc, test_mean_bin, test_std_bin)
+		mu, sigma = model_cnt_distribution_params[0], model_cnt_distribution_params[1]
+		count_loss = -tfp.distributions.Normal(
+                mu, sigma, validate_args=False, allow_nan_stats=True, 
+                name='Normal'
+            ).log_prob(nc_norm)
+		count_loss = np.sum(count_loss)
 
 
-		all_bins_gaps_pred = gaps.value
+		loss = rmtpp_loss + count_loss
+
+		all_bins_gaps_pred = gaps.value[:nc]
 		#print('Loss after optimization:', loss)
 	
 		# Shape: list of 92 different length tensors
@@ -1789,7 +1806,7 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(args, query_models, data, test_
 			all_times_pred = all_times_pred_simu
 			times_pred_all_bin_lst=list()
 			all_times_pred_lst = list()
-			output_event_count_curr = np.zeros_like(output_event_count_pred) + nc
+			output_event_count_curr = np.zeros_like(output_event_count_pred) + max_cnt-1
 			test_data_init_time = test_data_in_time_end_bin.astype(np.float32)
 
 			gaps_before_bin = all_times_pred[batch_idx,:1] - test_data_init_time[batch_idx]
@@ -1868,6 +1885,7 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(args, query_models, data, test_
 			all_bins_D_pred = np.array(all_bins_D_pred)
 			all_bins_WT_pred = np.array(all_bins_WT_pred)
 			model_rmtpp_params = [all_bins_D_pred, all_bins_WT_pred]
+			model_count_params = [model_cnt_distribution_params[0][batch_idx], model_cnt_distribution_params[1][batch_idx]]
 	
 			bin_size = args.bin_size
 			all_bins_end_time = tf.squeeze(test_end_hr_bins[batch_idx:batch_idx+1].astype(np.float32), axis=-1)
@@ -1886,6 +1904,8 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(args, query_models, data, test_
 			all_bins_gaps_pred, nc_loss \
 				= optimize_gaps(model_rmtpp_params,
 								rmtpp_loglikelihood_loss,
+								model_count_params,
+								int(nc),
 								all_bins_gaps_pred,
 								all_bins_end_time,
 								test_data_init_time_batch,
@@ -1901,7 +1921,7 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(args, query_models, data, test_
 			#all_times_pred_nc = np.array([seq[:int(cnt)] for seq, cnt in zip(all_times_pred_nc, events_count_per_batch)])
 			#all_times_pred_nc = np.expand_dims(all_times_pred_nc, axis=1)
 	
-			#print('Example:', batch_idx, 'nc:', nc, 'loss:', nc_loss, 'Mean:', event_count_preds_cnt[batch_idx])
+			print('Example:', batch_idx, 'nc:', nc, 'loss:', nc_loss, 'Mean:', event_count_preds_cnt[batch_idx])
 	
 			all_times_pred_nc_lst.append(all_times_pred_nc)
 			nc_loss_lst.append(nc_loss)
@@ -2163,15 +2183,15 @@ def compute_full_model_acc(args, test_data, all_bins_count_pred, all_times_bin_p
 	t_e_plus = test_end_hr_bins[:,-1]
 	deep_mae = compute_hierarchical_mae_deep(all_times_pred, test_out_times_in_bin, t_b_plus, t_e_plus, compute_depth)
 
-	old_stdout = sys.stdout
-	sys.stdout=open("Outputs/count_model_"+dataset_name+".txt","a")
+	#old_stdout = sys.stdout
+	#sys.stdout=open("Outputs/count_model_"+dataset_name+".txt","a")
 	print("____________________________________________________________________")
 	print(model_name, 'Full-eval: MAE for Count Prediction:', np.mean(np.abs(all_bins_count_true-all_bins_count_pred )))
 	print(model_name, 'Full-eval: MAE for Count Prediction (per bin):', np.mean(np.abs(all_bins_count_true-all_bins_count_pred ), axis=0))
 	print(model_name, 'Full-eval: Deep MAE for events Prediction:', deep_mae, 'at depth', compute_depth)
 	print("____________________________________________________________________")
-	sys.stdout.close()
-	sys.stdout = old_stdout
+	#sys.stdout.close()
+	#sys.stdout = old_stdout
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 
 
@@ -2597,8 +2617,8 @@ def run_model(dataset_name, model_name, dataset, args, prev_models=None, run_mod
 			query_2_data = [interval_range_count_less, interval_range_count_more, 
 							less_threshold, more_threshold, interval_size, test_out_times_in_bin]
 
-			old_stdout = sys.stdout
-			sys.stdout=open("Outputs/count_model_"+dataset_name+".txt","a")
+			#old_stdout = sys.stdout
+			#sys.stdout=open("Outputs/count_model_"+dataset_name+".txt","a")
 			print("____________________________________________________________________")
 			print("True counts")
 			print(test_out_event_count_true)
@@ -2740,8 +2760,8 @@ def run_model(dataset_name, model_name, dataset, args, prev_models=None, run_mod
 				print("____________________________________________________________________")
 				print("")
 
-			sys.stdout.close()
-			sys.stdout = old_stdout
+			#sys.stdout.close()
+			#sys.stdout = old_stdout
 			
 	return model, result
 
