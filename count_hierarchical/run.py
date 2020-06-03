@@ -1702,8 +1702,8 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(args, query_models, data, test_
 		test_norm_a, test_norm_d = test_data_rmtpp_normalizer
 		init_end_diff = all_bins_end_time-test_data_init_time
 		init_end_diff_norm = utils.normalize_avg_given_param(init_end_diff, test_norm_a, test_norm_d)
-		constraints = [cp.sum(gaps[:nc])<=init_end_diff_norm,
-					   cp.sum(gaps[:nc+1])>=init_end_diff_norm,
+		constraints = [cp.sum(gaps[0, :nc])<=init_end_diff_norm,
+					   cp.sum(gaps[0, :nc+1])>=init_end_diff_norm,
 					   gaps>=0]
 		# TODO Need normalizer for constraints
 		prob = cp.Problem(objective, constraints)
@@ -2183,15 +2183,15 @@ def compute_full_model_acc(args, test_data, all_bins_count_pred, all_times_bin_p
 	t_e_plus = test_end_hr_bins[:,-1]
 	deep_mae = compute_hierarchical_mae_deep(all_times_pred, test_out_times_in_bin, t_b_plus, t_e_plus, compute_depth)
 
-	#old_stdout = sys.stdout
-	#sys.stdout=open("Outputs/count_model_"+dataset_name+".txt","a")
+	old_stdout = sys.stdout
+	sys.stdout=open("Outputs/count_model_"+dataset_name+".txt","a")
 	print("____________________________________________________________________")
 	print(model_name, 'Full-eval: MAE for Count Prediction:', np.mean(np.abs(all_bins_count_true-all_bins_count_pred )))
 	print(model_name, 'Full-eval: MAE for Count Prediction (per bin):', np.mean(np.abs(all_bins_count_true-all_bins_count_pred ), axis=0))
 	print(model_name, 'Full-eval: Deep MAE for events Prediction:', deep_mae, 'at depth', compute_depth)
 	print("____________________________________________________________________")
-	#sys.stdout.close()
-	#sys.stdout = old_stdout
+	sys.stdout.close()
+	sys.stdout = old_stdout
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 
 
@@ -2617,8 +2617,8 @@ def run_model(dataset_name, model_name, dataset, args, prev_models=None, run_mod
 			query_2_data = [interval_range_count_less, interval_range_count_more, 
 							less_threshold, more_threshold, interval_size, test_out_times_in_bin]
 
-			#old_stdout = sys.stdout
-			#sys.stdout=open("Outputs/count_model_"+dataset_name+".txt","a")
+			old_stdout = sys.stdout
+			sys.stdout=open("Outputs/count_model_"+dataset_name+".txt","a")
 			print("____________________________________________________________________")
 			print("True counts")
 			print(test_out_event_count_true)
@@ -2760,8 +2760,8 @@ def run_model(dataset_name, model_name, dataset, args, prev_models=None, run_mod
 				print("____________________________________________________________________")
 				print("")
 
-			#sys.stdout.close()
-			#sys.stdout = old_stdout
+			sys.stdout.close()
+			sys.stdout = old_stdout
 			
 	return model, result
 
