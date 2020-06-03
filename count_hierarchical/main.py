@@ -107,32 +107,37 @@ args.dataset_name = dataset_names
 
 model_names = list()
 if args.model_name == 'all':
-    # model_names.append('wgan')
+    model_names.append('wgan')
     model_names.append('count_model')
     # model_names.append('hierarchical')
     model_names.append('rmtpp_nll')
     model_names.append('rmtpp_mse')
+    model_names.append('rmtpp_mse_var')
     model_names.append('rmtpp_count')
 else:
     model_names.append(args.model_name)
 args.model_name = model_names
 
 run_model_flags = {
-    'compute_time_range_pdf': True,
+    'compute_time_range_pdf': False,
 
     'run_rmtpp_count_with_optimization': False,
     'run_rmtpp_with_optimization_fixed_cnt': False,
     'run_rmtpp_with_optimization_fixed_cnt_solver_with_nll': True,
     'run_rmtpp_with_optimization_fixed_cnt_solver_with_mse': True,
+    'run_rmtpp_with_optimization_fixed_cnt_solver_with_mse_var': True,
 
     'run_rmtpp_count_cont_rmtpp_with_nll': True,
     'run_rmtpp_count_cont_rmtpp_with_mse': True,
+    'run_rmtpp_count_cont_rmtpp_with_mse_var': True,
     'run_rmtpp_count_reinit_with_nll': True,
     'run_rmtpp_count_reinit_with_mse': True,
+    'run_rmtpp_count_reinit_with_mse_var': True,
 
-    'run_rmtpp_for_count_with_mse': True,
     'run_rmtpp_for_count_with_nll': True,
-    'run_wgan_for_count': False,
+    'run_rmtpp_for_count_with_mse': True,
+    'run_rmtpp_for_count_with_mse_var': True,
+    'run_wgan_for_count': True,
 }
 
 automate_bin_sz = False
@@ -185,11 +190,13 @@ for dataset_name in dataset_names:
         'hierarchical': None,
         'rmtpp_mse': None,
         'rmtpp_nll': None,
+        'rmtpp_mse_var': None,
         'rmtpp_count': None,
     }
     per_model_count['true'] = event_count_preds_true
     for model_name in model_names:
         print("--------------------------------------------------------------------")
+        args.current_model = model_name
         print("Running", model_name, "Model\n")
 
         model, result = run.run_model(dataset_name, model_name, dataset, args, per_model_save, run_model_flags=run_model_flags)
