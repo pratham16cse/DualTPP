@@ -80,8 +80,9 @@ class RMTPP(tf.keras.Model):
                 out_mean, out_stddev, validate_args=False, allow_nan_stats=True, 
                 name='Normal'
             )
-            output_samples = gaussian_distribution.sample(1000)
-            self.gaps_pred = tf.reduce_mean(output_samples, axis=0)
+            # output_samples = gaussian_distribution.sample(1000)
+            # self.gaps_pred = tf.reduce_mean(output_samples, axis=0)
+            self.gaps_pred = out_mean
         else:
             self.gaps_pred = tf.nn.softplus(self.D)
             self.WT = tf.zeros_like(self.D)
@@ -212,9 +213,10 @@ class COUNT_MODEL(tf.keras.Model):
                 total_count, logits=None, probs=probs, validate_args=False, allow_nan_stats=True,
                 name='NegativeBinomial'
             )
-            output_samples = nb_distribution.sample(1000)
+            # output_samples = nb_distribution.sample(1000)
+            # bin_count_output = tf.reduce_mean(output_samples, axis=0)
             distribution_params = [total_count, probs]
-            bin_count_output = tf.reduce_mean(output_samples, axis=0)
+            bin_count_output = total_count
 
         elif self.distribution_name == 'Gaussian':
             out_alpha = self.out_alpha_layer(output_state)
@@ -227,9 +229,10 @@ class COUNT_MODEL(tf.keras.Model):
                 out_mu, out_stddev, validate_args=False, allow_nan_stats=True, 
                 name='Normal'
             )
-            output_samples = gaussian_distribution.sample(1000)
+            # output_samples = gaussian_distribution.sample(1000)
+            # bin_count_output = tf.reduce_mean(output_samples, axis=0)
             distribution_params = [out_mu, out_stddev]
-            bin_count_output = tf.reduce_mean(output_samples, axis=0)
+            bin_count_output = out_mu
 
         elif self.distribution_name == 'var_model':
             bin_count_output = self.count_out_layer(output_state)

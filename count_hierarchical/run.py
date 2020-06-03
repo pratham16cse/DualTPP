@@ -966,7 +966,7 @@ def run_rmtpp_count_cont_rmtpp(args, models, data, test_data, rmtpp_type):
 		times_pred_all_bin_lst=list()
 
 		gaps_before_bin = all_times_pred[batch_idx,:1] - test_data_init_time[batch_idx]
-		gaps_before_bin = gaps_before_bin * np.random.uniform()
+		gaps_before_bin = gaps_before_bin * np.random.uniform(size=gaps_before_bin.shape)
 		next_bin_start = test_data_init_time[batch_idx] + gaps_before_bin
 
 		for dec_idx in range(dec_len):
@@ -982,7 +982,7 @@ def run_rmtpp_count_cont_rmtpp(args, models, data, test_data, rmtpp_type):
 				test_data_init_time[batch_idx] = all_times_pred[batch_idx,event_past_cnt-1:event_past_cnt]
 
 			gaps_after_bin = all_times_pred[batch_idx,event_past_cnt:event_past_cnt+1] - test_data_init_time[batch_idx]
-			gaps_after_bin = gaps_after_bin * np.random.uniform()
+			gaps_after_bin = gaps_after_bin * np.random.uniform(size=gaps_after_bin.shape)
 			bin_end = test_data_init_time[batch_idx] + gaps_after_bin
 			next_bin_start = bin_end
 			
@@ -995,6 +995,67 @@ def run_rmtpp_count_cont_rmtpp(args, models, data, test_data, rmtpp_type):
 			times_pred_all_bin_lst.append(times_pred_for_bin_scaled.numpy())
 		
 		all_times_pred_lst.append(times_pred_all_bin_lst)
+	all_times_pred = np.array(all_times_pred_lst)
+	return event_count_preds_cnt, all_times_pred
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
+
+
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
+# Run count_only model 
+# Another baseline whose event prediction is entirely based on 
+# count predicted from count model, 
+# Gaps are generated uniformly to satisfy count constraints.
+def run_count_only_model(args, models, data, test_data):
+	model_cnt = models['count_model']
+	model_check = (model_cnt is not None)
+	assert model_check, "run_count_only_model requires count model"
+
+	[test_data_in_bin, test_data_out_bin, test_end_hr_bins,
+	test_data_in_time_end_bin, test_data_in_gaps_bin, test_mean_bin, test_std_bin,
+	test_gap_in_bin_norm_a, test_gap_in_bin_norm_d] = test_data
+
+	enc_len = args.enc_len
+	dec_len = args.out_bin_sz
+	bin_size = args.bin_size
+	
+	next_hidden_state = None
+	scaled_rnn_hidden_state = None
+
+	test_data_init_time = test_data_in_time_end_bin.astype(np.float32)
+	test_data_input_gaps_bin = test_data_in_gaps_bin.astype(np.float32)
+	all_events_in_bin_pred = list()
+
+	test_predictions_norm_cnt = model_cnt(test_data_in_bin)
+	if len(test_predictions_norm_cnt) == 2:
+		test_predictions_norm_cnt = test_predictions_norm_cnt[0]
+
+	test_predictions_cnt = utils.denormalize_data(test_predictions_norm_cnt, test_mean_bin, test_std_bin)
+	event_count_preds_cnt = np.round(test_predictions_cnt).astype(np.int32)
+	event_count_preds_true = test_data_out_bin
+
+	all_times_pred_lst = list()
+	for batch_idx in range(event_count_preds_cnt.shape[0]):
+		times_pred_per_bin_lst=list()
+		old_last_gap = np.random.uniform(low=0.0, high=1.0)*np.random.uniform(low=0.0, high=1.0)
+		for dec_idx in range(event_count_preds_cnt.shape[1]):
+			actual_bin_start = test_end_hr_bins[batch_idx,dec_idx]-bin_size
+			actual_bin_end = test_end_hr_bins[batch_idx,dec_idx]
+
+			rand_uniform_gaps = np.random.uniform(low=0.0, high=1.0, size=event_count_preds_cnt[batch_idx,dec_idx]+1)
+			rand_uniform_gaps[0] = old_last_gap
+
+			last_gap = rand_uniform_gaps[-1]
+			rand_uniform_gaps[-1] *= np.random.uniform(low=0.0, high=1.0)
+			old_last_gap = last_gap - rand_uniform_gaps[-1]
+			bin_start = np.array([0.0])
+			bin_end = np.array([np.sum(rand_uniform_gaps)])
+			rand_uniform_gaps = np.cumsum(rand_uniform_gaps)
+
+			times_pred_for_bin_scaled = (((actual_bin_end - actual_bin_start)/(bin_end - bin_start)) * \
+							 (rand_uniform_gaps - bin_start)) + actual_bin_start
+			
+			times_pred_per_bin_lst.append(times_pred_for_bin_scaled[:-1])
+		all_times_pred_lst.append(times_pred_per_bin_lst)
 	all_times_pred = np.array(all_times_pred_lst)
 	return event_count_preds_cnt, all_times_pred
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
@@ -1055,7 +1116,7 @@ def run_rmtpp_count_with_optimization(args, query_models, data, test_data):
 		all_times_pred_lst = list()
 
 		gaps_before_bin = all_times_pred[batch_idx,:1] - test_data_init_time[batch_idx]
-		gaps_before_bin = gaps_before_bin * np.random.uniform()
+		gaps_before_bin = gaps_before_bin * np.random.uniform(size=gaps_before_bin.shape)
 		next_bin_start = test_data_init_time[batch_idx] + gaps_before_bin
 
 		for dec_idx in range(dec_len):
@@ -1071,7 +1132,7 @@ def run_rmtpp_count_with_optimization(args, query_models, data, test_data):
 				test_data_init_time[batch_idx] = all_times_pred[batch_idx,event_past_cnt-1:event_past_cnt]
 
 			gaps_after_bin = all_times_pred[batch_idx,event_past_cnt:event_past_cnt+1] - test_data_init_time[batch_idx]
-			gaps_after_bin = gaps_after_bin * np.random.uniform()
+			gaps_after_bin = gaps_after_bin * np.random.uniform(size=gaps_after_bin.shape)
 			bin_end = test_data_init_time[batch_idx] + gaps_after_bin
 			next_bin_start = bin_end
 			
@@ -1544,7 +1605,7 @@ def run_rmtpp_with_optimization_fixed_cnt(args, query_models, data, test_data):
 			times_pred_all_bin_lst=list()
 	
 			gaps_before_bin = all_times_pred[batch_idx,:1] - test_data_init_time[batch_idx]
-			gaps_before_bin = gaps_before_bin * np.random.uniform()
+			gaps_before_bin = gaps_before_bin * np.random.uniform(size=gaps_before_bin.shape)
 			next_bin_start = test_data_init_time[batch_idx] + gaps_before_bin
 	
 			for dec_idx in range(dec_len):
@@ -1560,7 +1621,7 @@ def run_rmtpp_with_optimization_fixed_cnt(args, query_models, data, test_data):
 					test_data_init_time[batch_idx] = all_times_pred[batch_idx,event_past_cnt-1:event_past_cnt]
 	
 				gaps_after_bin = all_times_pred[batch_idx,event_past_cnt:event_past_cnt+1] - test_data_init_time[batch_idx]
-				gaps_after_bin = gaps_after_bin * np.random.uniform()
+				gaps_after_bin = gaps_after_bin * np.random.uniform(size=gaps_after_bin.shape)
 				bin_end = test_data_init_time[batch_idx] + gaps_after_bin
 				next_bin_start = bin_end
 				
@@ -1842,7 +1903,7 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(args, query_models, data, test_
 			test_data_init_time = test_data_in_time_end_bin.astype(np.float32)
 
 			gaps_before_bin = all_times_pred[batch_idx,:1] - test_data_init_time[batch_idx]
-			gaps_before_bin = gaps_before_bin * np.random.uniform()
+			gaps_before_bin = gaps_before_bin * np.random.uniform(size=gaps_before_bin.shape)
 			next_bin_start = test_data_init_time[batch_idx] + gaps_before_bin
 	
 			for dec_idx in range(dec_len):
@@ -1858,7 +1919,7 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(args, query_models, data, test_
 					test_data_init_time[batch_idx] = all_times_pred[batch_idx,event_past_cnt-1:event_past_cnt]
 	
 				gaps_after_bin = all_times_pred[batch_idx,event_past_cnt:event_past_cnt+1] - test_data_init_time[batch_idx]
-				gaps_after_bin = gaps_after_bin * np.random.uniform()
+				gaps_after_bin = gaps_after_bin * np.random.uniform(size=gaps_after_bin.shape)
 				bin_end = test_data_init_time[batch_idx] + gaps_after_bin
 				next_bin_start = bin_end
 				
@@ -1998,7 +2059,9 @@ def run_rmtpp_for_count(args, models, data, test_data, query_data=None, simul_en
 	test_data_init_time = test_data_in_time_end_bin.astype(np.float32)
 	test_data_input_gaps_bin = test_data_in_gaps_bin.astype(np.float32)
 
-	if simul_end_time is None:
+	if simul_end_time is None and query_data is None:
+		t_e_plus = test_end_hr_bins[:,-1]
+	elif simul_end_time is None:
 		[t_b_plus, t_e_plus, true_count] = query_data
 		t_b_plus = np.expand_dims(t_b_plus, axis=-1)
 		t_e_plus = np.expand_dims(t_e_plus, axis=-1)
@@ -2059,7 +2122,9 @@ def run_wgan_for_count(args, models, data, test_data, query_data=None, simul_end
 	test_data_init_time = test_data_in_time_end_bin.astype(np.float32)
 	test_data_input_gaps_bin = test_data_in_gaps_bin.astype(np.float32)
 
-	if simul_end_time is None:
+	if simul_end_time is None and query_data is None:
+		t_e_plus = test_end_hr_bins[:,-1]
+	elif simul_end_time is None:
 		[t_b_plus, t_e_plus, true_count] = query_data
 		t_b_plus = np.expand_dims(t_b_plus, axis=-1)
 		t_e_plus = np.expand_dims(t_e_plus, axis=-1)
@@ -2783,9 +2848,19 @@ def run_model(dataset_name, model_name, dataset, args, prev_models=None, run_mod
 
 			print("")
 
+			if 'run_count_only_model' in run_model_flags and run_model_flags['run_count_only_model']:
+				print("Prediction for run_count_only_model model with rmtpp_mse")
+				all_bins_count_pred, all_times_bin_pred = run_count_only_model(args, models, data, test_data)
+				deep_mae = compute_hierarchical_mae(all_times_bin_pred, query_1_data, test_out_all_event_true, compute_depth)
+				threshold_mae = compute_threshold_loss(all_times_bin_pred, query_2_data)
+				print("deep_mae", deep_mae)
+				compute_full_model_acc(args, test_data, all_bins_count_pred, all_times_bin_pred, test_out_times_in_bin, dataset_name, 'run_count_only_model')
+				print("____________________________________________________________________")
+				print("")
+
 			if 'run_rmtpp_for_count_with_mse' in run_model_flags and run_model_flags['run_rmtpp_for_count_with_mse']:
 				print("Prediction for plain_rmtpp_count model with rmtpp_mse")
-				result, all_times_bin_pred = run_rmtpp_for_count(args, models, data, test_data, query_data=query_1_data, rmtpp_type='mse')
+				result, all_times_bin_pred = run_rmtpp_for_count(args, models, data, test_data, rmtpp_type='mse')
 				deep_mae = compute_hierarchical_mae(all_times_bin_pred, query_1_data, test_out_all_event_true, compute_depth)
 				threshold_mae = compute_threshold_loss(all_times_bin_pred, query_2_data)
 				print("deep_mae", deep_mae)
@@ -2795,7 +2870,7 @@ def run_model(dataset_name, model_name, dataset, args, prev_models=None, run_mod
 
 			if 'run_rmtpp_for_count_with_mse_var' in run_model_flags and run_model_flags['run_rmtpp_for_count_with_mse_var']:
 				print("Prediction for plain_rmtpp_count model with rmtpp_mse_var")
-				result, all_times_bin_pred = run_rmtpp_for_count(args, models, data, test_data, query_data=query_1_data, rmtpp_type='mse_var')
+				result, all_times_bin_pred = run_rmtpp_for_count(args, models, data, test_data, rmtpp_type='mse_var')
 				deep_mae = compute_hierarchical_mae(all_times_bin_pred, query_1_data, test_out_all_event_true, compute_depth)
 				threshold_mae = compute_threshold_loss(all_times_bin_pred, query_2_data)
 				print("deep_mae", deep_mae)
@@ -2805,7 +2880,7 @@ def run_model(dataset_name, model_name, dataset, args, prev_models=None, run_mod
 
 			if 'run_rmtpp_for_count_with_nll' in run_model_flags and run_model_flags['run_rmtpp_for_count_with_nll']:
 				print("Prediction for plain_rmtpp_count model with rmtpp_nll")
-				result, all_times_bin_pred = run_rmtpp_for_count(args, models, data, test_data, query_data=query_1_data, rmtpp_type='nll')
+				result, all_times_bin_pred = run_rmtpp_for_count(args, models, data, test_data, rmtpp_type='nll')
 				deep_mae = compute_hierarchical_mae(all_times_bin_pred, query_1_data, test_out_all_event_true, compute_depth)
 				threshold_mae = compute_threshold_loss(all_times_bin_pred, query_2_data)
 				print("deep_mae", deep_mae)
@@ -2815,8 +2890,7 @@ def run_model(dataset_name, model_name, dataset, args, prev_models=None, run_mod
 
 			if 'run_wgan_for_count' in run_model_flags and run_model_flags['run_wgan_for_count']:
 				print("Prediction for plain_wgan_count model")
-				result, all_times_bin_pred = run_wgan_for_count(args, models, data, test_data, query_data=query_1_data)
-				model = None
+				result, all_times_bin_pred = run_wgan_for_count(args, models, data, test_data)
 				deep_mae = compute_hierarchical_mae(all_times_bin_pred, query_1_data, test_out_all_event_true, compute_depth)
 				threshold_mae = compute_threshold_loss(all_times_bin_pred, query_2_data)
 				print("deep_mae", deep_mae)
@@ -2845,6 +2919,7 @@ def run_model(dataset_name, model_name, dataset, args, prev_models=None, run_mod
 					'run_rmtpp_for_count_with_mse': [run_rmtpp_for_count, 'mse'],
 					'run_rmtpp_for_count_with_mse_var': [run_rmtpp_for_count, 'mse_var'],
 					'run_wgan_for_count': [run_wgan_for_count, None],
+					'run_count_only_model': [run_count_only_model, None],
 				}
 				clean_dict_for_na_model(all_run_fun_pdf, run_model_flags)
 				compute_time_range_pdf(all_run_fun_pdf, model_data, query_2_data, dataset_name)

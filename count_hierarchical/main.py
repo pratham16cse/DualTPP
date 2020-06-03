@@ -18,7 +18,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('dataset_name', type=str, help='dataset_name')
 parser.add_argument('model_name', type=str, help='model_name')
 
-parser.add_argument('--epochs', type=int, default=15,
+parser.add_argument('--epochs', type=int, default=0,
                     help='number of training epochs')
 parser.add_argument('--patience', type=int, default=2,
                     help='Number of epochs to wait for \
@@ -109,7 +109,7 @@ model_names = list()
 if args.model_name == 'all':
     model_names.append('wgan')
     model_names.append('count_model')
-    # model_names.append('hierarchical')
+    model_names.append('hierarchical')
     model_names.append('rmtpp_nll')
     model_names.append('rmtpp_mse')
     model_names.append('rmtpp_mse_var')
@@ -134,6 +134,7 @@ run_model_flags = {
     'run_rmtpp_count_reinit_with_mse': True,
     'run_rmtpp_count_reinit_with_mse_var': True,
 
+    'run_count_only_model': True,
     'run_rmtpp_for_count_with_nll': True,
     'run_rmtpp_for_count_with_mse': True,
     'run_rmtpp_for_count_with_mse_var': True,
