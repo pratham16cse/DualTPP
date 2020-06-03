@@ -253,15 +253,23 @@ def run_hierarchical(args, data, test_data):
 	train_data_in_bin, train_data_out_bin = data
 	test_data_in_bin, test_data_out_bin, test_mean_bin, test_std_bin = test_data
 	batch_size = args.batch_size
+
+	model_name = args.current_model
+	os.makedirs('saved_models/training_'+model_name+'_'+args.current_dataset+'/', exist_ok=True)
+	checkpoint_path = "saved_models/training_"+model_name+"_"+args.current_dataset+"/cp_"+args.current_dataset+".ckpt"
+
 	model_cnt = models.hierarchical_model(args)
 	model_cnt.summary()
 
-	history_cnt = model_cnt.fit(train_data_in_bin, train_data_out_bin, batch_size=batch_size,
-					epochs=num_epochs, validation_split=validation_split, verbose=0)
-
-	hist = pd.DataFrame(history_cnt.history)
-	hist['epoch'] = history_cnt.epoch
-	print(hist)
+	if num_epochs > 0:
+		history_cnt = model_cnt.fit(train_data_in_bin, train_data_out_bin, batch_size=batch_size,
+						epochs=num_epochs, validation_split=validation_split, verbose=0)
+		model_cnt.save_weights(checkpoint_path)
+		hist = pd.DataFrame(history_cnt.history)
+		hist['epoch'] = history_cnt.epoch
+		print(hist)
+	else:
+		model_cnt.load_weights(checkpoint_path)
 
 	test_data_out_norm = utils.normalize_data_given_param(test_data_out_bin, test_mean_bin, test_std_bin)
 	loss, mae, mse = model_cnt.evaluate(test_data_in_bin, test_data_out_norm, verbose=0)
