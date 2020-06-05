@@ -79,6 +79,10 @@ parser.add_argument('--generate_plots', action='store_true', default=False,
 parser.add_argument('--parallel_hparam', action='store_true', default=False,
                     help='Parallel execution of hyperparameters')
 
+# Flag for RMTPP calibration
+parser.add_argument('--calibrate_rmtpp', action='store_true', default=False,
+                    help='Whether to calibrate RMTPP')
+
 args = parser.parse_args()
 
 dataset_names = list()

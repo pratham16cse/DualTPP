@@ -165,6 +165,52 @@ def run_rmtpp(args, model, optimizer, data, NLL_loss, rmtpp_epochs=10, use_var_m
 
 	print("Loading best model from epoch", best_dev_epoch)
 	model.load_weights(checkpoint_path)
+
+	if args.calibrate_rmtpp and NLL_loss:
+		def CDF(gaps, D, WT):
+			c = tf.exp(D)
+			cdf = 1 - tf.exp((c/WT) * (tf.ones_like(D) - tf.exp(WT * gaps)))
+			return cdf
+
+		cal_data = list()
+		next_initial_state = None
+		for sm_step, (gaps_batch_in, gaps_batch_out) in enumerate(train_dataset_gaps):
+			gaps_pred, D, WT, next_initial_state, _ = model(gaps_batch_in,
+					initial_state=next_initial_state,
+					next_state_sno=args.batch_size)
+			cal_data.append(CDF(gaps_batch_out, D, WT))
+
+
+		cal_data = tf.stack(cal_data, axis=0)
+		cal_data = tf.keras.backend.flatten(cal_data)
+		cal_data = tf.expand_dims(cal_data, axis=1)
+
+		# Downsample: Randomly select 10% of cal_data
+		cal_data = tf.random.shuffle(cal_data)[:int(len(cal_data)*0.1)]
+
+		cal_inp, cal_oup = [], []
+		cal_step = int(np.sqrt(len(cal_data)))
+		for idx in range(0, len(cal_data), cal_step):
+			bch_inp = cal_data[idx:idx+cal_step]
+			bch_oup = tf.reduce_sum(tf.cast(tf.transpose(cal_data)<=bch_inp, tf.float32), axis=1, keepdims=True) / len(cal_data) * 1.
+
+			print(idx, bch_inp.shape, bch_oup.shape)
+			cal_inp.append(bch_inp)
+			cal_oup.append(bch_oup)
+
+		cal_inp, cal_oup = tf.concat(cal_inp, axis=0), tf.concat(cal_oup, axis=0)
+		plt.plot(cal_inp[:500], cal_oup[:500], 'b.')
+		plt.xlabel('Observed CDF')
+		plt.ylabel('Expected CDF')
+		plt.savefig('cal_plot_before.png')
+
+		# Train the calibration model
+		cal_model = models.calibration_model(args)
+		cal_model.fit(cal_inp, cal_oup, batch_size=args.batch_size, epochs=5, verbose=1)
+		cal_model.evaluate(cal_inp, cal_oup)
+
+		# TODO Combine cal_model with RMTPP
+
 	dev_gaps_pred, _, _, _, _ = model(dev_data_in_gaps)
 	dev_gaps_pred_unnorm = utils.denormalize_avg(dev_gaps_pred, 
 									train_norm_a_gaps, train_norm_d_gaps)

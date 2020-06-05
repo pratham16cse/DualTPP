@@ -6,6 +6,37 @@ import tensorflow_probability as tfp
 ETH = 10.0
 one_by = tf.math.reciprocal_no_nan
 
+class CalibrationModel(tf.keras.Model):
+    def __init__(self):
+        super(CalibrationModel, self).__init__(name=name, **kwargs)
+
+        self.calib_layer_1 = tf.keras.layers.Dense(4, activation=tf.nn.relu, name='calib_layer_1')
+        self.calib_layer_2 = tf.keras.layers.Dense(4, activation=tf.nn.relu, name="calib_layer_2")
+        self.calib_layer_out = tf.keras.layers.Dense(1, activation=tf.nn.relu, name="calib_layer_out")
+
+    def call(self, inputs, debug=False):
+        l1_out = self.calib_layer_1(inputs)
+        l2_out = self.calib_layer_2(l1_out)
+        output = self.out_layer(l2_out)
+
+        return output
+
+def calibration_model(args):
+    learning_rate = args.learning_rate
+
+    model = keras.Sequential([
+        layers.Dense(10, activation='relu', input_shape=[1]),
+        layers.Dense(8, activation='relu'),
+        layers.Dense(1, activation=tf.nn.sigmoid)
+    ])
+
+    # optimizer = tf.keras.optimizers.RMSprop(learning_rate)
+    optimizer = keras.optimizers.Adam(learning_rate)
+    model.compile(loss='mse',
+                  optimizer=optimizer,
+                  metrics=['mae', 'mse'])
+    return model
+
 class InverseTransformSampling(layers.Layer):
     """Uses (D, WT) to sample E[f*(g)], expected gap before next event."""
     def call(self, inputs):
