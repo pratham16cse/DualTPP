@@ -3,6 +3,7 @@ import os, sys
 import abc
 import matplotlib.pyplot as plt
 from bisect import bisect_right
+from modules import Hawkes as hk
 
 class Intensity(object):
     __metaclass__ = abc.ABCMeta
@@ -81,7 +82,10 @@ def get_optimal_bin_size(dataset_name):
 	timestamps = np.loadtxt('data/'+dataset_name+'.txt')
 	time_interval = timestamps[-1]-timestamps[0]
 	events_count = len(timestamps)
-	return int(round((time_interval*50) / events_count))
+	event_count = 50
+	if dataset_name=='911':
+		event_count=100
+	return int(round((time_interval*event_count) / events_count))
 
 def generate_plots(args, dataset_name, dataset, per_model_count, test_sample_idx=1, count_var=None):
 	inp_seq_len_plot = 10
@@ -93,6 +97,7 @@ def generate_plots(args, dataset_name, dataset, per_model_count, test_sample_idx
 	hierarchical_pred = true_pred
 	count_model_pred = true_pred
 	wgan_pred = true_pred
+	hawkes_pred = true_pred
 	if 'rmtpp_mse' in per_model_count:
 		rmtpp_mse_pred = per_model_count['rmtpp_mse']
 		event_count_preds_mse = rmtpp_mse_pred
@@ -113,6 +118,10 @@ def generate_plots(args, dataset_name, dataset, per_model_count, test_sample_idx
 		wgan_pred = per_model_count['wgan']
 		event_count_preds_wgan = wgan_pred
 		wgan_pred = event_count_preds_wgan[test_sample_idx].astype(np.float32)
+	if 'hawkes_model' in per_model_count:
+		hawkes_pred = per_model_count['hawkes_model']
+		event_count_preds_hawkes = hawkes_pred
+		hawkes_pred = event_count_preds_hawkes[test_sample_idx].astype(np.float32)
 
 	event_count_preds_true = true_pred
 	true_pred = event_count_preds_true[test_sample_idx].astype(np.float32)
@@ -142,6 +151,8 @@ def generate_plots(args, dataset_name, dataset, per_model_count, test_sample_idx
 		plt.plot(x, true_inp_bins.tolist()+rmtpp_mse_pred.tolist(), label='rmtpp_mse_pred')
 	if 'rmtpp_nll' in per_model_count:
 		plt.plot(x, true_inp_bins.tolist()+rmtpp_nll_pred.tolist(), label='rmtpp_nll_pred')
+	if 'hawkes_model' in per_model_count:
+		plt.plot(x, true_inp_bins.tolist()+hawkes_pred.tolist(), label='hawkes_pred')
 	plt.plot(x, true_inp_bins.tolist()+true_pred.tolist(), label='true_pred')
 
 	if count_var is not None:
@@ -378,6 +389,7 @@ def get_interval_count_with_threshold(test_out_times_in_bin, interval_size, data
 			'Verdict': 1.6,
 			'Delhi': 1.4,
 			'taxi': 1.05,
+			'911': 1.4,
 		}
 
 		less_factor = {
@@ -388,14 +400,18 @@ def get_interval_count_with_threshold(test_out_times_in_bin, interval_size, data
 			'Verdict': 0.4,
 			'Delhi': 0.6,
 			'taxi': 0.95,
+			'911': 0.6,
 		}
 
 		for idx in range(test_sample_count):
-			bins_count = round((test_out_times_in_bin[idx][-1] - test_out_times_in_bin[idx][0])/interval_size)
-			avg_events_count = (len(test_out_times_in_bin[idx])/bins_count)
-			avg_events_count_more = round(avg_events_count * more_factor[dataset_name])
+			bins_count_more = np.ceil((test_out_times_in_bin[idx][-1] - test_out_times_in_bin[idx][0])/interval_size)
+			bins_count_less = np.floor((test_out_times_in_bin[idx][-1] - test_out_times_in_bin[idx][0])/interval_size)
+			bins_count_less = max(1, bins_count_less)
+			avg_events_count_more = (len(test_out_times_in_bin[idx])/bins_count_more)
+			avg_events_count_less = (len(test_out_times_in_bin[idx])/bins_count_less)
+			avg_events_count_more = round(avg_events_count_more * more_factor[dataset_name])
 			avg_events_count_more = max(1, avg_events_count_more)
-			avg_events_count_less = round(avg_events_count * less_factor[dataset_name])
+			avg_events_count_less = round(avg_events_count_less * less_factor[dataset_name])
 			avg_events_count_less = max(1, avg_events_count_less)
 			threshold_more[idx] = avg_events_count_more
 			threshold_less[idx] = avg_events_count_less
@@ -410,6 +426,10 @@ def get_interval_count_with_threshold(test_out_times_in_bin, interval_size, data
 																		interval_size,
 																		threshold_less)
 
+	print('interval_range_count_more', interval_range_count_more)
+	print('interval_range_count_less', interval_range_count_less)
+	#assert np.all(interval_range_count_more>=0.0), 'No range found in t_b range'
+	#assert np.all(interval_range_count_less>=0.0), 'No range found in t_b range'
 	return interval_range_count_less, interval_range_count_more, threshold_less, threshold_more
 
 def get_processed_data(dataset_name, args):
@@ -424,10 +444,32 @@ def get_processed_data(dataset_name, args):
 	gaps = timestamps[1:] - timestamps[:-1]
 	gaps = gaps.astype(np.float32)
 	data_bins, end_hr_bins, times_in_bin = create_bin(timestamps, bin_size)
+	plt.plot(range(len(data_bins[:100])), data_bins[:100])
+	plt.ylabel('bin_counts')
+	plt.xlabel('911 Dataset')
+	plt.savefig('data/bin_count_'+dataset_name+'.png')
+	plt.close()
 
 	[train_times_bin, test_times_bin, test_times_bin_end, test_seq_times_in_bin, \
 	train_times_gaps ,test_times_gaps ,train_times_timestamps ,test_times_timestamps] = \
 	generate_train_test_data(timestamps, gaps, data_bins, end_hr_bins, times_in_bin)
+
+	model = hk.estimator().set_kernel('exp').set_baseline('const')
+	start_idx = min(30000, len(train_times_timestamps))
+	itv = [train_times_timestamps[-start_idx], train_times_timestamps[-1]]
+	model.fit(train_times_timestamps[-start_idx:],itv)
+	print("Parameters generated by Hawkes Model")
+	print("Parameter:",model.parameter)
+	print("AIC:",model.AIC)
+	hawkes_timestamps_pred = model.predict(test_times_timestamps[-1]+100,1)[0]
+	# Plots for Hawkes Predictions
+	os.makedirs('Outputs/hawkes_model_'+dataset_name, exist_ok=True)
+	model.plot_N_pred()
+	plt.savefig('Outputs/hawkes_model_'+dataset_name+'/count_pred.png')
+	plt.close()
+	model.plot_KS()
+	plt.savefig('Outputs/hawkes_model_'+dataset_name+'/KS_plot.png')
+	plt.close()
 
 	train_data_in_bin, train_data_out_bin, _, _, _ = \
 	make_seq_from_data(train_times_bin, enc_len, in_bin_sz, out_bin_sz, True)
@@ -490,6 +532,8 @@ def get_processed_data(dataset_name, args):
 	get_rand_interval_count(test_out_times_in_bin)
 
 	interval_size = args.interval_size
+	if interval_size==0:
+		interval_size = args.bin_size
 	[interval_range_count_less, interval_range_count_more, less_threshold, more_threshold] = \
 	get_interval_count_with_threshold(test_out_times_in_bin, interval_size, dataset_name)
 
@@ -531,6 +575,8 @@ def get_processed_data(dataset_name, args):
 		'more_threshold': more_threshold,
 		'interval_size': interval_size,
 		'test_out_times_in_bin': test_out_times_in_bin,
+
+		'hawkes_timestamps_pred': hawkes_timestamps_pred,
 	}
 
 	return dataset

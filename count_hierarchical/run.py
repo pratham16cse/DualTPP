@@ -1114,6 +1114,38 @@ def run_count_only_model(args, models, data, test_data):
 	return event_count_preds_cnt, all_times_pred
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
+# Run hawkes_model model 
+def run_hawkes_model(args, hawkes_timestamps_pred, data=None, test_data=None):
+
+	if data is None:
+		[test_data_in_bin, test_data_out_bin, test_end_hr_bins,
+		test_data_in_time_end_bin, test_data_in_gaps_bin, test_mean_bin, test_std_bin,
+		test_gap_in_bin_norm_a, test_gap_in_bin_norm_d] = test_data
+	else:
+		[test_data_in_gaps_bin, test_end_hr_bins, test_data_in_time_end_bin, 
+		test_gap_in_bin_norm_a, test_gap_in_bin_norm_d] = test_data
+
+	dec_len = args.out_bin_sz
+	bin_size = args.bin_size
+	
+	all_times_pred = list()
+	for batch_idx in range(len(test_end_hr_bins)):
+		test_start_idx = bisect_right(hawkes_timestamps_pred, test_data_in_time_end_bin[batch_idx,0])
+		test_end_idx = bisect_right(hawkes_timestamps_pred, test_end_hr_bins[batch_idx,0,0])
+		all_times_pred.append([hawkes_timestamps_pred[test_start_idx:test_end_idx]])
+	all_times_pred = np.array(all_times_pred)
+
+	all_bins_count_pred_lst = list()
+	for dec_idx in range(dec_len):
+		t_b_plus = test_end_hr_bins[:,dec_idx] - bin_size
+		t_e_plus = test_end_hr_bins[:,dec_idx]
+		all_bins_count_pred_lst.append(np.array(count_events(all_times_pred[:,0], t_b_plus, t_e_plus)))
+	all_bins_count_pred = np.array(all_bins_count_pred_lst).T
+
+	return all_bins_count_pred, all_times_pred
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
+
 
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 # Run rmtpp_count model with optimized gaps generated from rmtpp simulation untill 
@@ -2340,15 +2372,15 @@ def compute_full_model_acc(args, test_data, all_bins_count_pred, all_times_bin_p
 	t_e_plus = test_end_hr_bins[:,-1]
 	deep_mae = compute_hierarchical_mae_deep(all_times_pred, test_out_times_in_bin, t_b_plus, t_e_plus, compute_depth)
 
-	#old_stdout = sys.stdout
-	#sys.stdout=open("Outputs/count_model_"+dataset_name+".txt","a")
+	old_stdout = sys.stdout
+	sys.stdout=open("Outputs/count_model_"+dataset_name+".txt","a")
 	print("____________________________________________________________________")
 	print(model_name, 'Full-eval: MAE for Count Prediction:', np.mean(np.abs(all_bins_count_true-all_bins_count_pred )))
 	print(model_name, 'Full-eval: MAE for Count Prediction (per bin):', np.mean(np.abs(all_bins_count_true-all_bins_count_pred ), axis=0))
 	print(model_name, 'Full-eval: Deep MAE for events Prediction:', deep_mae, 'at depth', compute_depth)
 	print("____________________________________________________________________")
-	#sys.stdout.close()
-	#sys.stdout = old_stdout
+	sys.stdout.close()
+	sys.stdout = old_stdout
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 
 
@@ -2706,7 +2738,7 @@ def run_model(dataset_name, model_name, dataset, args, prev_models=None, run_mod
 		event_count_preds_cnt = run_count_model(args, data, test_data)
 		model, result = event_count_preds_cnt
 
-	if model_name in ['rmtpp_mse', 'rmtpp_nll', 'rmtpp_mse_var', 'wgan', 'rmtpp_count']:
+	if model_name in ['rmtpp_mse', 'rmtpp_nll', 'rmtpp_mse_var', 'wgan', 'rmtpp_count', 'hawkes_model']:
 		train_data_in_gaps = dataset['train_data_in_gaps']
 		train_data_out_gaps = dataset['train_data_out_gaps']
 		train_dataset_gaps = tf.data.Dataset.from_tensor_slices((train_data_in_gaps,
@@ -2743,6 +2775,10 @@ def run_model(dataset_name, model_name, dataset, args, prev_models=None, run_mod
 			event_count_preds_mse_var = run_rmtpp_init(args, data, test_data, NLL_loss=False, use_var_model=True)
 			model, result = event_count_preds_mse_var
 
+		if model_name == 'hawkes_model':
+			hawkes_timestamps_pred = dataset['hawkes_timestamps_pred']
+			result, _ = run_hawkes_model(args, hawkes_timestamps_pred, data, test_data)
+			
 		# This block contains all the inference models that returns
 		# answers to various queries
 		if model_name == 'rmtpp_count':
@@ -2901,6 +2937,17 @@ def run_model(dataset_name, model_name, dataset, args, prev_models=None, run_mod
 				print("")
 
 			print("")
+
+			if 'run_hawkes_model' in run_model_flags and run_model_flags['run_hawkes_model']:
+				hawkes_timestamps_pred = dataset['hawkes_timestamps_pred']
+				print("Prediction for run_hawkes_model model with rmtpp_mse")
+				_, all_times_bin_pred = run_hawkes_model(args, hawkes_timestamps_pred, None, test_data)
+				deep_mae = compute_hierarchical_mae(all_times_bin_pred, query_1_data, test_out_all_event_true, compute_depth)
+				threshold_mae = compute_threshold_loss(all_times_bin_pred, query_2_data)
+				print("deep_mae", deep_mae)
+				compute_full_model_acc(args, test_data, None, all_times_bin_pred, test_out_times_in_bin, dataset_name, 'run_hawkes_model')
+				print("____________________________________________________________________")
+				print("")
 
 			if 'run_count_only_model' in run_model_flags and run_model_flags['run_count_only_model']:
 				print("Prediction for run_count_only_model model with rmtpp_mse")

@@ -91,6 +91,7 @@ if args.dataset_name == 'all':
     dataset_names.append('hawkes')
     dataset_names.append('sin_hawkes_overlay')
     dataset_names.append('taxi')
+    dataset_names.append('911')
     dataset_names.append('twitter')
 else:
     dataset_names.append(args.dataset_name)
@@ -111,6 +112,7 @@ args.dataset_name = dataset_names
 
 model_names = list()
 if args.model_name == 'all':
+    model_names.append('hawkes_model')
     model_names.append('wgan')
     model_names.append('count_model')
     model_names.append('hierarchical')
@@ -143,6 +145,7 @@ run_model_flags = {
     'run_rmtpp_for_count_with_mse': True,
     'run_rmtpp_for_count_with_mse_var': True,
     'run_wgan_for_count': True,
+    'run_hawkes_model': True,
 }
 
 automate_bin_sz = False
@@ -169,12 +172,12 @@ print("********************************************************************")
 
 print("####################################################################")
 np.random.seed(args.seed)
+os.makedirs('Outputs', exist_ok=True)
 print("Generating Datasets\n")
 generate_dataset()
 generate_twitter_dataset(twitter_dataset_names)
 print("####################################################################")
 
-os.makedirs('Outputs', exist_ok=True)
 event_count_result = dict()
 for dataset_name in dataset_names:
     print("Processing", dataset_name, "Datasets\n")
