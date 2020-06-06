@@ -79,9 +79,15 @@ parser.add_argument('--generate_plots', action='store_true', default=False,
 parser.add_argument('--parallel_hparam', action='store_true', default=False,
                     help='Parallel execution of hyperparameters')
 
-# Flag for RMTPP calibration
+# Flags for RMTPP calibration
 parser.add_argument('--calibrate_rmtpp', action='store_true', default=False,
                     help='Whether to calibrate RMTPP')
+parser.add_argument('--extra_var_model', action='store_true', default=False,
+                    help='Use a separate model to train the variance of RMTPP')
+
+# Flags for optimizer
+parser.add_argument('--opt_num_counts', type=int, default=5,
+                    help='Number of counts to try before and after mean for optimizer')
 
 args = parser.parse_args()
 
@@ -134,20 +140,39 @@ run_model_flags = {
     # 'run_rmtpp_with_optimization_fixed_cnt_solver_with_mse': True,
     # 'run_rmtpp_with_optimization_fixed_cnt_solver_with_mse_var': True,
 
-    'run_rmtpp_count_cont_rmtpp_with_nll': True,
-    'run_rmtpp_count_cont_rmtpp_with_mse': True,
-    'run_rmtpp_count_cont_rmtpp_with_mse_var': True,
-    'run_rmtpp_count_reinit_with_nll': True,
-    'run_rmtpp_count_reinit_with_mse': True,
-    'run_rmtpp_count_reinit_with_mse_var': True,
+    #'run_rmtpp_count_cont_rmtpp_with_nll': True,
+    #'run_rmtpp_count_cont_rmtpp_with_mse': True,
+    #'run_rmtpp_count_cont_rmtpp_with_mse_var': True,
+    #'run_rmtpp_count_reinit_with_nll': True,
+    #'run_rmtpp_count_reinit_with_mse': True,
+    #'run_rmtpp_count_reinit_with_mse_var': True,
 
     'run_count_only_model': True,
-    'run_rmtpp_for_count_with_nll': True,
-    'run_rmtpp_for_count_with_mse': True,
-    'run_rmtpp_for_count_with_mse_var': True,
-    'run_wgan_for_count': True,
-    'run_hawkes_model': True,
+    #'run_rmtpp_for_count_with_nll': True,
+    #'run_rmtpp_for_count_with_mse': True,
+    #'run_rmtpp_for_count_with_mse_var': True,
+    #'run_wgan_for_count': True,
+    #'run_hawkes_model': True,
 }
+if 'rmtpp_nll' in model_names:
+    run_model_flags['run_rmtpp_with_optimization_fixed_cnt_solver_with_nll'] = True
+    run_model_flags['run_rmtpp_count_cont_rmtpp_with_nll'] = True
+    run_model_flags['run_rmtpp_count_reinit_with_nll'] = True
+    run_model_flags['run_rmtpp_for_count_with_nll'] = True
+if 'rmtpp_mse' in model_names:
+    run_model_flags['run_rmtpp_with_optimization_fixed_cnt_solver_with_mse'] = True
+    run_model_flags['run_rmtpp_count_cont_rmtpp_with_mse'] = True
+    run_model_flags['run_rmtpp_count_reinit_with_mse'] = True
+    run_model_flags['run_rmtpp_for_count_with_mse'] = True
+if 'rmtpp_mse_var' in model_names:
+    rmp_model_flags['run_rmtpp_with_optimization_fixed_cnt_solver_with_mse_var'] = True
+    run_model_flags['run_rmtpp_count_cont_rmtpp_with_mse_var'] = True
+    run_model_flags['run_rmtpp_count_reinit_with_mse_var'] = True
+    run_model_flags['run_rmtpp_for_count_with_mse_var'] = True
+if 'wgan' in model_names:
+    run_model_flags['run_wgan_for_count'] = True
+if 'hawkes_model' in model_names:
+    run_model_flags['run_hawkes_model'] = True
 
 automate_bin_sz = False
 if args.bin_size == 0:
@@ -208,7 +233,13 @@ for dataset_name in dataset_names:
         args.current_model = model_name
         print("Running", model_name, "Model\n")
 
-        model, result = run.run_model(dataset_name, model_name, dataset, args, per_model_save, run_model_flags=run_model_flags)
+        model, result, rmtpp_var_model \
+            = run.run_model(dataset_name,
+                            model_name,
+                            dataset,
+                            args,
+                            per_model_save,
+                            run_model_flags=run_model_flags)
 
         if model_name == 'count_model':
             count_var = result['count_var'].numpy()
@@ -216,6 +247,8 @@ for dataset_name in dataset_names:
 
         per_model_count[model_name] = result
         per_model_save[model_name] = model
+        if model_name == 'rmtpp_mse' and args.extra_var_model:
+            per_model_save['rmtpp_var_model'] = rmtpp_var_model
         print("Finished Running", model_name, "Model\n")
 
         if model_name != 'rmtpp_count' and per_model_count[model_name] is not None:
