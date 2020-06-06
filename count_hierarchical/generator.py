@@ -67,13 +67,18 @@ def create_sin_hawkes_overlay_data():
 	return gaps, timestamp
 
 def create_taxi_data():
-	taxi_df = pd.read_csv('../yellow_tripdata_2019-01.csv', usecols=["tpep_pickup_datetime"])
-	taxi_df['tpep_pickup_datetime'] = pd.to_datetime(taxi_df['tpep_pickup_datetime'], errors='coerce')
-	taxi_df = taxi_df[(taxi_df['tpep_pickup_datetime'].dt.year == 2019)]
-	taxi_df = taxi_df[(taxi_df['tpep_pickup_datetime'].dt.month == 1)]
-	taxi_df['tpep_pickup_datetime'] = pd.DatetimeIndex(taxi_df['tpep_pickup_datetime']).astype(np.int64)/1000000000
-	taxi_df = taxi_df.sort_values('tpep_pickup_datetime').astype(np.int64)
-	taxi_timestamps = taxi_df['tpep_pickup_datetime']
+	# https://s3.amazonaws.com/nyc-tlc/trip+data/yellow_tripdata_2019-01.csv
+	# https://s3.amazonaws.com/nyc-tlc/trip+data/yellow_tripdata_2019-02.csv
+	taxi_df_jan = pd.read_csv('../yellow_tripdata_2019-01.csv', usecols=["tpep_pickup_datetime", "PULocationID"])
+	taxi_df_feb = pd.read_csv('../yellow_tripdata_2019-02.csv', usecols=["tpep_pickup_datetime", "PULocationID"])
+	taxi_df = taxi_df_jan.append(taxi_df_feb)
+	taxi_df = taxi_df[taxi_df.PULocationID == 237]
+	taxi_df = pd.to_datetime(taxi_df['tpep_pickup_datetime'], errors='coerce')
+	taxi_df = taxi_df[(taxi_df.dt.year == 2019)]
+	taxi_df = taxi_df[(taxi_df.dt.month < 3)]
+	taxi_df = pd.DatetimeIndex(taxi_df).astype(np.int64)/1000000000
+	taxi_df = taxi_df.sort_values().astype(np.int64)
+	taxi_timestamps = taxi_df
 	taxi_timestamps = np.array(taxi_timestamps)
 	taxi_timestamps -= taxi_timestamps[0]
 	taxi_timestamps = taxi_timestamps
