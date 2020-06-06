@@ -85,6 +85,123 @@ class Gaussian_MSE(tf.keras.losses.Loss):
 # 				Run Models Function					#
 #####################################################
 
+# RMTPP_VAR model
+# Trains a separate model to predict the variance of the RMTPP predictions.
+# Predicted variance is function of distance between predicted last encoder input
+# and predicted timestamp. The model is trained to maximize the likelihood of 
+# the observed gaps.
+def run_rmtpp_var(args, data, test_data, trained_rmtpp_model):
+	model = models.RMTPP_VAR(args.hidden_layer_size)
+
+	[train_dataset_gaps, dev_data_in_gaps, dev_data_out_gaps, train_norm_gaps] = data
+	[train_norm_a_gaps, train_norm_d_gaps] = train_norm_gaps
+	model_name = args.current_model
+	optimizer = keras.optimizers.Adam(args.learning_rate)
+
+	dev_data_gaps = dev_data_in_gaps
+
+	os.makedirs('saved_models/training_'+model_name+'_'+args.current_dataset+'/', exist_ok=True)
+	checkpoint_path = "saved_models/training_"+model_name+"_"+args.current_dataset+"/cp_"+args.current_dataset+".ckpt"
+	best_dev_gap_mse = np.inf
+	best_dev_epoch = 0
+
+	train_losses = list()
+	for epoch in range(rmtpp_epochs):
+		print('Starting epoch', epoch)
+		step_train_loss = 0.0
+		step_cnt = 0
+		next_initial_state = None
+		for sm_step, (gaps_batch, _) in enumerate(train_dataset_gaps):
+			gaps_batch_in = gaps_batch[:, :int(enc_len/2)]
+			gaps_batch_out = gaps_batch[:, int(enc_len/2):]
+			with tf.GradientTape() as tape:
+
+				# TODO: Pass the correct initial state based on 
+				# batch_size and stride etc..
+				gaps_pred = simulate_fixed_cnt(trained_rmtpp_model,
+											   gaps_batch_in,
+											   int(enc_len/2),
+											   initial_state=next_initial_state)
+				model_inputs = tf.cumsum(gaps_pred, axis=1)
+				var_pred = model(model_inputs)
+
+				# Compute the loss for this minibatch.
+				gap_loss_fn = Gaussian_MSE(gaps_pred, var_pred)
+				
+				gap_loss = gap_loss_fn(gaps_batch_out, None)
+				loss = gap_loss
+				step_train_loss+=loss.numpy()
+				
+			grads = tape.gradient(loss, model.trainable_weights)
+			optimizer.apply_gradients(zip(grads, model.trainable_weights))
+
+			train_gap_metric_mae(gaps_batch_out, gaps_pred)
+			train_gap_metric_mse(gaps_batch_out, gaps_pred)
+			train_gap_mae = train_gap_metric_mae.result()
+			train_gap_mse = train_gap_metric_mse.result()
+			train_gap_metric_mae.reset_states()
+			train_gap_metric_mse.reset_states()
+
+			# print(float(train_gap_mae), float(train_gap_mse))
+			print('Training loss (for one batch) at step %s: %s' %(sm_step, float(loss)))
+			step_cnt += 1
+		
+		# Dev calculations
+		dev_data_in_gaps = dev_data_gaps[:, :int(enc_len/2)]
+		dev_data_out_gaps = dev_data_gaps[:, int(enc_len/2):]
+		dev_gaps_pred = simulate_fixed_cnt(trained_rmtpp_model,
+										   dev_data_in_gaps,
+										   int(enc_len)/2,
+										   initial_state=next)
+		model_dev_inputs = tf.cumsum(dev_gaps_pred, axis=1)
+		dev_var_pred = model(model_dev_inputs)
+		dev_loss_fn = Gaussian_MSE(dev_gaps_pred, dev_var_pred)
+		dev_loss = dev_loss_fn(dev_data_out_gaps, None)
+		dev_gaps_pred_unnorm = utils.denormalize_avg(dev_gaps_pred,
+										train_norm_a_gaps, train_norm_d_gaps)
+		
+		dev_gap_metric_mae(dev_data_out_gaps, dev_gaps_pred_unnorm)
+		dev_gap_metric_mse(dev_data_out_gaps, dev_gaps_pred_unnorm)
+		dev_gap_mae = dev_gap_metric_mae.result()
+		dev_gap_mse = dev_gap_metric_mse.result()
+		dev_gap_metric_mae.reset_states()
+		dev_gap_metric_mse.reset_states()
+		if best_dev_gap_mse > dev_gap_mse:
+			best_dev_gap_mse = dev_gap_mse
+			best_dev_epoch = epoch
+			print('Saving model at epoch', epoch)
+			model.save_weights(checkpoint_path)
+
+		step_train_loss /= step_cnt
+		print('Training loss after epoch %s: %s' %(epoch, float(step_train_loss)))
+		print('MAE and MSE of Dev data %s: %s' \
+			%(float(dev_gap_mae), float(dev_gap_mse)))
+		train_losses.append(step_train_loss)
+
+	plt.plot(range(len(train_losses)), train_losses)
+	plt.savefig('Outputs/train_'+args.model_name+'_'+args.current_dataset+'_loss.png')
+	plt.close()
+
+	print("Loading best model from epoch", best_dev_epoch)
+	model.load_weights(checkpoint_path)
+
+	dev_gaps_pred, _, _, _, _ = model(dev_data_in_gaps)
+	dev_gaps_pred_unnorm = utils.denormalize_avg(dev_gaps_pred, 
+									train_norm_a_gaps, train_norm_d_gaps)
+	
+	dev_gap_metric_mae(dev_data_out_gaps, dev_gaps_pred_unnorm)
+	dev_gap_metric_mse(dev_data_out_gaps, dev_gaps_pred_unnorm)
+	dev_gap_mae = dev_gap_metric_mae.result()
+	dev_gap_mse = dev_gap_metric_mse.result()
+	dev_gap_metric_mae.reset_states()
+	dev_gap_metric_mse.reset_states()
+	print('Best MAE and MSE of Dev data %s: %s' \
+		%(float(dev_gap_mae), float(dev_gap_mse)))
+		
+	return model, None
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
+
+
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 # RMTPP model
 def run_rmtpp(args, model, optimizer, data, NLL_loss, rmtpp_epochs=10, use_var_model=False):
@@ -160,7 +277,7 @@ def run_rmtpp(args, model, optimizer, data, NLL_loss, rmtpp_epochs=10, use_var_m
 		train_losses.append(step_train_loss)
 
 	plt.plot(range(len(train_losses)), train_losses)
-	plt.savefig('Outputs/train_rmtpp_'+args.current_dataset+'_loss.png')
+	plt.savefig('Outputs/train_'+model_name+'_'+args.current_dataset+'_loss.png')
 	plt.close()
 
 	print("Loading best model from epoch", best_dev_epoch)
@@ -229,7 +346,8 @@ def run_rmtpp(args, model, optimizer, data, NLL_loss, rmtpp_epochs=10, use_var_m
 
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 # RMTPP run initialize with loss function for run_rmtpp
-def run_rmtpp_init(args, data, test_data, NLL_loss=False, use_var_model=False):
+def run_rmtpp_init(args, data, test_data, NLL_loss=False, use_var_model=False,
+				   extra_var_model=False):
 	[test_data_in_gaps_bin, test_end_hr_bins, test_data_in_time_end_bin, 
 	test_gap_in_bin_norm_a, test_gap_in_bin_norm_d] =  test_data	
 	rmtpp_epochs = args.epochs
@@ -250,6 +368,15 @@ def run_rmtpp_init(args, data, test_data, NLL_loss=False, use_var_model=False):
 		print('\nTraining Model with Mean Square Loss')
 	train_loss = run_rmtpp(args, model, optimizer, data, NLL_loss=NLL_loss, 
 							rmtpp_epochs=rmtpp_epochs, use_var_model=use_var_model)
+
+	if extra_var_model:
+		assert NLL_loss==False and assert use_var_model==False, 'extra_var_model can be used only \
+																 with rmtpp_mse model'
+
+		rmtpp_var_model = run_rmtpp_var(args, data, test_data, model)
+	else:
+		rmtpp_var_model = None
+
 
 	next_hidden_state = None
 	test_data_init_time = test_data_in_time_end_bin.astype(np.float32)
@@ -286,7 +413,7 @@ def run_rmtpp_init(args, data, test_data, NLL_loss=False, use_var_model=False):
 		test_data_input_gaps_bin = all_prev_gaps_pred[:,-enc_len:].numpy()
 
 	event_count_preds = np.array(all_event_count_preds).T
-	return model, event_count_preds
+	return model, event_count_preds, rmtpp_var_model
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 
 
@@ -691,6 +818,30 @@ def run_wgan(args, data, test_data):
 #####################################################
 # 				Model Inference 					#
 #####################################################
+
+def simulate_fixed_cnt(model, gaps_in, sim_count, prev_hidden_state=None):
+
+	gaps_pred = list()
+
+	step_gaps_pred, _, _, prev_hidden_state, _ \
+			= model(gaps_in, initial_state=prev_hidden_state)
+
+	step_gaps_pred = step_gaps_pred[:, -1:]
+	gaps_pred.append(step_gaps_pred)
+	gaps_in = tf.concat([gaps_in[:,, 1:], step_gaps_pred], axis=1)
+	gaps_pred.append(step_gaps_pred)
+	for i in range(sim_count):
+		step_gaps_pred, _, _, prev_hidden_state, _ \
+				= model(gaps_in, initial_state=prev_hidden_state)
+
+		step_gaps_pred = step_gaps_pred[:,-1:]
+		gaps_pred.append(step_gaps_pred)
+
+	gaps_pred = tf.stack(gaps_pred, axis=1)
+
+	return gaps_pred
+
+
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 # Simulate model until t_b_plus
 def simulate(model, times_in, gaps_in, t_b_plus, normalizers, prev_hidden_state = None):
@@ -1822,6 +1973,8 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(args, query_models, data, test_
 		model_rmtpp = query_models['rmtpp_nll']
 	elif rmtpp_type=='mse':
 		model_rmtpp = query_models['rmtpp_mse']
+		if args.extra_var_model:
+			rmtpp_var_model = query_models['rmtpp_var_model']
 	elif rmtpp_type=='mse_var':
 		model_rmtpp = query_models['rmtpp_mse_var']
 	else:
@@ -2765,15 +2918,15 @@ def run_model(dataset_name, model_name, dataset, args, prev_models=None, run_mod
 
 		if model_name == 'rmtpp_mse':
 			event_count_preds_mse = run_rmtpp_init(args, data, test_data, NLL_loss=False)
-			model, result = event_count_preds_mse
+			model, result, rmtpp_var_model = event_count_preds_mse
 
 		if model_name == 'rmtpp_nll':
 			event_count_preds_nll = run_rmtpp_init(args, data, test_data, NLL_loss=True)
-			model, result = event_count_preds_nll
+			model, result, _ = event_count_preds_nll
 
 		if model_name == 'rmtpp_mse_var':
 			event_count_preds_mse_var = run_rmtpp_init(args, data, test_data, NLL_loss=False, use_var_model=True)
-			model, result = event_count_preds_mse_var
+			model, result, _ = event_count_preds_mse_var
 
 		if model_name == 'hawkes_model':
 			hawkes_timestamps_pred = dataset['hawkes_timestamps_pred']
@@ -3031,6 +3184,6 @@ def run_model(dataset_name, model_name, dataset, args, prev_models=None, run_mod
 			sys.stdout.close()
 			sys.stdout = old_stdout
 			
-	return model, result
+	return model, result, rmtpp_var_model
 
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#

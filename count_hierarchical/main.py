@@ -79,9 +79,11 @@ parser.add_argument('--generate_plots', action='store_true', default=False,
 parser.add_argument('--parallel_hparam', action='store_true', default=False,
                     help='Parallel execution of hyperparameters')
 
-# Flag for RMTPP calibration
+# Flags for RMTPP calibration
 parser.add_argument('--calibrate_rmtpp', action='store_true', default=False,
                     help='Whether to calibrate RMTPP')
+parser.add_argument('--extra_var_model', action='store_true', default=False,
+                    help='Use a separate model to train the variance of RMTPP')
 
 args = parser.parse_args()
 
@@ -207,7 +209,13 @@ for dataset_name in dataset_names:
         args.current_model = model_name
         print("Running", model_name, "Model\n")
 
-        model, result = run.run_model(dataset_name, model_name, dataset, args, per_model_save, run_model_flags=run_model_flags)
+        model, result, rmtpp_var_model \
+            = run.run_model(dataset_name,
+                            model_name,
+                            dataset,
+                            args,
+                            per_model_save,
+                            run_model_flags=run_model_flags)
 
         if model_name == 'count_model':
             count_var = result['count_var'].numpy()
@@ -215,6 +223,8 @@ for dataset_name in dataset_names:
 
         per_model_count[model_name] = result
         per_model_save[model_name] = model
+        if model_name == 'rmtpp_mse' and args.extra_var_model:
+            per_model_save['rmtpp_var_model'] = rmtpp_var_model
         print("Finished Running", model_name, "Model\n")
 
         if model_name != 'rmtpp_count' and per_model_count[model_name] is not None:

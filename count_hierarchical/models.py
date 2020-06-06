@@ -6,18 +6,22 @@ import tensorflow_probability as tfp
 ETH = 10.0
 one_by = tf.math.reciprocal_no_nan
 
-class CalibrationModel(tf.keras.Model):
-    def __init__(self):
-        super(CalibrationModel, self).__init__(name=name, **kwargs)
 
-        self.calib_layer_1 = tf.keras.layers.Dense(4, activation=tf.nn.relu, name='calib_layer_1')
-        self.calib_layer_2 = tf.keras.layers.Dense(4, activation=tf.nn.relu, name="calib_layer_2")
-        self.calib_layer_out = tf.keras.layers.Dense(1, activation=tf.nn.relu, name="calib_layer_out")
+
+class RMTPP_VAR(tf.keras.Model):
+    def __init__(self, hidden_layer_size):
+        super(RMTPP_VAR, self).__init__(name=name, **kwargs)
+
+        self.hidden_layer_size = hidden_layer_size
+
+        self.layer_1 = tf.keras.layers.Dense(hidden_layer_size, activation=tf.nn.relu, name='layer_1')
+        self.layer_2 = tf.keras.layers.Dense(hidden_layer_size, activation=tf.nn.relu, name='layer_2')
+        self.layer_out = tf.keras.layers.Dense(1, activation=tf.nn.relu, name='calib_layer_out')
 
     def call(self, inputs, debug=False):
-        l1_out = self.calib_layer_1(inputs)
-        l2_out = self.calib_layer_2(l1_out)
-        output = self.out_layer(l2_out)
+        l1_out = self.layer_1(inputs)
+        l2_out = self.layer_2(l1_out)
+        output = self.layer_out(l2_out)
 
         return output
 
