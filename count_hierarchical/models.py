@@ -9,19 +9,21 @@ one_by = tf.math.reciprocal_no_nan
 
 
 class RMTPP_VAR(tf.keras.Model):
-    def __init__(self, hidden_layer_size):
+    def __init__(self, hidden_layer_size, name='RMTPP_VAR', **kwargs):
         super(RMTPP_VAR, self).__init__(name=name, **kwargs)
 
         self.hidden_layer_size = hidden_layer_size
 
         self.layer_1 = tf.keras.layers.Dense(hidden_layer_size, activation=tf.nn.relu, name='layer_1')
         self.layer_2 = tf.keras.layers.Dense(hidden_layer_size, activation=tf.nn.relu, name='layer_2')
-        self.layer_out = tf.keras.layers.Dense(1, activation=tf.nn.relu, name='calib_layer_out')
+        self.layer_out = tf.keras.layers.Dense(1, activation=tf.nn.relu, name='layer_out')
 
     def call(self, inputs, debug=False):
         l1_out = self.layer_1(inputs)
         l2_out = self.layer_2(l1_out)
         output = self.layer_out(l2_out)
+
+        output = output + tf.ones_like(output) * 0.00000001
 
         return output
 
