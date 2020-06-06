@@ -96,6 +96,12 @@ def run_rmtpp(args, model, optimizer, data, NLL_loss, rmtpp_epochs=10, use_var_m
 	checkpoint_path = "saved_models/training_"+model_name+"_"+args.current_dataset+"/cp_"+args.current_dataset+".ckpt"
 	best_dev_gap_mse = np.inf
 	best_dev_epoch = 0
+	enc_len = args.enc_len
+	batch_size = args.batch_size
+	stride_move = batch_size
+	dataset_name = args.current_dataset
+	if dataset_name in ['taxi', '911_traffic', '911_ems']:
+		stride_move = enc_len
 
 	train_losses = list()
 	for epoch in range(rmtpp_epochs):
@@ -108,7 +114,7 @@ def run_rmtpp(args, model, optimizer, data, NLL_loss, rmtpp_epochs=10, use_var_m
 				# TODO: Make sure to pass correct next_stat
 				gaps_pred, D, WT, next_initial_state, _ = model(gaps_batch_in, 
 						initial_state=next_initial_state, 
-						next_state_sno=args.batch_size)
+						next_state_sno=stride_move)
 
 				# Compute the loss for this minibatch.
 				if use_var_model:
@@ -413,10 +419,12 @@ def run_count_model(args, data, test_data):
 		if epoch%10 == 0:
 			_, [_, test_distribution_stddev] = model(test_data_in_bin)
 			stddev_sample.append(test_distribution_stddev[0])
-	
+
 	stddev_sample = np.array(stddev_sample)
-	for dec_idx in range(args.out_bin_sz//2):
-		plt.plot(range(len(stddev_sample)), stddev_sample[:,dec_idx], label='dec_idx_'+str(dec_idx))
+
+	if num_epochs>0:
+		for dec_idx in range(args.out_bin_sz):
+			plt.plot(range(len(stddev_sample)), stddev_sample[:,dec_idx], label='dec_idx_'+str(dec_idx))
 
 	plt.legend(loc='upper right')
 	plt.savefig('Outputs/count_model_test_var_'+distribution_name+'_'+args.current_dataset+'_test_id_0.png')
@@ -1131,16 +1139,19 @@ def run_hawkes_model(args, hawkes_timestamps_pred, data=None, test_data=None):
 	
 	all_times_pred = list()
 	for batch_idx in range(len(test_end_hr_bins)):
-		test_start_idx = bisect_right(hawkes_timestamps_pred, test_data_in_time_end_bin[batch_idx,0])
-		test_end_idx = bisect_right(hawkes_timestamps_pred, test_end_hr_bins[batch_idx,0,0])
-		all_times_pred.append([hawkes_timestamps_pred[test_start_idx:test_end_idx]])
+		batch_times_pred = list()
+		for dec_idx in range(len(test_end_hr_bins[batch_idx])):
+			test_start_idx = bisect_right(hawkes_timestamps_pred, test_end_hr_bins[batch_idx,dec_idx,0]-bin_size)
+			test_end_idx = bisect_right(hawkes_timestamps_pred, test_end_hr_bins[batch_idx,dec_idx,0])
+			batch_times_pred.append(hawkes_timestamps_pred[test_start_idx:test_end_idx])
+		all_times_pred.append(batch_times_pred)
 	all_times_pred = np.array(all_times_pred)
 
 	all_bins_count_pred_lst = list()
 	for dec_idx in range(dec_len):
 		t_b_plus = test_end_hr_bins[:,dec_idx] - bin_size
 		t_e_plus = test_end_hr_bins[:,dec_idx]
-		all_bins_count_pred_lst.append(np.array(count_events(all_times_pred[:,0], t_b_plus, t_e_plus)))
+		all_bins_count_pred_lst.append(np.array(count_events(all_times_pred[:,dec_idx], t_b_plus, t_e_plus)))
 	all_bins_count_pred = np.array(all_bins_count_pred_lst).T
 
 	return all_bins_count_pred, all_times_pred

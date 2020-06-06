@@ -18,7 +18,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('dataset_name', type=str, help='dataset_name')
 parser.add_argument('model_name', type=str, help='model_name')
 
-parser.add_argument('--epochs', type=int, default=0,
+parser.add_argument('--epochs', type=int, default=15,
                     help='number of training epochs')
 parser.add_argument('--patience', type=int, default=2,
                     help='Number of epochs to wait for \
@@ -50,7 +50,7 @@ parser.add_argument('--in_bin_sz', type=int,
 # dec_len = 8   # For All Models
 parser.add_argument('--out_bin_sz', type=int,
                     help='Output count of bin',
-                    default=1)
+                    default=5)
 
 # enc_len = 80  # For RMTPP
 parser.add_argument('--enc_len', type=int, default=80,
@@ -91,7 +91,8 @@ if args.dataset_name == 'all':
     dataset_names.append('hawkes')
     dataset_names.append('sin_hawkes_overlay')
     dataset_names.append('taxi')
-    dataset_names.append('911')
+    dataset_names.append('911_traffic')
+    dataset_names.append('911_ems')
     dataset_names.append('twitter')
 else:
     dataset_names.append(args.dataset_name)
@@ -129,9 +130,9 @@ run_model_flags = {
 
     'run_rmtpp_count_with_optimization': False,
     'run_rmtpp_with_optimization_fixed_cnt': False,
-    'run_rmtpp_with_optimization_fixed_cnt_solver_with_nll': True,
-    'run_rmtpp_with_optimization_fixed_cnt_solver_with_mse': True,
-    'run_rmtpp_with_optimization_fixed_cnt_solver_with_mse_var': True,
+    # 'run_rmtpp_with_optimization_fixed_cnt_solver_with_nll': True,
+    # 'run_rmtpp_with_optimization_fixed_cnt_solver_with_mse': True,
+    # 'run_rmtpp_with_optimization_fixed_cnt_solver_with_mse_var': True,
 
     'run_rmtpp_count_cont_rmtpp_with_nll': True,
     'run_rmtpp_count_cont_rmtpp_with_mse': True,
