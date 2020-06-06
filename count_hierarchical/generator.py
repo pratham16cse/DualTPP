@@ -12,7 +12,7 @@ itv = [0,360000]
 demo_itv = [0,360]
 
 np.random.seed(42)
-downsampling = {'taxi': 100, 'Trump': 20, '911': 100}
+downsampling = {} #{'taxi': 100, 'Trump': 20}
 
 def downsampling_dataset(timestamps, dataset_name):
 	print('Down-sampling', dataset_name, 'dataset by', downsampling[dataset_name])
@@ -87,7 +87,7 @@ def create_taxi_data():
 	plt.close()
 	return taxi_gaps, taxi_timestamps
 
-def create_911_data():
+def create_911_traffic_data():
 	call_df = pd.read_csv('../911.csv', usecols=["title", "timeStamp"])
 	print('Types of Emergencies')
 	print(call_df.title.apply(lambda x: x.split(':')[0]).value_counts())
@@ -113,7 +113,30 @@ def create_911_data():
 	plt.plot(call_gaps[:100])
 	plt.ylabel('Gaps')
 	plt.xlabel('timeline')
-	plt.savefig('call_gaps.png')
+	plt.savefig('call_traffic_gaps.png')
+	plt.close()
+	return call_gaps, call_timestamps	
+
+def create_911_ems_data():
+	call_df = pd.read_csv('../911.csv', usecols=["title", "timeStamp"])
+	call_df['type'] = call_df.title.apply(lambda x: x.split(':')[0])
+	print('Out of 3 types taking EMS type considering only EMS')
+	call_data = call_df[call_df['type']=='EMS'].timeStamp
+	call_data = pd.to_datetime(call_data, errors='coerce')
+	print("We have timeline from", call_data.min(), "to", call_data.max())
+
+	call_data = pd.DatetimeIndex(call_data).astype(np.int64)/1000000000
+	call_timestamps = call_data.sort_values().astype(np.int64)
+	call_timestamps = np.array(call_timestamps)
+	call_timestamps -= call_timestamps[0]
+	dataset_name = 'call'
+	if dataset_name in downsampling:
+		call_timestamps = downsampling_dataset(call_timestamps, dataset_name)
+	call_gaps = call_timestamps[1:] - call_timestamps[:-1]
+	plt.plot(call_gaps[:100])
+	plt.ylabel('Gaps')
+	plt.xlabel('timeline')
+	plt.savefig('call_ems_gaps.png')
 	plt.close()
 	return call_gaps, call_timestamps	
 
@@ -132,10 +155,14 @@ def generate_dataset():
 		print('Generating sin_hawkes_overlay data')
 		gaps, timestamps = create_sin_hawkes_overlay_data()
 		np.savetxt('sin_hawkes_overlay.txt', timestamps)
-	if not os.path.isfile("911.txt"):
+	if not os.path.isfile("911_traffic.txt"):
 		print('Generating 911 data')
-		gaps, timestamps = create_911_data()
-		np.savetxt('911.txt', timestamps)
+		gaps, timestamps = create_911_traffic_data()
+		np.savetxt('911_traffic.txt', timestamps)
+	if not os.path.isfile("911_ems.txt"):
+		print('Generating 911 data')
+		gaps, timestamps = create_911_ems_data()
+		np.savetxt('911_ems.txt', timestamps)
 	if not os.path.isfile("taxi.txt"):
 		print('Generating taxi data')
 		gaps, timestamps = create_taxi_data()
