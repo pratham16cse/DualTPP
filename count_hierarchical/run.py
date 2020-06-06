@@ -1890,7 +1890,7 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(args, query_models, data, test_
 		return all_bins_gaps_pred, loss
 
 
-	num_counts = 2 # Number of counts to take before and after mean
+	num_counts = args.opt_num_counts # Number of counts to take before and after mean
 	#model_cnt, model_rmtpp, _ = query_models
 	# model_rmtpp = query_models['rmtpp_nll']
 

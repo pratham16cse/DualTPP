@@ -83,6 +83,10 @@ parser.add_argument('--parallel_hparam', action='store_true', default=False,
 parser.add_argument('--calibrate_rmtpp', action='store_true', default=False,
                     help='Whether to calibrate RMTPP')
 
+# Flags for optimizer
+parser.add_argument('--opt_num_counts', type=int, default=5,
+                    help='Number of counts to try before and after mean for optimizer')
+
 args = parser.parse_args()
 
 dataset_names = list()
