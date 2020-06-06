@@ -2152,7 +2152,7 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(args, query_models, data, test_
 	
 	# all_times_pred_simu = all_times_pred
 
-	count_sigma = 2.
+	count_sigma = args.opt_num_counts
 	all_times_pred = []
 	for batch_idx in range(len(all_times_pred_simu)):
 		batch_times_pred = []
