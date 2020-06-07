@@ -2042,16 +2042,19 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(args, query_models, data, test_
 
 		D, WT = model_rmtpp_params[0], model_rmtpp_params[1]
 		if rmtpp_type=='nll':
-			objective = cp.Minimize(-cp.sum(rmtpp_loglikelihood_loss(gaps, D, WT, events_count_per_batch))/all_bins_gaps_pred.shape[1])
+			WT = np.minimum(WT, ETH)
+			opt_loss = -cp.sum(rmtpp_loglikelihood_loss(gaps, D, WT, events_count_per_batch))/all_bins_gaps_pred.shape[1]
 		elif rmtpp_type=='mse':
 			if args.extra_var_model:
-				objective = cp.Minimize(cp.sum(mse_loglikelihood_loss(gaps, D, WT, events_count_per_batch))/all_bins_gaps_pred.shape[1])
+				opt_loss = cp.sum(mse_loglikelihood_loss(gaps, D, WT, events_count_per_batch))/all_bins_gaps_pred.shape[1]
 			else:
 				WT = np.ones_like(WT)
 				D = all_bins_gaps_pred
-				objective = cp.Minimize(cp.sum(mse_loss(gaps, D, WT, events_count_per_batch))/all_bins_gaps_pred.shape[1])
+				opt_loss = cp.sum(mse_loss(gaps, D, WT, events_count_per_batch))/all_bins_gaps_pred.shape[1]
 		elif rmtpp_type=='mse_var':
-			objective = cp.Minimize(cp.sum(mse_loglikelihood_loss(gaps, D, WT, events_count_per_batch))/all_bins_gaps_pred.shape[1])
+			opt_loss = cp.sum(mse_loglikelihood_loss(gaps, D, WT, events_count_per_batch))/all_bins_gaps_pred.shape[1]
+
+		objective = cp.Minimize(opt_loss)
 
 
 		test_norm_a, test_norm_d = test_data_rmtpp_normalizer
@@ -2081,6 +2084,10 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(args, query_models, data, test_
 
 		if gaps.value is None:
 			gaps.value = all_bins_gaps_pred
+			try:
+				rmtpp_loss = prob.solve(warm_start=True)
+			except cp.error.SolverError:
+				rmtpp_loss = prob.solve(solver='SCS', warm_start=True)
 
 		test_mean_bin, test_std_bin = test_data_count_normalizer
 		nc_norm = utils.normalize_data_given_param(nc, test_mean_bin, test_std_bin)
