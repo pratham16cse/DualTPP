@@ -83,10 +83,12 @@ def get_optimal_bin_size(dataset_name):
 	time_interval = timestamps[-1]-timestamps[0]
 	events_count = len(timestamps)
 	event_count = 50
-	if dataset_name in ['911_traffic', '911_ems']:
+	if dataset_name in ['911_ems']:
 		event_count=100
+	if dataset_name in ['911_traffic']:
+		event_count=120
 	if dataset_name in ['taxi']:
-		event_count=150
+		event_count=250
 	return int(round((time_interval*event_count) / events_count))
 
 def generate_plots(args, dataset_name, dataset, per_model_count, test_sample_idx=1, count_var=None):
@@ -208,8 +210,8 @@ def generate_train_test_data(timestamps, gaps, data_bins, end_hr_bins, times_in_
 	return  train_times_bin, test_times_bin, test_times_bin_end, test_seq_times_in_bin, \
 			train_times_gaps ,test_times_gaps ,train_times_timestamps ,test_times_timestamps
 
-def make_seq_from_data(data, enc_len, in_bin_sz, out_bin_sz, batch_size, 
-	is_it_bins=True, times_in_bin=None, end_hr_bins=None, dataset_name=None):
+def make_seq_from_data(data, enc_len, in_bin_sz, out_bin_sz, batch_size,
+	is_it_bins=True, times_in_bin=None, end_hr_bins=None, stride_len=1, dataset_name=None):
 	inp_seq_lst = list()
 	out_seq_lst = list()
 	inp_times_in_bin = list()
@@ -218,9 +220,9 @@ def make_seq_from_data(data, enc_len, in_bin_sz, out_bin_sz, batch_size,
 	count_strid_len = 1
 	rmtpp_strid_len = 1
 	if dataset_name in ['taxi', '911_traffic', '911_ems']:
-		rmtpp_strid_len = enc_len - batch_size
+		rmtpp_strid_len = stride_len
 		count_strid_len = out_bin_sz
-	if dataset_name in ['taxi']:
+	if dataset_name in ['taxi', '911_traffic', '911_ems']:
 		count_strid_len = 1
 	
 
@@ -498,10 +500,10 @@ def get_processed_data(dataset_name, args):
 	plt.close()
 
 	train_data_in_bin, train_data_out_bin, _, _, _ = \
-	make_seq_from_data(train_times_bin, enc_len, in_bin_sz, out_bin_sz, batch_size, True, dataset_name=dataset_name)
+	make_seq_from_data(train_times_bin, enc_len, in_bin_sz, out_bin_sz, batch_size, True, stride_len=args.stride_len, dataset_name=dataset_name)
 	[test_data_in_bin, test_data_out_bin, test_inp_times_in_bin, test_out_times_in_bin, 
 	test_end_hr_bins] = \
-	make_seq_from_data( test_times_bin, enc_len, in_bin_sz, out_bin_sz, batch_size, True, 
+	make_seq_from_data( test_times_bin, enc_len, in_bin_sz, out_bin_sz, batch_size, True, stride_len=args.stride_len, 
 						times_in_bin=test_seq_times_in_bin,
 						end_hr_bins=test_times_bin_end, dataset_name=dataset_name)
 
@@ -510,13 +512,13 @@ def get_processed_data(dataset_name, args):
 	test_data_in_bin, test_mean_bin, test_std_bin = normalize_data(test_data_in_bin)
 
 	train_data_in_gaps, train_data_out_gaps, _, _, _ = \
-	make_seq_from_data(train_times_gaps, enc_len, in_bin_sz, out_bin_sz, batch_size, False, dataset_name=dataset_name)
+	make_seq_from_data(train_times_gaps, enc_len, in_bin_sz, out_bin_sz, batch_size, False, stride_len=args.stride_len, dataset_name=dataset_name)
 	test_data_in_gaps, test_data_out_gaps, _, _, _ = \
-	make_seq_from_data(test_times_gaps, enc_len, in_bin_sz, out_bin_sz, batch_size, False, dataset_name=dataset_name)
+	make_seq_from_data(test_times_gaps, enc_len, in_bin_sz, out_bin_sz, batch_size, False, stride_len=args.stride_len, dataset_name=dataset_name)
 	train_data_in_timestamps, train_data_out_timestamps, _, _, _ = \
-	make_seq_from_data(train_times_timestamps, enc_len, in_bin_sz, out_bin_sz, batch_size, False, dataset_name=dataset_name)
+	make_seq_from_data(train_times_timestamps, enc_len, in_bin_sz, out_bin_sz, batch_size, False, stride_len=args.stride_len, dataset_name=dataset_name)
 	test_data_in_timestamps, test_data_out_timestamps, _, _, _ = \
-	make_seq_from_data(test_times_timestamps, enc_len, in_bin_sz, out_bin_sz, batch_size, False, dataset_name=dataset_name)
+	make_seq_from_data(test_times_timestamps, enc_len, in_bin_sz, out_bin_sz, batch_size, False, stride_len=args.stride_len, dataset_name=dataset_name)
 
 	train_data_in_gaps, train_norm_a_gaps, train_norm_d_gaps = normalize_avg(train_data_in_gaps)
 	train_data_out_gaps = normalize_avg_given_param(train_data_out_gaps, train_norm_a_gaps, train_norm_d_gaps)
