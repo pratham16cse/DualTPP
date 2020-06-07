@@ -1129,8 +1129,11 @@ def run_rmtpp_count_reinit(args, models, data, test_data, rmtpp_type):
 		test_data_input_gaps_bin_scaled = np.expand_dims(test_data_input_gaps_bin_full[:,:-enc_len], axis=-1)
 		test_data_input_gaps_bin_scaled = test_data_input_gaps_bin_scaled.astype(np.float32)
 		
-		_, _, _, _, next_hidden_state \
-					= model_rmtpp(test_data_input_gaps_bin_scaled, initial_state=scaled_rnn_hidden_state)
+		if test_data_input_gaps_bin_scaled.shape[1] == 0:
+			next_hidden_state = None
+		else:
+			_, _, _, _, next_hidden_state \
+						= model_rmtpp(test_data_input_gaps_bin_scaled, initial_state=scaled_rnn_hidden_state)
 
 	all_events_in_bin_pred = np.array(all_events_in_bin_pred).T
 	return event_count_preds_cnt, all_events_in_bin_pred

@@ -12,7 +12,8 @@ itv = [0,360000]
 demo_itv = [0,360]
 
 np.random.seed(42)
-downsampling = {} #{'taxi': 100, 'Trump': 20}
+downsampling = {'Trump': 15}
+#downsampling = {'taxi': 100, 'Trump': 20}
 
 def downsampling_dataset(timestamps, dataset_name):
 	print('Down-sampling', dataset_name, 'dataset by', downsampling[dataset_name])

@@ -86,9 +86,9 @@ def get_optimal_bin_size(dataset_name):
 	if dataset_name in ['911_ems']:
 		event_count=100
 	if dataset_name in ['911_traffic']:
-		event_count=120
+		event_count=200
 	if dataset_name in ['taxi']:
-		event_count=250
+		event_count=200
 	return int(round((time_interval*event_count) / events_count))
 
 def generate_plots(args, dataset_name, dataset, per_model_count, test_sample_idx=1, count_var=None):
