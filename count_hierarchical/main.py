@@ -70,6 +70,8 @@ parser.add_argument('--batch_size', type=int, default=32,
                     help='Input batch size')
 parser.add_argument('--query', type=int, default=1,
                     help='Query number')
+parser.add_argument('--stride_len', type=int, default=3,
+                    help='Stride len for RMTPP number')
 parser.add_argument('--normalization', type=str, default='average',
                     help='gap normalization method')
 
@@ -157,17 +159,17 @@ run_model_flags = {
 if 'rmtpp_nll' in model_names:
     run_model_flags['run_rmtpp_with_optimization_fixed_cnt_solver_with_nll'] = True
     run_model_flags['run_rmtpp_count_cont_rmtpp_with_nll'] = True
-    run_model_flags['run_rmtpp_count_reinit_with_nll'] = True
+    #run_model_flags['run_rmtpp_count_reinit_with_nll'] = True
     run_model_flags['run_rmtpp_for_count_with_nll'] = True
 if 'rmtpp_mse' in model_names:
     run_model_flags['run_rmtpp_with_optimization_fixed_cnt_solver_with_mse'] = True
     run_model_flags['run_rmtpp_count_cont_rmtpp_with_mse'] = True
-    run_model_flags['run_rmtpp_count_reinit_with_mse'] = True
+    #run_model_flags['run_rmtpp_count_reinit_with_mse'] = True
     run_model_flags['run_rmtpp_for_count_with_mse'] = True
 if 'rmtpp_mse_var' in model_names:
-    rmp_model_flags['run_rmtpp_with_optimization_fixed_cnt_solver_with_mse_var'] = True
+    run_model_flags['run_rmtpp_with_optimization_fixed_cnt_solver_with_mse_var'] = True
     run_model_flags['run_rmtpp_count_cont_rmtpp_with_mse_var'] = True
-    run_model_flags['run_rmtpp_count_reinit_with_mse_var'] = True
+    #run_model_flags['run_rmtpp_count_reinit_with_mse_var'] = True
     run_model_flags['run_rmtpp_for_count_with_mse_var'] = True
 if 'wgan' in model_names:
     run_model_flags['run_wgan_for_count'] = True

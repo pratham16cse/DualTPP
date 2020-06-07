@@ -221,8 +221,12 @@ def run_rmtpp(args, model, optimizer, data, NLL_loss, rmtpp_epochs=10, use_var_m
 	batch_size = args.batch_size
 	stride_move = batch_size
 	dataset_name = args.current_dataset
+
 	if dataset_name in ['taxi', '911_traffic', '911_ems']:
-		stride_move = enc_len
+		stride_move = batch_size * args.stride_len
+		if stride_move > enc_len:
+			print("Training considering independent sequence")
+			stride_move = 0
 
 	if args.extra_var_model:
 		rmtpp_var_model = models.RMTPP_VAR(args.hidden_layer_size)
@@ -246,9 +250,14 @@ def run_rmtpp(args, model, optimizer, data, NLL_loss, rmtpp_epochs=10, use_var_m
 		for sm_step, (gaps_batch_in, gaps_batch_out) in enumerate(train_dataset_gaps):
 			with tf.GradientTape() as tape:
 				# TODO: Make sure to pass correct next_stat
-				gaps_pred, D, WT, next_initial_state, _ = model(gaps_batch_in, 
-						initial_state=next_initial_state, 
-						next_state_sno=stride_move)
+				if stride_move > 0:
+					gaps_pred, D, WT, next_initial_state, _ = model(gaps_batch_in, 
+							initial_state=next_initial_state, 
+							next_state_sno=stride_move)
+				else:
+					gaps_pred, D, WT, next_initial_state, _ = model(gaps_batch_in, 
+							initial_state=None, 
+							next_state_sno=1)
 
 				# Compute the loss for this minibatch.
 				if use_var_model:
