@@ -88,7 +88,7 @@ def get_optimal_bin_size(dataset_name):
 	if dataset_name in ['911_traffic']:
 		event_count=200
 	if dataset_name in ['taxi']:
-		event_count=200
+		event_count=250
 	return int(round((time_interval*event_count) / events_count))
 
 def generate_plots(args, dataset_name, dataset, per_model_count, test_sample_idx=1, count_var=None):
@@ -221,9 +221,9 @@ def make_seq_from_data(data, enc_len, in_bin_sz, out_bin_sz, batch_size,
 	rmtpp_strid_len = 1
 	if dataset_name in ['taxi', '911_traffic', '911_ems']:
 		rmtpp_strid_len = stride_len
-		count_strid_len = out_bin_sz
-	if dataset_name in ['taxi', '911_traffic', '911_ems']:
 		count_strid_len = 1
+	if dataset_name in ['taxi', '911_traffic', '911_ems', 'Trump'] and times_in_bin is not None:
+		count_strid_len = out_bin_sz
 	
 
 	iter_range = len(data)-enc_len-out_bin_sz
