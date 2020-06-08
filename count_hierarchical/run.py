@@ -1264,7 +1264,7 @@ def run_count_only_model(args, models, data, test_data):
 		test_predictions_norm_cnt = test_predictions_norm_cnt[0]
 
 	test_predictions_cnt = utils.denormalize_data(test_predictions_norm_cnt, test_mean_bin, test_std_bin)
-	event_count_preds_cnt = np.round(test_predictions_cnt).astype(np.int32)
+	event_count_preds_cnt = np.clip(np.round(test_predictions_cnt), 0.0, np.inf).astype(np.int32)
 	event_count_preds_true = test_data_out_bin
 
 	all_times_pred_lst = list()
@@ -3048,8 +3048,8 @@ def run_model(dataset_name, model_name, dataset, args, prev_models=None, run_mod
 			query_2_data = [interval_range_count_less, interval_range_count_more, 
 							less_threshold, more_threshold, interval_size, test_out_times_in_bin]
 
-			#old_stdout = sys.stdout
-			#sys.stdout=open("Outputs/count_model_"+dataset_name+".txt","a")
+			old_stdout = sys.stdout
+			sys.stdout=open("Outputs/count_model_"+dataset_name+".txt","a")
 			print("____________________________________________________________________")
 			print("True counts")
 			print(test_out_event_count_true)
@@ -3261,8 +3261,8 @@ def run_model(dataset_name, model_name, dataset, args, prev_models=None, run_mod
 				print("")
 
 			print("")
-			#sys.stdout.close()
-			#sys.stdout = old_stdout
+			sys.stdout.close()
+			sys.stdout = old_stdout
 
 	if model_name != 'rmtpp_mse':
 		rmtpp_var_model = None

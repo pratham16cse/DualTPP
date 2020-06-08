@@ -122,7 +122,7 @@ args.dataset_name = dataset_names
 model_names = list()
 if args.model_name == 'all':
     model_names.append('hawkes_model')
-    #model_names.append('wgan')
+    model_names.append('wgan')
     model_names.append('count_model')
     model_names.append('hierarchical')
     model_names.append('rmtpp_nll')

@@ -88,7 +88,7 @@ def get_optimal_bin_size(dataset_name):
 	if dataset_name in ['911_traffic']:
 		event_count=200
 	if dataset_name in ['taxi']:
-		event_count=200
+		event_count=250
 	return int(round((time_interval*event_count) / events_count))
 
 def generate_plots(args, dataset_name, dataset, per_model_count, test_sample_idx=1, count_var=None):
@@ -399,24 +399,24 @@ def get_interval_count_with_threshold(test_out_times_in_bin, interval_size, data
 			'sin': 1.1,
 			'hawkes': 1.1,
 			'sin_hawkes_overlay': 1.05,
-			'Trump': 1.1,
+			'Trump': 1.05,
 			'Verdict': 1.6,
 			'Delhi': 1.4,
-			'taxi': 1.05,
-			'911_traffic': 1.4,
-			'911_ems': 1.4,
+			'taxi': 1.25,
+			'911_traffic': 1.8,
+			'911_ems': 1.8,
 		}
 
 		less_factor = {
 			'sin': 0.85,
 			'hawkes': 0.85,
 			'sin_hawkes_overlay': 0.85,
-			'Trump': 0.95,
+			'Trump': 0.85,
 			'Verdict': 0.4,
 			'Delhi': 0.6,
-			'taxi': 0.95,
-			'911_traffic': 0.6,
-			'911_ems': 0.6,
+			'taxi': 0.8,
+			'911_traffic': 0.3,
+			'911_ems': 0.3,
 		}
 
 		for idx in range(test_sample_count):
@@ -442,10 +442,13 @@ def get_interval_count_with_threshold(test_out_times_in_bin, interval_size, data
 																		interval_size,
 																		threshold_less)
 
-	# begin = np.array([x[0] for x in test_out_times_in_bin])
-	# print('test_out_times_in_bin', np.array([x[0] for x in test_out_times_in_bin]) )
-	# print('interval_range_count_more', interval_range_count_more - begin)
-	# print('interval_range_count_less', interval_range_count_less - begin)
+	begin = np.array([x[0] for x in test_out_times_in_bin])
+	print('test_out_times_in_bin', np.array([x[0] for x in test_out_times_in_bin]) )
+	print('interval_range_count_more', interval_range_count_more - begin)
+	print('interval_range_count_less', interval_range_count_less - begin)
+	# print('more', sum((interval_range_count_more - begin)==0.0))
+	# print('less', sum((interval_range_count_less - begin)==0.0))
+	# print('all', sum((interval_range_count_less - begin)>=0.0))
 	# assert np.all(interval_range_count_more>=0.0), 'No range found in t_b range'
 	# assert np.all(interval_range_count_less>=0.0), 'No range found in t_b range'
 	return interval_range_count_less, interval_range_count_more, threshold_less, threshold_more
