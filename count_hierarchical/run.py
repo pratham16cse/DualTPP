@@ -274,12 +274,12 @@ def run_rmtpp(args, model, optimizer, data, NLL_loss, rmtpp_epochs=10, use_var_m
 			if args.extra_var_model:
 				with tf.GradientTape() as var_tape:
 					var_gaps_batch_in = gaps_batch_in[:, :int(args.enc_len/2)]
-					var_gaps_batch_out = gaps_batch_out[:, int(args.enc_len/2):]
+					var_gaps_batch_out = gaps_batch_in[:, int(args.enc_len/2):]
 					# TODO: Make sure correct hidden state is passed
-					#var_gaps_pred = simulate_fixed_cnt(model,
-					#						   	   var_gaps_batch_in,
-					#						   	   int(enc_len/2),
-					#						   	   prev_hidden_state=next_initial_state)
+					var_gaps_pred = simulate_fixed_cnt(model,
+											   	   var_gaps_batch_in,
+											   	   int(enc_len/2),
+											   	   prev_hidden_state=model.hidden_states[:, int(enc_len/2)-1])
 					var_gaps_pred = gaps_pred[:, int(enc_len/2):]
 					var_model_inputs = tf.cumsum(var_gaps_pred, axis=1)
 					var_pred = rmtpp_var_model(var_model_inputs)
@@ -2054,7 +2054,7 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(args, query_models, data, test_
 
 		D, WT = model_rmtpp_params[0], model_rmtpp_params[1]
 		if rmtpp_type=='nll':
-			WT = np.minimum(WT, ETH)
+			#WT = np.minimum(WT, ETH)
 			opt_loss = -cp.sum(rmtpp_loglikelihood_loss(gaps, D, WT, events_count_per_batch))/all_bins_gaps_pred.shape[1]
 		elif rmtpp_type=='mse':
 			if args.extra_var_model:
@@ -2260,7 +2260,6 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(args, query_models, data, test_
 				batch_temp_gaps_pred = utils.normalize_avg_given_param(batch_temp_gaps_pred, test_gap_in_bin_norm_a, test_gap_in_bin_norm_d)
 				_, D, WT, _, batch_input_final_state = model_rmtpp(batch_temp_gaps_pred, initial_state=input_final_state)
 				if args.extra_var_model and rmtpp_type=='mse':
-					#TODO Add the code to compute variance from the rmtpp_var_model
 					rmtpp_var_input = tf.cumsum(batch_temp_gaps_pred, axis=1)
 					WT = rmtpp_var_model(rmtpp_var_input)
 
@@ -2312,6 +2311,8 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(args, query_models, data, test_
 									events_count_per_batch,
 									test_data_count_normalizer,
 									test_data_rmtpp_normalizer)
+				#import ipdb
+				#ipdb.set_trace()
 				batch_bin_curr_cnt_opt_gaps_pred = utils.denormalize_avg(batch_bin_curr_cnt_opt_gaps_pred,
 													   	test_gap_in_bin_norm_a,
 													   	test_gap_in_bin_norm_d)
