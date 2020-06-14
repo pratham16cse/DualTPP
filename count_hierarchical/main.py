@@ -18,7 +18,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('dataset_name', type=str, help='dataset_name')
 parser.add_argument('model_name', type=str, help='model_name')
 
-parser.add_argument('--epochs', type=int, default=15,
+parser.add_argument('--epochs', type=int, default=5,
                     help='number of training epochs')
 parser.add_argument('--patience', type=int, default=2,
                     help='Number of epochs to wait for \
@@ -53,8 +53,16 @@ parser.add_argument('--out_bin_sz', type=int,
                     default=5)
 
 # enc_len = 80  # For RMTPP
-parser.add_argument('--enc_len', type=int, default=80,
+parser.add_argument('--enc_len', type=int, default=250,
                     help='Input length for rnn of rmtpp')
+
+# comp_enc_len = 40  # For Compound RMTPP
+parser.add_argument('--comp_enc_len', type=int, default=40,
+                    help='Input length for rnn of compound rmtpp')
+
+# comp_bin_sz = 10  # For Compound RMTPP
+parser.add_argument('--comp_bin_sz', type=int, default=10,
+                    help='events inside one bin of compound rmtpp')
 
 # wgan_enc_len = 60  # For WGAN
 parser.add_argument('--wgan_enc_len', type=int, default=60,
@@ -70,7 +78,7 @@ parser.add_argument('--batch_size', type=int, default=32,
                     help='Input batch size')
 parser.add_argument('--query', type=int, default=1,
                     help='Query number')
-parser.add_argument('--stride_len', type=int, default=3,
+parser.add_argument('--stride_len', type=int, default=10,
                     help='Stride len for RMTPP number')
 parser.add_argument('--normalization', type=str, default='average',
                     help='gap normalization method')
@@ -96,8 +104,8 @@ args = parser.parse_args()
 dataset_names = list()
 if args.dataset_name == 'all':
     dataset_names.append('sin')
-    dataset_names.append('hawkes')
-    dataset_names.append('sin_hawkes_overlay')
+    # dataset_names.append('hawkes')
+    # dataset_names.append('sin_hawkes_overlay')
     dataset_names.append('taxi')
     dataset_names.append('911_traffic')
     dataset_names.append('911_ems')
@@ -124,10 +132,12 @@ if args.model_name == 'all':
     model_names.append('hawkes_model')
     model_names.append('wgan')
     model_names.append('count_model')
-    model_names.append('hierarchical')
+    # model_names.append('hierarchical')
     model_names.append('rmtpp_nll')
     model_names.append('rmtpp_mse')
     model_names.append('rmtpp_mse_var')
+    model_names.append('rmtpp_nll_comp')
+    model_names.append('rmtpp_mse_comp')
     model_names.append('rmtpp_count')
 else:
     model_names.append(args.model_name)
@@ -138,23 +148,8 @@ run_model_flags = {
 
     'run_rmtpp_count_with_optimization': False,
     'run_rmtpp_with_optimization_fixed_cnt': False,
-    # 'run_rmtpp_with_optimization_fixed_cnt_solver_with_nll': True,
-    # 'run_rmtpp_with_optimization_fixed_cnt_solver_with_mse': True,
-    # 'run_rmtpp_with_optimization_fixed_cnt_solver_with_mse_var': True,
-
-    #'run_rmtpp_count_cont_rmtpp_with_nll': True,
-    #'run_rmtpp_count_cont_rmtpp_with_mse': True,
-    #'run_rmtpp_count_cont_rmtpp_with_mse_var': True,
-    #'run_rmtpp_count_reinit_with_nll': True,
-    #'run_rmtpp_count_reinit_with_mse': True,
-    #'run_rmtpp_count_reinit_with_mse_var': True,
 
     'run_count_only_model': True,
-    #'run_rmtpp_for_count_with_nll': True,
-    #'run_rmtpp_for_count_with_mse': True,
-    #'run_rmtpp_for_count_with_mse_var': True,
-    #'run_wgan_for_count': True,
-    #'run_hawkes_model': True,
 }
 if 'rmtpp_nll' in model_names:
     run_model_flags['run_rmtpp_with_optimization_fixed_cnt_solver_with_nll'] = True
@@ -171,6 +166,12 @@ if 'rmtpp_mse_var' in model_names:
     run_model_flags['run_rmtpp_count_cont_rmtpp_with_mse_var'] = True
     run_model_flags['run_rmtpp_count_reinit_with_mse_var'] = True
     run_model_flags['run_rmtpp_for_count_with_mse_var'] = True
+if 'rmtpp_mse_comp' in model_names:
+    run_model_flags['run_rmtpp_with_optimization_fixed_cnt_solver_with_mse_comp'] = True
+    run_model_flags['run_rmtpp_count_cont_rmtpp_with_mse_comp'] = True
+if 'rmtpp_nll_comp' in model_names:
+    run_model_flags['run_rmtpp_with_optimization_fixed_cnt_solver_with_nll_comp'] = True
+    run_model_flags['run_rmtpp_count_cont_rmtpp_with_nll_comp'] = True
 if 'wgan' in model_names:
     run_model_flags['run_wgan_for_count'] = True
 if 'hawkes_model' in model_names:
