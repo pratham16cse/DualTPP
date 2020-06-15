@@ -18,7 +18,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('dataset_name', type=str, help='dataset_name')
 parser.add_argument('model_name', type=str, help='model_name')
 
-parser.add_argument('--epochs', type=int, default=5,
+parser.add_argument('--epochs', type=int, default=0,
                     help='number of training epochs')
 parser.add_argument('--patience', type=int, default=2,
                     help='Number of epochs to wait for \
@@ -53,7 +53,7 @@ parser.add_argument('--out_bin_sz', type=int,
                     default=5)
 
 # enc_len = 80  # For RMTPP
-parser.add_argument('--enc_len', type=int, default=250,
+parser.add_argument('--enc_len', type=int, default=80,
                     help='Input length for rnn of rmtpp')
 
 # comp_enc_len = 40  # For Compound RMTPP
@@ -210,6 +210,8 @@ print("####################################################################")
 event_count_result = dict()
 for dataset_name in dataset_names:
     print("Processing", dataset_name, "Datasets\n")
+    if dataset_name == 'Trump':
+        args.comp_enc_len = 25
     if automate_bin_sz:
         args.current_dataset = dataset_name
         args.bin_size = utils.get_optimal_bin_size(dataset_name)

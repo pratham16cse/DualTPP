@@ -223,12 +223,15 @@ def run_rmtpp(args, model, optimizer, data, NLL_loss, rmtpp_epochs=10, use_var_m
 	stride_move = batch_size
 	dataset_name = args.current_dataset
 
-	if dataset_name in ['taxi', '911_traffic', '911_ems']:
-		stride_move = batch_size * args.stride_len
-		if (not comp_model) and stride_move > enc_len:
-			print("Training considering independent sequence")
-			stride_move = 0
-		if comp_model and stride_move > comp_enc_len:
+	if not comp_model:
+		if dataset_name in ['taxi', '911_traffic', '911_ems']:
+			stride_move = batch_size * args.stride_len
+			if stride_move > enc_len:
+				print("Training considering independent sequence")
+				stride_move = 0
+				
+	if comp_model:
+		if stride_move > comp_enc_len:
 			print("Training considering independent sequence")
 			stride_move = 0
 
@@ -3075,15 +3078,15 @@ def compute_full_model_acc(args, test_data, all_bins_count_pred, all_times_bin_p
 	t_e_plus = test_end_hr_bins[:,-1]
 	deep_mae = compute_hierarchical_mae_deep(all_times_pred, test_out_times_in_bin, t_b_plus, t_e_plus, compute_depth)
 
-	# old_stdout = sys.stdout
-	# sys.stdout=open("Outputs/count_model_"+dataset_name+".txt","a")
+	old_stdout = sys.stdout
+	sys.stdout=open("Outputs/count_model_"+dataset_name+".txt","a")
 	print("____________________________________________________________________")
 	print(model_name, 'Full-eval: MAE for Count Prediction:', np.mean(np.abs(all_bins_count_true-all_bins_count_pred )))
 	print(model_name, 'Full-eval: MAE for Count Prediction (per bin):', np.mean(np.abs(all_bins_count_true-all_bins_count_pred ), axis=0))
 	print(model_name, 'Full-eval: Deep MAE for events Prediction:', deep_mae, 'at depth', compute_depth)
 	print("____________________________________________________________________")
-	# sys.stdout.close()
-	# sys.stdout = old_stdout
+	sys.stdout.close()
+	sys.stdout = old_stdout
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 
 
