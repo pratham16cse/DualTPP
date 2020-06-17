@@ -145,7 +145,7 @@ def generate_plots(args, dataset_name, dataset, per_model_count, test_sample_idx
 	event_count_preds_true = true_pred
 	true_pred = event_count_preds_true[test_sample_idx].astype(np.float32)
 
-	test_data_in_bin = dataset['test_data_in_bin']
+	test_data_in_bin = np.squeeze(dataset['test_data_in_bin'], axis=-1)
 	test_mean_bin = dataset['test_mean_bin']
 	test_std_bin = dataset['test_std_bin']
 	
@@ -739,6 +739,7 @@ def get_processed_data(dataset_name, args):
 	print('Test out', test_data_out_gaps.shape)
 	print('')
 
+
 	[train_data_in_gaps_bin, train_data_out_gaps_bin,
 	 train_data_in_times_bin, train_data_out_times_bin,
 	 train_data_in_time_end_bin, train_end_hr_bins_relative,
@@ -786,6 +787,12 @@ def get_processed_data(dataset_name, args):
 	test_in_end_hr_bins = np.expand_dims(test_in_end_hr_bins, axis=-1).astype(np.float32)
 	train_data_in_bin_feats = get_time_features(train_in_end_hr_bins-bin_size/2.)
 	test_data_in_bin_feats = get_time_features(test_in_end_hr_bins-bin_size/2.)
+
+
+	print(train_data_in_bin.shape)
+	print(test_data_in_bin.shape)
+	print(train_data_in_gaps.shape)
+	print(test_data_in_gaps_bin.shape)
 
 
 	dataset = {
