@@ -82,14 +82,29 @@ def get_optimal_bin_size(dataset_name):
 	timestamps = np.loadtxt('data/'+dataset_name+'.txt')
 	time_interval = timestamps[-1]-timestamps[0]
 	events_count = len(timestamps)
-	event_count = 50
+	event_count = 60
 	if dataset_name in ['911_ems']:
 		event_count=100
 	if dataset_name in ['911_traffic']:
 		event_count=200
 	if dataset_name in ['taxi']:
 		event_count=250
-	return int(round((time_interval*event_count) / events_count))
+
+	opt_bin_sz = int(round((time_interval*event_count) / events_count))
+	hr_scale = round(opt_bin_sz/3600)
+
+	if hr_scale == 0:
+		min_scale = round(opt_bin_sz/60)
+		print('Bins are at cycle of', min_scale, 'mins')
+		opt_bin_sz = min_scale * 60
+	elif hr_scale <= 12:
+		opt_bin_sz = hr_scale*3600
+		print('Bins are at cycle of', hr_scale, 'hours')
+	else:
+		day_scale = round(opt_bin_sz/(3600*24))
+		print('Bins are at cycle of', day_scale, 'days')
+		opt_bin_sz = day_scale * (3600*24)
+	return opt_bin_sz
 
 def generate_plots(args, dataset_name, dataset, per_model_count, test_sample_idx=1, count_var=None):
 	inp_seq_len_plot = 10

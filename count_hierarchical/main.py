@@ -18,7 +18,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('dataset_name', type=str, help='dataset_name')
 parser.add_argument('model_name', type=str, help='model_name')
 
-parser.add_argument('--epochs', type=int, default=0,
+parser.add_argument('--epochs', type=int, default=5,
                     help='number of training epochs')
 parser.add_argument('--patience', type=int, default=2,
                     help='Number of epochs to wait for \
@@ -50,7 +50,7 @@ parser.add_argument('--in_bin_sz', type=int,
 # dec_len = 8   # For All Models
 parser.add_argument('--out_bin_sz', type=int,
                     help='Output count of bin',
-                    default=5)
+                    default=1)
 
 # enc_len = 80  # For RMTPP
 parser.add_argument('--enc_len', type=int, default=80,
@@ -78,7 +78,7 @@ parser.add_argument('--batch_size', type=int, default=32,
                     help='Input batch size')
 parser.add_argument('--query', type=int, default=1,
                     help='Query number')
-parser.add_argument('--stride_len', type=int, default=10,
+parser.add_argument('--stride_len', type=int, default=5,
                     help='Stride len for RMTPP number')
 parser.add_argument('--normalization', type=str, default='average',
                     help='gap normalization method')
