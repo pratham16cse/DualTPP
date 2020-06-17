@@ -7,21 +7,45 @@ ETH = 10.0
 one_by = tf.math.reciprocal_no_nan
 
 
-
 class RMTPP_VAR(tf.keras.Model):
-    def __init__(self, hidden_layer_size, name='RMTPP_VAR', **kwargs):
+    def __init__(self, hidden_layer_size,
+                 num_bins, bin_embd_dim,
+                 num_grps, grp_embd_dim,
+                 num_pos, pos_embd_dims,
+                 name='RMTPP_VAR', **kwargs):
         super(RMTPP_VAR, self).__init__(name=name, **kwargs)
 
         self.hidden_layer_size = hidden_layer_size
+        self.layer_bin_embd = layers.Embedding(input_dim=num_bins+1,
+                                               output_dim=bin_embd_dim,
+                                               mask_zero=True)
+        self.layer_grp_embd = layers.Embedding(input_dim=num_grps+1,
+                                               output_dim=grp_embd_dim,
+                                               mask_zero=True)
+        self.layer_pos_embd = layers.Embedding(input_dim=num_pos+1,
+                                               output_dim=pos_embd_dims,
+                                               mask_zero=True)
 
-        self.layer_1 = tf.keras.layers.Dense(hidden_layer_size, activation=tf.nn.relu, name='layer_1')
-        self.layer_2 = tf.keras.layers.Dense(hidden_layer_size, activation=tf.nn.relu, name='layer_2')
-        self.layer_out = tf.keras.layers.Dense(1, activation=tf.nn.relu, name='layer_out')
+        self.l_1 = tf.keras.layers.Dense(hidden_layer_size,
+                                         activation=tf.nn.relu,
+                                         name='bl_1')
+        self.l_2 = tf.keras.layers.Dense(hidden_layer_size,
+                                         activation=tf.nn.relu,
+                                         name='bl_2')
+        self.l_out = tf.keras.layers.Dense(1, activation=tf.nn.softplus,
+                                           name='bl_out')
 
-    def call(self, inputs, debug=False):
-        l1_out = self.layer_1(inputs)
-        l2_out = self.layer_2(l1_out)
-        output = self.layer_out(l2_out)
+    def call(self, inputs, bin_id, grp_id, pos_id, debug=False):
+        bin_embed = self.layer_bin_embd(bin_id)
+        grp_embed = self.layer_grp_embd(grp_id)
+        pos_embed = self.layer_pos_embd(pos_id)
+
+
+        inputs = tf.concat([bin_embed, grp_embed, pos_embed], axis=-1)
+        l_1_out = self.l_1(inputs)
+        l_2_out = self.l_2(l_1_out)
+        l_out = self.l_out(l_2_out)
+        output = l_out
 
         output = output + tf.ones_like(output) * 0.00000001
 
@@ -71,7 +95,7 @@ class RMTPP(tf.keras.Model):
                                     return_state=True, stateful=False,
                                     name='GRU_Layer')
         if not self.use_intensity:
-            self.D_layer = layers.Dense(1, name='D_layer')
+            self.D_layer = layers.Dense(1, activation=tf.nn.softplus, name='D_layer')
         else:
             self.D_layer = layers.Dense(1, activation=tf.nn.softplus, name='D_layer')
 
@@ -85,14 +109,14 @@ class RMTPP(tf.keras.Model):
             self.WT_layer = layers.Dense(1, activation=tf.nn.softplus, name='WT_layer')
             self.gaps_output_layer = InverseTransformSampling()
 
-    def call(self, gaps, initial_state=None, next_state_sno=1):
+    def call(self, gaps, feats, initial_state=None, next_state_sno=1):
         ''' Forward pass of the RMTPP model'''
 
         self.gaps = gaps
         self.initial_state = initial_state
         
         # Gather input for the rnn
-        rnn_inputs = self.gaps
+        rnn_inputs = tf.concat([self.gaps, feats], axis=-1)
 
         self.hidden_states, self.final_state \
                 = self.rnn_layer(rnn_inputs,
@@ -121,7 +145,7 @@ class RMTPP(tf.keras.Model):
             # self.gaps_pred = tf.reduce_mean(output_samples, axis=0)
             self.gaps_pred = out_mean
         else:
-            self.gaps_pred = tf.nn.softplus(self.D)
+            self.gaps_pred = self.D
             self.WT = tf.zeros_like(self.D)
         
         next_initial_state = self.hidden_states[:,next_state_sno-1]
@@ -134,7 +158,7 @@ def build_rmtpp_model(args, use_intensity, use_var_model=False):
     enc_len = args.enc_len
     learning_rate = args.learning_rate
     model = RMTPP(hidden_layer_size, use_intensity=use_intensity, use_var_model=use_var_model)
-    model.build(input_shape=(batch_size, enc_len, 1))
+    #model.build(input_shape=(batch_size, enc_len, 1))
     optimizer = keras.optimizers.Adam(learning_rate)
     return model, optimizer
 

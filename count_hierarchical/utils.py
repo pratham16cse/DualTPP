@@ -86,7 +86,7 @@ def get_optimal_bin_size(dataset_name):
 	if dataset_name in ['911_ems']:
 		event_count=100
 	if dataset_name in ['911_traffic']:
-		event_count=200
+		event_count=100
 	if dataset_name in ['taxi']:
 		event_count=250
 	return int(round((time_interval*event_count) / events_count))
@@ -206,7 +206,9 @@ def generate_train_test_data(timestamps, gaps, data_bins, end_hr_bins, times_in_
 	data_sz = len(data_bins)
 	train_times_bin = data_bins[:int(train_per*data_sz)]
 	test_times_bin = data_bins[int(train_per*data_sz):]
+	train_times_bin_end = end_hr_bins[:int(train_per*data_sz)]
 	test_times_bin_end = end_hr_bins[int(train_per*data_sz):]
+	train_seq_times_in_bin = times_in_bin[:int(train_per*data_sz)]
 	test_seq_times_in_bin = times_in_bin[int(train_per*data_sz):]
 
 	data_sz = len(gaps)
@@ -223,13 +225,24 @@ def generate_train_test_data(timestamps, gaps, data_bins, end_hr_bins, times_in_
 			len(train_times_timestamps), len(test_times_timestamps))
 
 	return  (train_times_bin, test_times_bin,
-			 test_times_bin_end, test_seq_times_in_bin,
+			 train_times_bin_end, test_times_bin_end,
+			 train_seq_times_in_bin, test_seq_times_in_bin,
 			 train_times_gaps, test_times_gaps,
 			 train_times_timestamps, test_times_timestamps)
 
+def get_data_in_next_n_bins(n, inp, out, bin_size):
+	out_n_bins = []
+	for i in range(len(out)):
+		if (out[i]-inp[-1]) > (bin_size*n):
+			break
+		out_n_bins.append(out[i])
+	return out_n_bins
+
 def make_seq_from_data(data, enc_len, in_bin_sz, out_bin_sz, batch_size,
-					   is_it_bins=True, times_in_bin=None, end_hr_bins=None,
-					   stride_len=1, dataset_name=None):
+					   is_it_bins=True, is_it_var=False,
+					   times_in_bin=None, end_hr_bins=None,
+					   stride_len=1, count_strid_len=1, dataset_name=None,
+					   bin_size=None):
 	inp_seq_lst = list()
 	out_seq_lst = list()
 	inp_times_in_bin = list()
@@ -242,7 +255,7 @@ def make_seq_from_data(data, enc_len, in_bin_sz, out_bin_sz, batch_size,
 		count_strid_len = 1
 	if dataset_name in ['taxi', '911_traffic', '911_ems', 'Trump'] \
 			and times_in_bin is not None:
-		count_strid_len = out_bin_sz
+		count_strid_len = count_strid_len
 	
 
 	iter_range = len(data)-enc_len-out_bin_sz
@@ -250,6 +263,8 @@ def make_seq_from_data(data, enc_len, in_bin_sz, out_bin_sz, batch_size,
 	if is_it_bins:
 		strid_len = count_strid_len
 		iter_range = len(data)-in_bin_sz-out_bin_sz
+	if is_it_var:
+		strid_len = stride_len
 
 	for idx in range(0,iter_range,strid_len):
 		
@@ -260,6 +275,8 @@ def make_seq_from_data(data, enc_len, in_bin_sz, out_bin_sz, batch_size,
 				for r_idx in range(in_bin_sz):
 					sm_time_in_bin+=times_in_bin[idx+r_idx]
 				inp_times_in_bin.append(sm_time_in_bin)
+		elif is_it_var:
+			inp_times_in_bin.append(data[idx:idx+enc_len])
 		else:
 			inp_seq_lst.append(data[idx:idx+enc_len])
 		
@@ -272,6 +289,18 @@ def make_seq_from_data(data, enc_len, in_bin_sz, out_bin_sz, batch_size,
 				out_times_in_bin.append(sm_time_in_bin)
 			if end_hr_bins is not None:
 				out_end_hr_bins.append(end_hr_bins[idx+in_bin_sz:idx+in_bin_sz+out_bin_sz])
+		elif is_it_var:
+			out_times_in_bin.append(
+				get_data_in_next_n_bins(
+					out_bin_sz,
+					data[idx:idx+enc_len],
+					data[idx+enc_len:],
+					bin_size
+				)
+			)
+			out_end_hr_bins.append(
+				data[idx+enc_len]+np.arange(1, out_bin_sz+1)*bin_size
+			)
 		else:
 			out_seq_lst.append(data[idx+1:idx+enc_len+1])
 
@@ -320,21 +349,37 @@ def stabalize_data(data_in_gaps, data_out_gaps,
 	data_out_timestamps = np.expand_dims(data_out_timestamps, axis=-1)
 	return data_in_gaps, data_out_gaps, data_in_timestamps, data_out_timestamps
 
-def get_end_time_from_bins(test_inp_times_in_bin, test_end_hr_bins, enc_len=80):
+def get_end_time_from_bins(test_inp_times_in_bin, test_out_times_in_bin,
+						   test_end_hr_bins, enc_len=80):
 	test_data_in_gaps_bin_lst = list()
 	test_data_in_time_end_bin_lst = list()
+	test_data_out_gaps_bin_lst = list()
+	test_data_in_times_bin_lst = list()
+	test_data_out_times_bin_lst = list()
 	for idx in range(len(test_end_hr_bins)):
 		A1 = np.array(test_inp_times_in_bin[idx][1:])
 		A2 = np.array(test_inp_times_in_bin[idx][:-1])
 		test_data_in_time_end_bin_lst.append(test_inp_times_in_bin[idx][-1])
 		test_data_in_gaps_bin_lst.append((A1-A2)[-enc_len:])
+		test_data_in_times_bin_lst.append(A1[-enc_len:])
+
+		A1 = np.array(test_out_times_in_bin[idx])
+		A2 = np.array([test_inp_times_in_bin[idx][-1]] + test_out_times_in_bin[idx][:-1])
+		test_data_out_gaps_bin_lst.append(A1-A2)
+		test_data_out_times_bin_lst.append(A1)
+
 	test_data_in_time_end_bin = np.array(test_data_in_time_end_bin_lst)
 	test_data_in_gaps_bin = np.array(test_data_in_gaps_bin_lst)
 	test_end_hr_bins = np.array(test_end_hr_bins)
+	test_data_out_gaps_bin = np.array(test_data_out_gaps_bin_lst)
+	test_data_in_times_bin = np.array(test_data_in_times_bin_lst)
+	test_data_out_times_bin = np.array(test_data_out_times_bin_lst)
 
 	test_data_in_gaps_bin, test_gap_in_bin_norm_a, test_gap_in_bin_norm_d \
 		= normalize_avg(test_data_in_gaps_bin)
-	return [test_data_in_gaps_bin, test_data_in_time_end_bin, test_end_hr_bins,
+	return [test_data_in_gaps_bin, test_data_out_gaps_bin,
+			test_data_in_times_bin, test_data_out_times_bin,
+			test_data_in_time_end_bin, test_end_hr_bins,
 			test_gap_in_bin_norm_a, test_gap_in_bin_norm_d]
 
 def get_rand_interval_count(test_out_times_in_bin):
@@ -484,6 +529,17 @@ def get_interval_count_with_threshold(test_out_times_in_bin, interval_size, data
 	return (interval_range_count_less, interval_range_count_more,
 			threshold_less, threshold_more)
 
+def get_time_features(times):
+    time_feature_hour = (times // 3600) % 24
+    time_feature_minute = (times // 60) % 60
+    time_feature_seconds = (times) % 60
+
+    time_feature = (time_feature_hour * 3600.0 
+                 + time_feature_minute * 60.0
+                 + time_feature_seconds)
+    time_feature = time_feature / 3600.0
+    return time_feature
+
 def get_processed_data(dataset_name, args):
 
 	bin_size = args.bin_size
@@ -503,9 +559,10 @@ def get_processed_data(dataset_name, args):
 	plt.close()
 
 	[train_times_bin, test_times_bin,
-	 test_times_bin_end, test_seq_times_in_bin,
+	 train_times_bin_end, test_times_bin_end,
+	 train_seq_times_in_bin, test_seq_times_in_bin,
 	 train_times_gaps, test_times_gaps,
-	 train_times_timestamps ,test_times_timestamps] \
+	 train_times_timestamps, test_times_timestamps] \
 	 	= generate_train_test_data(timestamps, gaps, data_bins,
 	 							   end_hr_bins, times_in_bin)
 
@@ -546,11 +603,16 @@ def get_processed_data(dataset_name, args):
 	plt.savefig('Outputs/hawkes_model_'+dataset_name+'/KS_plot.png')
 	plt.close()
 
-	train_data_in_bin, train_data_out_bin, _, _, _ \
+	[train_data_in_bin, train_data_out_bin,
+	 train_inp_times_in_bin, train_out_times_in_bin,
+	 train_end_hr_bins] \
 		= make_seq_from_data(train_times_bin, enc_len, in_bin_sz, out_bin_sz,
 							 batch_size,
 							 is_it_bins=True,
 							 stride_len=args.stride_len,
+							 count_strid_len=1,
+	 						 times_in_bin=train_seq_times_in_bin,
+	 						 end_hr_bins=train_times_bin_end,
 							 dataset_name=dataset_name)
 	[test_data_in_bin, test_data_out_bin,
 	 test_inp_times_in_bin, test_out_times_in_bin, 
@@ -559,6 +621,7 @@ def get_processed_data(dataset_name, args):
 	 						 batch_size,
 	 						 is_it_bins=True,
 	 						 stride_len=args.stride_len,
+	 						 count_strid_len=args.out_bin_sz,
 	 						 times_in_bin=test_seq_times_in_bin,
 	 						 end_hr_bins=test_times_bin_end,
 	 						 dataset_name=dataset_name)
@@ -595,6 +658,17 @@ def get_processed_data(dataset_name, args):
 					   		 stride_len=args.stride_len,
 					   		 dataset_name=dataset_name)
 
+	(_, _,
+	 train_inp_times_in_bin, train_out_times_in_bin,
+	 train_end_hr_bins) \
+		= make_seq_from_data(train_times_timestamps, enc_len, in_bin_sz, out_bin_sz,
+							 batch_size,
+							 is_it_bins=False,
+							 is_it_var=True,
+							 stride_len=int(enc_len/4),
+							 dataset_name=dataset_name,
+							 bin_size=args.bin_size)
+
 	train_data_in_gaps, train_norm_a_gaps, train_norm_d_gaps \
 		= normalize_avg(train_data_in_gaps)
 	train_data_out_gaps = normalize_avg_given_param(train_data_out_gaps,
@@ -603,6 +677,7 @@ def get_processed_data(dataset_name, args):
 	test_data_in_gaps, test_norm_a_gaps, test_norm_d_gaps \
 		= normalize_avg(test_data_in_gaps)
 
+
 	[train_data_in_gaps, train_data_out_gaps,
 	 dev_data_in_gaps, dev_data_out_gaps,
 	 train_data_in_timestamps, train_data_out_timestamps,
@@ -610,6 +685,7 @@ def get_processed_data(dataset_name, args):
 	 	= generate_dev_data([train_data_in_gaps, train_data_out_gaps,
 	 						 train_data_in_timestamps, train_data_out_timestamps,
 	 						 train_norm_a_gaps, train_norm_d_gaps])
+
 
 	[train_data_in_gaps, train_data_out_gaps,
 	 train_data_in_timestamps, train_data_out_timestamps] \
@@ -629,6 +705,10 @@ def get_processed_data(dataset_name, args):
 						 test_data_in_timestamps, test_data_out_timestamps,
 						 batch_size)
 
+	train_data_in_feats = get_time_features(train_data_in_timestamps)
+	train_data_out_feats = get_time_features(train_data_out_timestamps)
+	dev_data_in_feats = get_time_features(dev_data_in_timestamps)
+
 	print('')
 	print('Dataset size')
 	print('Train in', train_data_in_gaps.shape)
@@ -639,12 +719,24 @@ def get_processed_data(dataset_name, args):
 	print('Test out', test_data_out_gaps.shape)
 	print('')
 
-	[test_data_in_gaps_bin, test_data_in_time_end_bin,
-	 test_end_hr_bins,
+	[train_data_in_gaps_bin, train_data_out_gaps_bin,
+	 train_data_in_times_bin, train_data_out_times_bin,
+	 train_data_in_time_end_bin, train_end_hr_bins,
+	 train_gap_in_bin_norm_a, train_gap_in_bin_norm_d] \
+		= get_end_time_from_bins(train_inp_times_in_bin, train_out_times_in_bin,
+								 train_end_hr_bins, enc_len)
+	train_data_out_gaps_bin = normalize_avg_given_param(train_data_out_gaps_bin,
+									  					train_norm_a_gaps,
+									  					train_norm_d_gaps)
+
+	[test_data_in_gaps_bin, test_data_out_gaps_bin,
+	 test_data_in_times_bin, test_data_out_times_bin,
+	 test_data_in_time_end_bin, test_end_hr_bins,
 	 test_gap_in_bin_norm_a, test_gap_in_bin_norm_d] \
-		= get_end_time_from_bins(test_inp_times_in_bin,
-								 test_end_hr_bins,
-								 enc_len)
+		= get_end_time_from_bins(test_inp_times_in_bin, test_out_times_in_bin,
+								 test_end_hr_bins, enc_len)
+
+	test_data_in_feats_bin = get_time_features(test_data_in_times_bin)
 
 	[test_time_out_tb_plus, test_time_out_te_plus, 
 	 test_out_event_count_true, test_out_all_event_true] \
@@ -662,6 +754,13 @@ def get_processed_data(dataset_name, args):
 	test_end_hr_bins = np.expand_dims(test_end_hr_bins, axis=-1)
 	test_data_in_time_end_bin = np.expand_dims(test_data_in_time_end_bin, axis=-1)
 	test_data_in_gaps_bin = np.expand_dims(test_data_in_gaps_bin, axis=-1)
+	test_data_in_feats_bin = np.expand_dims(test_data_in_feats_bin, axis=-1)
+	train_end_hr_bins = np.expand_dims(train_end_hr_bins, axis=-1)
+	train_data_in_time_end_bin = np.expand_dims(train_data_in_time_end_bin, axis=-1)
+	train_data_in_gaps_bin = np.expand_dims(train_data_in_gaps_bin, axis=-1)
+
+	#import ipdb
+	#ipdb.set_trace()
 
 	dataset = {
 		'train_data_in_gaps': train_data_in_gaps,
@@ -698,7 +797,21 @@ def get_processed_data(dataset_name, args):
 		'interval_size': interval_size,
 		'test_out_times_in_bin': test_out_times_in_bin,
 
+		'train_data_in_gaps_bin': train_data_in_gaps_bin,
+		'train_data_out_gaps_bin': train_data_out_gaps_bin,
+		'train_data_in_time_end_bin': train_data_in_time_end_bin,
+	 	'train_end_hr_bins': train_end_hr_bins,
+	 	'train_gap_in_bin_norm_a': train_gap_in_bin_norm_a,
+	 	'train_gap_in_bin_norm_d': train_gap_in_bin_norm_d,
+
 		'hawkes_timestamps_pred': hawkes_timestamps_pred,
+
+		'test_data_out_gaps_bin': test_data_out_gaps_bin,
+
+		'train_data_in_feats': train_data_in_feats,
+		'train_data_out_feats': train_data_out_feats,
+		'dev_data_in_feats': dev_data_in_feats,
+		'test_data_in_feats_bin': test_data_in_feats_bin,
 	}
 
 	return dataset

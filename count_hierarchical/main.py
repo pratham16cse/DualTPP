@@ -91,13 +91,19 @@ parser.add_argument('--extra_var_model', action='store_true', default=False,
 parser.add_argument('--opt_num_counts', type=int, default=5,
                     help='Number of counts to try before and after mean for optimizer')
 
+# Parameters for extra_var_model
+parser.add_argument('--num_grps', type=int, default=10,
+                    help='Number of groups in each bin in forecast horizon')
+parser.add_argument('--num_pos', type=int, default=40,
+                    help='Number of positions in each group in forecast horizon')
+
 args = parser.parse_args()
 
 dataset_names = list()
 if args.dataset_name == 'all':
     dataset_names.append('sin')
-    dataset_names.append('hawkes')
-    dataset_names.append('sin_hawkes_overlay')
+    # dataset_names.append('hawkes')
+    # dataset_names.append('sin_hawkes_overlay')
     dataset_names.append('taxi')
     dataset_names.append('911_traffic')
     dataset_names.append('911_ems')
@@ -124,7 +130,7 @@ if args.model_name == 'all':
     model_names.append('hawkes_model')
     model_names.append('wgan')
     model_names.append('count_model')
-    model_names.append('hierarchical')
+    # model_names.append('hierarchical')
     model_names.append('rmtpp_nll')
     model_names.append('rmtpp_mse')
     model_names.append('rmtpp_mse_var')
@@ -138,23 +144,8 @@ run_model_flags = {
 
     'run_rmtpp_count_with_optimization': False,
     'run_rmtpp_with_optimization_fixed_cnt': False,
-    # 'run_rmtpp_with_optimization_fixed_cnt_solver_with_nll': True,
-    # 'run_rmtpp_with_optimization_fixed_cnt_solver_with_mse': True,
-    # 'run_rmtpp_with_optimization_fixed_cnt_solver_with_mse_var': True,
-
-    #'run_rmtpp_count_cont_rmtpp_with_nll': True,
-    #'run_rmtpp_count_cont_rmtpp_with_mse': True,
-    #'run_rmtpp_count_cont_rmtpp_with_mse_var': True,
-    #'run_rmtpp_count_reinit_with_nll': True,
-    #'run_rmtpp_count_reinit_with_mse': True,
-    #'run_rmtpp_count_reinit_with_mse_var': True,
 
     'run_count_only_model': True,
-    #'run_rmtpp_for_count_with_nll': True,
-    #'run_rmtpp_for_count_with_mse': True,
-    #'run_rmtpp_for_count_with_mse_var': True,
-    #'run_wgan_for_count': True,
-    #'run_hawkes_model': True,
 }
 if 'rmtpp_nll' in model_names:
     run_model_flags['run_rmtpp_with_optimization_fixed_cnt_solver_with_nll'] = True
