@@ -78,7 +78,7 @@ parser.add_argument('--batch_size', type=int, default=32,
                     help='Input batch size')
 parser.add_argument('--query', type=int, default=1,
                     help='Query number')
-parser.add_argument('--stride_len', type=int, default=5,
+parser.add_argument('--stride_len', type=int, default=10,
                     help='Stride len for RMTPP number')
 parser.add_argument('--normalization', type=str, default='average',
                     help='gap normalization method')
@@ -130,12 +130,12 @@ args.dataset_name = dataset_names
 model_names = list()
 if args.model_name == 'all':
     model_names.append('hawkes_model')
-    model_names.append('wgan')
+    # model_names.append('wgan')
     model_names.append('count_model')
     # model_names.append('hierarchical')
     model_names.append('rmtpp_nll')
     model_names.append('rmtpp_mse')
-    model_names.append('rmtpp_mse_var')
+    # model_names.append('rmtpp_mse_var')
     model_names.append('rmtpp_nll_comp')
     model_names.append('rmtpp_mse_comp')
     model_names.append('rmtpp_count')
@@ -152,12 +152,12 @@ run_model_flags = {
     'run_count_only_model': True,
 }
 if 'rmtpp_nll' in model_names:
-    run_model_flags['run_rmtpp_with_optimization_fixed_cnt_solver_with_nll'] = True
+    # run_model_flags['run_rmtpp_with_optimization_fixed_cnt_solver_with_nll'] = True
     run_model_flags['run_rmtpp_count_cont_rmtpp_with_nll'] = True
     run_model_flags['run_rmtpp_count_reinit_with_nll'] = True
     run_model_flags['run_rmtpp_for_count_with_nll'] = True
 if 'rmtpp_mse' in model_names:
-    run_model_flags['run_rmtpp_with_optimization_fixed_cnt_solver_with_mse'] = True
+    # run_model_flags['run_rmtpp_with_optimization_fixed_cnt_solver_with_mse'] = True
     run_model_flags['run_rmtpp_count_cont_rmtpp_with_mse'] = True
     run_model_flags['run_rmtpp_count_reinit_with_mse'] = True
     run_model_flags['run_rmtpp_for_count_with_mse'] = True
@@ -167,9 +167,11 @@ if 'rmtpp_mse_var' in model_names:
     run_model_flags['run_rmtpp_count_reinit_with_mse_var'] = True
     run_model_flags['run_rmtpp_for_count_with_mse_var'] = True
 if 'rmtpp_mse_comp' in model_names:
+    run_model_flags['run_rmtpp_with_joint_optimization_fixed_cnt_solver_mse_comp'] = True
     run_model_flags['run_rmtpp_with_optimization_fixed_cnt_solver_with_mse_comp'] = True
     run_model_flags['run_rmtpp_count_cont_rmtpp_with_mse_comp'] = True
 if 'rmtpp_nll_comp' in model_names:
+    run_model_flags['run_rmtpp_with_joint_optimization_fixed_cnt_solver_nll_comp'] = True
     run_model_flags['run_rmtpp_with_optimization_fixed_cnt_solver_with_nll_comp'] = True
     run_model_flags['run_rmtpp_count_cont_rmtpp_with_nll_comp'] = True
 if 'wgan' in model_names:
@@ -215,7 +217,7 @@ for dataset_name in dataset_names:
     if automate_bin_sz:
         args.current_dataset = dataset_name
         args.bin_size = utils.get_optimal_bin_size(dataset_name)
-        print('New bin size is', args.bin_size)
+        print('New bin size is', args.bin_size, 'sec')
     dataset = utils.get_processed_data(dataset_name, args)
 
     test_data_out_bin = dataset['test_data_out_bin']

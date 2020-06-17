@@ -86,7 +86,7 @@ def get_optimal_bin_size(dataset_name):
 	if dataset_name in ['911_ems']:
 		event_count=100
 	if dataset_name in ['911_traffic']:
-		event_count=200
+		event_count=100
 	if dataset_name in ['taxi']:
 		event_count=250
 
@@ -502,19 +502,19 @@ def get_processed_data(dataset_name, args):
 	gaps_comp = gaps_comp.astype(np.float32)
 
 	os.makedirs('data/plots', exist_ok=True)
-	plt.plot(range(len(data_bins[:100])), data_bins[:100])
+	plt.plot(range(len(data_bins[:500])), data_bins[:500])
 	plt.ylabel('bin_counts')
 	plt.xlabel(dataset_name+' Dataset')
 	plt.savefig('data/plots/bin_count_'+dataset_name+'.png')
 	plt.close()
 
-	plt.plot(range(len(gaps[:100])), gaps[:100])
+	plt.plot(range(len(gaps[:500])), gaps[:500])
 	plt.ylabel('gaps')
 	plt.xlabel(dataset_name+' Dataset')
 	plt.savefig('data/plots/gaps_'+dataset_name+'.png')
 	plt.close()
 
-	plt.plot(range(len(gaps_comp[:100])), gaps_comp[:100])
+	plt.plot(range(len(gaps_comp[:500])), gaps_comp[:500])
 	plt.ylabel('gaps_comp')
 	plt.xlabel(dataset_name+' Dataset')
 	plt.savefig('data/plots/gaps_comp_'+dataset_name+'.png')
