@@ -214,7 +214,7 @@ def run_rmtpp(args, model, optimizer, data, var_data, NLL_loss,
 	[train_dataset_gaps, dev_data_in_gaps, dev_data_in_feats,
 	 dev_data_out_gaps, train_norm_gaps] = data
 	[train_norm_a_gaps, train_norm_d_gaps] = train_norm_gaps
-	[var_dataset_gaps, train_end_hr_bins,
+	[var_dataset_gaps, train_end_hr_bins_relative,
 	 train_data_in_time_end_bin,
 	 train_gap_in_bin_norm_a, train_gap_in_bin_norm_d] = var_data
 	model_name = args.current_model
@@ -484,7 +484,8 @@ def run_hierarchical(args, data, test_data):
 	num_epochs = args.epochs * 100
 
 	train_data_in_bin, train_data_out_bin = data
-	test_data_in_bin, test_data_out_bin, test_mean_bin, test_std_bin = test_data
+	(test_data_in_bin, test_data_in_bin_feats, test_data_out_bin,
+	 test_mean_bin, test_std_bin) = test_data
 	batch_size = args.batch_size
 
 	model_name = args.current_model
@@ -524,8 +525,9 @@ def run_count_model(args, data, test_data):
 	distribution_name = 'Gaussian'
 	#distribution_name = 'var_model'
 
-	train_data_in_bin, train_data_out_bin = data
-	test_data_in_bin, test_data_out_bin, test_mean_bin, test_std_bin = test_data
+	train_data_in_bin, train_data_in_bin_feats, train_data_out_bin = data
+	(test_data_in_bin, test_data_in_bin_feats,
+	 test_data_out_bin, test_mean_bin, test_std_bin) = test_data
 
 	dataset_size = len(train_data_in_bin)
 	train_data_size = dataset_size - round(validation_split*dataset_size)
@@ -536,17 +538,23 @@ def run_count_model(args, data, test_data):
 	test_data_out_bin = test_data_out_bin.astype(np.float32)
 
 	dev_data_in_bin = train_data_in_bin[train_data_size:]
+	dev_data_in_bin_feats = train_data_in_bin_feats[train_data_size:]
 	dev_data_out_bin = train_data_out_bin[train_data_size:]
 	train_data_in_bin = train_data_in_bin[:train_data_size]
 	train_data_out_bin = train_data_out_bin[:train_data_size]
+	train_data_in_bin_feats = train_data_in_bin_feats[:train_data_size]
 
 	batch_size = args.batch_size
-	train_dataset = tf.data.Dataset.from_tensor_slices((train_data_in_bin,
-													train_data_out_bin)).batch(batch_size,
-													drop_remainder=True)
+	train_dataset = tf.data.Dataset.from_tensor_slices(
+		(
+			train_data_in_bin,
+			train_data_in_bin_feats,
+			train_data_out_bin
+		)
+	).batch(batch_size, drop_remainder=True)
 
 	model, optimizer = models.build_count_model(args, distribution_name)
-	model.summary()
+	#model.summary()
 
 	os.makedirs('saved_models/training_count_'+args.current_dataset+'/', exist_ok=True)
 	checkpoint_path = "saved_models/training_count_"+args.current_dataset+"/cp_"+args.current_dataset+".ckpt"
@@ -560,9 +568,10 @@ def run_count_model(args, data, test_data):
 		#print('Starting epoch', epoch)
 		step_train_loss = 0.0
 		step_cnt = 0
-		for sm_step, (bin_count_batch_in, bin_count_batch_out) in enumerate(train_dataset):
+		for sm_step, (bin_count_batch_in, bin_count_batch_in_feats,
+						bin_count_batch_out) in enumerate(train_dataset):
 			with tf.GradientTape() as tape:
-				bin_counts_pred, distribution_params = model(bin_count_batch_in)
+				bin_counts_pred, distribution_params = model(bin_count_batch_in, bin_count_batch_in_feats)
 
 				loss_fn = models.NegativeLogLikelihood_CountModel(distribution_params, distribution_name)
 				loss = loss_fn(bin_count_batch_out, bin_counts_pred)
@@ -576,7 +585,7 @@ def run_count_model(args, data, test_data):
 			step_cnt += 1
 		
 		# Dev calculations
-		dev_bin_count_pred, _ = model(dev_data_in_bin)		
+		dev_bin_count_pred, _ = model(dev_data_in_bin, dev_data_in_bin_feats)		
 		dev_gap_metric_mae(dev_bin_count_pred, dev_data_out_bin)
 		dev_gap_metric_mse(dev_bin_count_pred, dev_data_out_bin)
 		dev_gap_mae = dev_gap_metric_mae.result()
@@ -598,7 +607,7 @@ def run_count_model(args, data, test_data):
 
 		dev_mae_list.append(dev_gap_mae)
 		if epoch%10 == 0:
-			_, [_, test_distribution_stddev] = model(test_data_in_bin)
+			_, [_, test_distribution_stddev] = model(test_data_in_bin, test_data_in_bin_feats)
 			stddev_sample.append(test_distribution_stddev[0])
 
 	stddev_sample = np.array(stddev_sample)
@@ -621,7 +630,7 @@ def run_count_model(args, data, test_data):
 
 	print("Loading best model from epoch", best_dev_epoch)
 	model.load_weights(checkpoint_path)
-	dev_bin_count_pred, _ = model(dev_data_in_bin)		
+	dev_bin_count_pred, _ = model(dev_data_in_bin, dev_data_in_bin_feats)		
 	dev_gap_metric_mae(dev_bin_count_pred, dev_data_out_bin)
 	dev_gap_metric_mse(dev_bin_count_pred, dev_data_out_bin)
 	dev_gap_mae = dev_gap_metric_mae.result()
@@ -631,7 +640,7 @@ def run_count_model(args, data, test_data):
 	print('MAE and MSE of Dev data %s: %s' \
 		%(float(dev_gap_mae), float(dev_gap_mse)))
 
-	test_bin_count_pred_norm, test_distribution_params = model(test_data_in_bin)		
+	test_bin_count_pred_norm, test_distribution_params = model(test_data_in_bin, test_data_in_bin_feats)		
 	test_bin_count_pred = utils.denormalize_data(test_bin_count_pred_norm, test_mean_bin, test_std_bin)
 	test_distribution_params[1] = utils.denormalize_data_stddev(test_distribution_params[1], test_mean_bin, test_std_bin)
 	return model, {"count_preds": test_bin_count_pred.numpy(), "count_var": test_distribution_params[1]}
@@ -1166,7 +1175,7 @@ def run_rmtpp_count_reinit(args, models, data, test_data, rmtpp_type):
 	model_check = (model_cnt is not None) and (model_rmtpp is not None)
 	assert model_check, "run_rmtpp_count_reinit requires count and RMTPP model"
 
-	[test_data_in_bin, test_data_out_bin, test_end_hr_bins,
+	[test_data_in_bin, test_data_in_bin_feats, test_data_out_bin, test_end_hr_bins,
 	 test_data_in_time_end_bin, test_data_in_gaps_bin, test_data_in_feats_bin,
 	 test_mean_bin, test_std_bin,
 	 test_gap_in_bin_norm_a, test_gap_in_bin_norm_d] = test_data
@@ -1182,7 +1191,7 @@ def run_rmtpp_count_reinit(args, models, data, test_data, rmtpp_type):
 	test_data_input_gaps_bin = test_data_in_gaps_bin.astype(np.float32)
 	all_events_in_bin_pred = list()
 
-	test_predictions_norm_cnt = model_cnt(test_data_in_bin)
+	test_predictions_norm_cnt = model_cnt(test_data_in_bin, test_data_in_bin_feats)
 	if len(test_predictions_norm_cnt) == 2:
 		test_predictions_norm_cnt = test_predictions_norm_cnt[0]
 
@@ -1278,7 +1287,7 @@ def run_rmtpp_count_cont_rmtpp(args, models, data, test_data, rmtpp_type):
 	model_check = (model_cnt is not None) and (model_rmtpp is not None)
 	assert model_check, "run_rmtpp_count_cont_rmtpp requires count and RMTPP model"
 
-	[test_data_in_bin, test_data_out_bin, test_end_hr_bins,
+	[test_data_in_bin, test_data_in_bin_feats, test_data_out_bin, test_end_hr_bins,
 	 test_data_in_time_end_bin, test_data_in_gaps_bin, test_data_in_feats_bin,
 	 test_mean_bin, test_std_bin,
 	 test_gap_in_bin_norm_a, test_gap_in_bin_norm_d] = test_data
@@ -1294,7 +1303,7 @@ def run_rmtpp_count_cont_rmtpp(args, models, data, test_data, rmtpp_type):
 	test_data_input_gaps_bin = test_data_in_gaps_bin.astype(np.float32)
 	all_events_in_bin_pred = list()
 
-	test_predictions_norm_cnt = model_cnt(test_data_in_bin)
+	test_predictions_norm_cnt = model_cnt(test_data_in_bin, test_data_in_bin_feats)
 	if len(test_predictions_norm_cnt) == 2:
 		test_predictions_norm_cnt = test_predictions_norm_cnt[0]
 
@@ -1367,7 +1376,7 @@ def run_count_only_model(args, models, data, test_data):
 	model_check = (model_cnt is not None)
 	assert model_check, "run_count_only_model requires count model"
 
-	[test_data_in_bin, test_data_out_bin, test_end_hr_bins,
+	[test_data_in_bin, test_data_in_bin_feats, test_data_out_bin, test_end_hr_bins,
 	 test_data_in_time_end_bin, test_data_in_gaps_bin, test_data_in_feats_bin,
 	 test_mean_bin, test_std_bin,
 	 test_gap_in_bin_norm_a, test_gap_in_bin_norm_d] = test_data
@@ -1383,7 +1392,7 @@ def run_count_only_model(args, models, data, test_data):
 	test_data_input_gaps_bin = test_data_in_gaps_bin.astype(np.float32)
 	all_events_in_bin_pred = list()
 
-	test_predictions_norm_cnt = model_cnt(test_data_in_bin)
+	test_predictions_norm_cnt = model_cnt(test_data_in_bin, test_data_in_bin_feats)
 	if len(test_predictions_norm_cnt) == 2:
 		test_predictions_norm_cnt = test_predictions_norm_cnt[0]
 
@@ -1423,7 +1432,7 @@ def run_count_only_model(args, models, data, test_data):
 def run_hawkes_model(args, hawkes_timestamps_pred, data=None, test_data=None):
 
 	if data is None:
-		[test_data_in_bin, test_data_out_bin, test_end_hr_bins,
+		[test_data_in_bin, test_data_in_bin_feats, test_data_out_bin, test_end_hr_bins,
 		 test_data_in_time_end_bin, test_data_in_gaps_bin, test_data_in_feats_bin,
 		 test_mean_bin, test_std_bin,
 		 test_gap_in_bin_norm_a, test_gap_in_bin_norm_d] = test_data
@@ -1467,7 +1476,7 @@ def run_rmtpp_count_with_optimization(args, query_models, data, test_data):
 	model_check = (model_cnt is not None) and (model_rmtpp is not None)
 	assert model_check, "run_rmtpp_count_with_optimization requires count and RMTPP model"
 
-	[test_data_in_bin, test_data_out_bin, test_end_hr_bins,
+	[test_data_in_bin, test_data_in_bin_feats, test_data_out_bin, test_end_hr_bins,
 	 test_data_in_time_end_bin, test_data_in_gaps_bin, test_data_in_feats_bin,
 	 test_mean_bin, test_std_bin,
 	 test_gap_in_bin_norm_a, test_gap_in_bin_norm_d] = test_data
@@ -1483,7 +1492,7 @@ def run_rmtpp_count_with_optimization(args, query_models, data, test_data):
 	test_data_input_gaps_bin = test_data_in_gaps_bin.astype(np.float32)
 	all_events_in_bin_pred = list()
 
-	test_predictions_norm_cnt = model_cnt(test_data_in_bin)
+	test_predictions_norm_cnt = model_cnt(test_data_in_bin, test_data_in_bin_feats)
 	if len(test_predictions_norm_cnt) == 2:
 		model_cnt_distribution_params = test_predictions_norm_cnt[1]
 		test_predictions_norm_cnt = test_predictions_norm_cnt[0]
@@ -1799,7 +1808,7 @@ def run_rmtpp_count_with_optimization(args, query_models, data, test_data):
 # all counts
 def run_rmtpp_with_optimization_fixed_cnt(args, query_models, data, test_data):
 
-	[test_data_in_bin, test_data_out_bin, test_end_hr_bins,
+	[test_data_in_bin, test_data_in_bin_feats, test_data_out_bin, test_end_hr_bins,
 	 test_data_in_time_end_bin, test_data_in_gaps_bin, test_data_in_feats_bin,
 	 test_mean_bin, test_std_bin,
 	 test_gap_in_bin_norm_a, test_gap_in_bin_norm_d] = test_data
@@ -1966,7 +1975,7 @@ def run_rmtpp_with_optimization_fixed_cnt(args, query_models, data, test_data):
 	test_data_input_gaps_bin = test_data_in_gaps_bin.astype(np.float32)
 	all_events_in_bin_pred = list()
 
-	test_predictions_norm_cnt = model_cnt(test_data_in_bin)
+	test_predictions_norm_cnt = model_cnt(test_data_in_bin, test_data_in_bin_feats)
 	if len(test_predictions_norm_cnt) == 2:
 		model_cnt_distribution_params = test_predictions_norm_cnt[1]
 		test_predictions_norm_cnt = test_predictions_norm_cnt[0]
@@ -2126,7 +2135,7 @@ def run_rmtpp_with_optimization_fixed_cnt(args, query_models, data, test_data):
 # all counts
 def run_rmtpp_with_optimization_fixed_cnt_solver(args, query_models, data, test_data, test_data_out_gaps_bin, rmtpp_type='nll'):
 
-	[test_data_in_bin, test_data_out_bin, test_end_hr_bins,
+	[test_data_in_bin, test_data_in_bin_feats, test_data_out_bin, test_end_hr_bins,
 	 test_data_in_time_end_bin, test_data_in_gaps_bin, test_data_in_feats_bin,
 	 test_mean_bin, test_std_bin,
 	 test_gap_in_bin_norm_a, test_gap_in_bin_norm_d] = test_data
@@ -2267,7 +2276,7 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(args, query_models, data, test_
 	test_data_input_gaps_bin = test_data_in_gaps_bin.astype(np.float32)
 	all_events_in_bin_pred = list()
 
-	test_predictions_norm_cnt = model_cnt(test_data_in_bin)
+	test_predictions_norm_cnt = model_cnt(test_data_in_bin, test_data_in_bin_feats)
 	if len(test_predictions_norm_cnt) == 2:
 		model_cnt_distribution_params = test_predictions_norm_cnt[1]
 		# test_predictions_norm_cnt = test_predictions_norm_cnt[0]
@@ -2571,7 +2580,7 @@ def run_rmtpp_for_count(args, models, data, test_data, query_data=None, simul_en
 	model_check = (model_rmtpp is not None)
 	assert model_check, "run_rmtpp_for_count requires RMTPP model"
 
-	[test_data_in_bin, test_data_out_bin, test_end_hr_bins,
+	[test_data_in_bin, test_data_in_bin_feats, test_data_out_bin, test_end_hr_bins,
 	 test_data_in_time_end_bin, test_data_in_gaps_bin, test_data_in_feats_bin,
 	 test_mean_bin, test_std_bin,
 	 test_gap_in_bin_norm_a, test_gap_in_bin_norm_d] = test_data
@@ -2640,7 +2649,7 @@ def run_wgan_for_count(args, models, data, test_data, query_data=None, simul_end
 	model_check = (model_wgan is not None)
 	assert model_check, "run_rmtpp_count_cont_rmtpp requires WGAN model"
 
-	[test_data_in_bin, test_data_out_bin, test_end_hr_bins,
+	[test_data_in_bin, test_data_in_bin_feats, test_data_out_bin, test_end_hr_bins,
 	 test_data_in_time_end_bin, test_data_in_gaps_bin, test_data_in_feats_bin,
 	 test_mean_bin, test_std_bin,
 	 test_gap_in_bin_norm_a, test_gap_in_bin_norm_d] = test_data
@@ -2786,7 +2795,7 @@ def clean_dict_for_na_model(all_run_fun_pdf, run_model_flags):
 
 
 def compute_full_model_acc(args, test_data, all_bins_count_pred, all_times_bin_pred, test_out_times_in_bin, dataset_name, model_name=None):
-	[test_data_in_bin, test_data_out_bin, test_end_hr_bins,
+	[test_data_in_bin, test_data_in_bin_feats, test_data_out_bin, test_end_hr_bins,
 	 test_data_in_time_end_bin, test_data_in_gaps_bin, test_data_in_feats_bin,
 	 test_mean_bin, test_std_bin,
 	 test_gap_in_bin_norm_a, test_gap_in_bin_norm_d] = test_data
@@ -2926,7 +2935,7 @@ def compute_time_range_pdf(all_run_fun_pdf, model_data, query_data, dataset_name
 	[interval_range_count_less, interval_range_count_more, less_threshold,
 	more_threshold, interval_size, test_out_times_in_bin] = query_data
 
-	[test_data_in_bin, test_data_out_bin, test_end_hr_bins,
+	[test_data_in_bin, test_data_in_bin_feats, test_data_out_bin, test_end_hr_bins,
 	 test_data_in_time_end_bin, test_data_in_gaps_bin, test_data_in_feats_bin,
 	 test_mean_bin, test_std_bin,
 	 test_gap_in_bin_norm_a, test_gap_in_bin_norm_d] = test_data
@@ -3162,27 +3171,32 @@ def run_model(dataset_name, model_name, dataset, args, prev_models=None, run_mod
 
 	if model_name == 'hierarchical':
 		train_data_in_bin = dataset['train_data_in_bin']
+		train_data_in_bin_feats = dataset['train_data_in_bin_feats']
 		train_data_out_bin = dataset['train_data_out_bin']
 		test_data_in_bin = dataset['test_data_in_bin']
+		test_data_in_bin_feats = dataset['test_data_in_bin_feats']
 		test_data_out_bin = dataset['test_data_out_bin']
 		test_mean_bin = dataset['test_mean_bin']
 		test_std_bin = dataset['test_std_bin']
 
 		data = [train_data_in_bin, train_data_out_bin]
-		test_data = [test_data_in_bin, test_data_out_bin, test_mean_bin, test_std_bin]
+		test_data = [test_data_in_bin, test_data_in_bin_feats, test_data_out_bin, test_mean_bin, test_std_bin]
 		event_count_preds_cnt = run_hierarchical(args, data, test_data)
 		model, result = event_count_preds_cnt
 
 	if model_name == 'count_model':
 		train_data_in_bin = dataset['train_data_in_bin']
+		train_data_in_bin_feats = dataset['train_data_in_bin_feats']
 		train_data_out_bin = dataset['train_data_out_bin']
 		test_data_in_bin = dataset['test_data_in_bin']
+		test_data_in_bin_feats = dataset['test_data_in_bin_feats']
 		test_data_out_bin = dataset['test_data_out_bin']
 		test_mean_bin = dataset['test_mean_bin']
 		test_std_bin = dataset['test_std_bin']
 
-		data = [train_data_in_bin, train_data_out_bin]
-		test_data = [test_data_in_bin, test_data_out_bin, test_mean_bin, test_std_bin]
+		data = [train_data_in_bin, train_data_in_bin_feats, train_data_out_bin]
+		test_data = [test_data_in_bin, test_data_in_bin_feats,
+					 test_data_out_bin, test_mean_bin, test_std_bin]
 		event_count_preds_cnt = run_count_model(args, data, test_data)
 		model, result = event_count_preds_cnt
 
@@ -3233,19 +3247,19 @@ def run_model(dataset_name, model_name, dataset, args, prev_models=None, run_mod
 		)
 		train_data_in_time_end_bin = dataset['train_data_in_time_end_bin']
 		train_data_in_time_end_bin = train_data_in_time_end_bin.astype(np.float32)
-		train_end_hr_bins = dataset['train_end_hr_bins']
+		train_end_hr_bins_relative = dataset['train_end_hr_bins_relative']
 		var_dataset_gaps = tf.data.Dataset.from_tensor_slices(
 			(train_data_in_gaps_bin,
 			 train_data_out_gaps_bin,
 			 train_data_in_time_end_bin,
-			 train_end_hr_bins)
+			 train_end_hr_bins_relative)
 		).batch(
 			batch_size,
 			drop_remainder=True
 		)
 		train_gap_in_bin_norm_a = dataset['train_gap_in_bin_norm_a']
 		train_gap_in_bin_norm_d = dataset['train_gap_in_bin_norm_d']
-		var_data = [var_dataset_gaps, train_end_hr_bins,
+		var_data = [var_dataset_gaps, train_end_hr_bins_relative,
 					train_data_in_time_end_bin,
 					train_gap_in_bin_norm_a, train_gap_in_bin_norm_d]
 
@@ -3280,6 +3294,7 @@ def run_model(dataset_name, model_name, dataset, args, prev_models=None, run_mod
 		# answers to various queries
 		if model_name == 'rmtpp_count':
 			test_data_in_bin = dataset['test_data_in_bin']
+			test_data_in_bin_feats = dataset['test_data_in_bin_feats']
 			test_data_out_bin = dataset['test_data_out_bin']
 			test_mean_bin = dataset['test_mean_bin']
 			test_std_bin = dataset['test_std_bin']
@@ -3300,7 +3315,8 @@ def run_model(dataset_name, model_name, dataset, args, prev_models=None, run_mod
 			models = prev_models
 			test_data_in_bin = test_data_in_bin.astype(np.float32)
 			test_data_out_bin = test_data_out_bin.astype(np.float32)
-			test_data = [test_data_in_bin, test_data_out_bin, test_end_hr_bins,
+			test_data = [test_data_in_bin, test_data_in_bin_feats,
+						 test_data_out_bin, test_end_hr_bins,
 						 test_data_in_time_end_bin,
 						 test_data_in_gaps_bin, test_data_in_feats_bin,
 						 test_mean_bin, test_std_bin,

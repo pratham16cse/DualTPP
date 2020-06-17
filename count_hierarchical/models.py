@@ -248,7 +248,9 @@ class COUNT_MODEL(tf.keras.Model):
             self.var_dense1 = tf.keras.layers.Dense(hidden_layer_size, activation=tf.nn.relu, name="var_count_dense1")
             self.var_out_layer = tf.keras.layers.Dense(out_bin_sz, activation=tf.keras.activations.softplus, name="var_out_layer")
 
-    def call(self, inputs, debug=False):
+    def call(self, inputs, feats, debug=False):
+        inputs = tf.concat([inputs, feats], axis=-1)
+        inputs = tf.reshape(inputs, [inputs.shape[0], -1])
         hidden_state_1 = self.dense1(inputs)
         hidden_state_2 = self.dense2(hidden_state_1)
         output_state = self.out_layer(hidden_state_2)
@@ -313,7 +315,7 @@ def build_count_model(args, distribution_name):
     learning_rate = args.learning_rate
 
     model = COUNT_MODEL(hidden_layer_size, out_bin_sz, distribution_name)
-    model.build(input_shape=(batch_size, in_bin_sz))
+    #model.build(input_shape=(batch_size, in_bin_sz))
     optimizer = keras.optimizers.Adam(learning_rate)
     return model, optimizer
 
