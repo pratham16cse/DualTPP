@@ -90,12 +90,22 @@ parser.add_argument('--extra_var_model', action='store_true', default=False,
 # Flags for optimizer
 parser.add_argument('--opt_num_counts', type=int, default=5,
                     help='Number of counts to try before and after mean for optimizer')
+parser.add_argument('--no_rescale_rmtpp_params', action='store_true', default=False,
+                    help='Do not rescale RMTPP intensities for optimizer')
+parser.add_argument('--use_ratio_constraints', action='store_true', default=False,
+                    help='Maintain Ratios of adjacent RMTPP event predictions')
 
 # Parameters for extra_var_model
 parser.add_argument('--num_grps', type=int, default=10,
                     help='Number of groups in each bin in forecast horizon')
 parser.add_argument('--num_pos', type=int, default=40,
                     help='Number of positions in each group in forecast horizon')
+
+# Time-feature parameters
+parser.add_argument('--no_count_model_feats', action='store_true', default=False,
+                    help='Do not use time-features for count model')
+parser.add_argument('--no_rmtpp_model_feats', action='store_true', default=False,
+                    help='Do not use time-features for rmtpp model')
 
 args = parser.parse_args()
 
@@ -150,17 +160,17 @@ run_model_flags = {
 if 'rmtpp_nll' in model_names:
     run_model_flags['run_rmtpp_with_optimization_fixed_cnt_solver_with_nll'] = True
     run_model_flags['run_rmtpp_count_cont_rmtpp_with_nll'] = True
-    run_model_flags['run_rmtpp_count_reinit_with_nll'] = True
+    #run_model_flags['run_rmtpp_count_reinit_with_nll'] = True
     run_model_flags['run_rmtpp_for_count_with_nll'] = True
 if 'rmtpp_mse' in model_names:
     run_model_flags['run_rmtpp_with_optimization_fixed_cnt_solver_with_mse'] = True
     run_model_flags['run_rmtpp_count_cont_rmtpp_with_mse'] = True
-    run_model_flags['run_rmtpp_count_reinit_with_mse'] = True
+    #run_model_flags['run_rmtpp_count_reinit_with_mse'] = True
     run_model_flags['run_rmtpp_for_count_with_mse'] = True
 if 'rmtpp_mse_var' in model_names:
     run_model_flags['run_rmtpp_with_optimization_fixed_cnt_solver_with_mse_var'] = True
     run_model_flags['run_rmtpp_count_cont_rmtpp_with_mse_var'] = True
-    run_model_flags['run_rmtpp_count_reinit_with_mse_var'] = True
+    #run_model_flags['run_rmtpp_count_reinit_with_mse_var'] = True
     run_model_flags['run_rmtpp_for_count_with_mse_var'] = True
 if 'wgan' in model_names:
     run_model_flags['run_wgan_for_count'] = True

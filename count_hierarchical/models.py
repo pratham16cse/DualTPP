@@ -85,11 +85,13 @@ class RMTPP(tf.keras.Model):
                  use_intensity=True,
                  use_count_model=False,
                  use_var_model=False,
+                 use_time_feats=True,
                  **kwargs):
         super(RMTPP, self).__init__(name=name, **kwargs)
         self.use_intensity = use_intensity
         self.use_count_model = use_count_model
         self.use_var_model = use_var_model
+        self.use_time_feats = use_time_feats
         
         self.rnn_layer = layers.GRU(hidden_layer_size, return_sequences=True,
                                     return_state=True, stateful=False,
@@ -116,7 +118,10 @@ class RMTPP(tf.keras.Model):
         self.initial_state = initial_state
         
         # Gather input for the rnn
-        rnn_inputs = tf.concat([self.gaps, feats], axis=-1)
+        if self.use_time_feats:
+            rnn_inputs = tf.concat([self.gaps, feats], axis=-1)
+        else:
+            rnn_inputs = self.gaps
 
         self.hidden_states, self.final_state \
                 = self.rnn_layer(rnn_inputs,
@@ -157,7 +162,12 @@ def build_rmtpp_model(args, use_intensity, use_var_model=False):
     batch_size = args.batch_size
     enc_len = args.enc_len
     learning_rate = args.learning_rate
-    model = RMTPP(hidden_layer_size, use_intensity=use_intensity, use_var_model=use_var_model)
+    model = RMTPP(
+        hidden_layer_size,
+        use_intensity=use_intensity,
+        use_var_model=use_var_model,
+        use_time_feats=(not args.no_rmtpp_model_feats)
+    )
     #model.build(input_shape=(batch_size, enc_len, 1))
     optimizer = keras.optimizers.Adam(learning_rate)
     return model, optimizer
@@ -230,10 +240,12 @@ class COUNT_MODEL(tf.keras.Model):
                 hidden_layer_size,
                 out_bin_sz,
                 distribution_name,
+                use_time_feats=True,
                 name='count_model',
                 **kwargs):
         super(COUNT_MODEL, self).__init__(name=name, **kwargs)
         self.distribution_name = distribution_name
+        self.use_time_feats = use_time_feats
 
         self.dense1 = tf.keras.layers.Dense(hidden_layer_size, activation=tf.nn.relu, name="count_dense1")
         self.dense2 = tf.keras.layers.Dense(hidden_layer_size, activation=tf.nn.relu, name="count_dense2")
@@ -249,7 +261,10 @@ class COUNT_MODEL(tf.keras.Model):
             self.var_out_layer = tf.keras.layers.Dense(out_bin_sz, activation=tf.keras.activations.softplus, name="var_out_layer")
 
     def call(self, inputs, feats, debug=False):
-        inputs = tf.concat([inputs, feats], axis=-1)
+
+        if self.use_time_feats:
+            inputs = tf.concat([inputs, feats], axis=-1)
+
         inputs = tf.reshape(inputs, [inputs.shape[0], -1])
         hidden_state_1 = self.dense1(inputs)
         hidden_state_2 = self.dense2(hidden_state_1)
@@ -314,7 +329,12 @@ def build_count_model(args, distribution_name):
     out_bin_sz = args.out_bin_sz
     learning_rate = args.learning_rate
 
-    model = COUNT_MODEL(hidden_layer_size, out_bin_sz, distribution_name)
+    model = COUNT_MODEL(
+        hidden_layer_size,
+        out_bin_sz, 
+        distribution_name,
+        use_time_feats=(not args.no_count_model_feats),
+    )
     #model.build(input_shape=(batch_size, in_bin_sz))
     optimizer = keras.optimizers.Adam(learning_rate)
     return model, optimizer
