@@ -18,7 +18,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('dataset_name', type=str, help='dataset_name')
 parser.add_argument('model_name', type=str, help='model_name')
 
-parser.add_argument('--epochs', type=int, default=5,
+parser.add_argument('--epochs', type=int, default=0,
                     help='number of training epochs')
 parser.add_argument('--patience', type=int, default=2,
                     help='Number of epochs to wait for \
@@ -78,7 +78,7 @@ parser.add_argument('--batch_size', type=int, default=32,
                     help='Input batch size')
 parser.add_argument('--query', type=int, default=1,
                     help='Query number')
-parser.add_argument('--stride_len', type=int, default=10,
+parser.add_argument('--stride_len', type=int, default=1,
                     help='Stride len for RMTPP number')
 parser.add_argument('--normalization', type=str, default='average',
                     help='gap normalization method')
@@ -130,14 +130,16 @@ args.dataset_name = dataset_names
 model_names = list()
 if args.model_name == 'all':
     model_names.append('hawkes_model')
-    # model_names.append('wgan')
+    model_names.append('wgan')
     model_names.append('count_model')
-    # model_names.append('hierarchical')
+    model_names.append('hierarchical')
     model_names.append('rmtpp_nll')
     model_names.append('rmtpp_mse')
-    # model_names.append('rmtpp_mse_var')
+    model_names.append('rmtpp_mse_var')
     model_names.append('rmtpp_nll_comp')
     model_names.append('rmtpp_mse_comp')
+    model_names.append('pure_hierarchical_nll')
+    model_names.append('pure_hierarchical_mse')
     model_names.append('rmtpp_count')
 else:
     model_names.append(args.model_name)
@@ -174,6 +176,10 @@ if 'rmtpp_nll_comp' in model_names:
     run_model_flags['run_rmtpp_with_joint_optimization_fixed_cnt_solver_nll_comp'] = True
     run_model_flags['run_rmtpp_with_optimization_fixed_cnt_solver_with_nll_comp'] = True
     run_model_flags['run_rmtpp_count_cont_rmtpp_with_nll_comp'] = True
+if 'pure_hierarchical_nll' in model_names:
+    run_model_flags['run_pure_hierarchical_infer_nll'] = True
+if 'pure_hierarchical_mse' in model_names:
+    run_model_flags['run_pure_hierarchical_infer_mse'] = True
 if 'wgan' in model_names:
     run_model_flags['run_wgan_for_count'] = True
 if 'hawkes_model' in model_names:

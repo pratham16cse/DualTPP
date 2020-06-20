@@ -458,6 +458,139 @@ def run_rmtpp_init(args, data, test_data, NLL_loss=False, use_var_model=False):
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
+# Pure Hierarchical model
+def run_pure_hierarchical(args, model, optimizer, data, NLL_loss, rmtpp_epochs=10):
+	[train_dataset_gaps, dev_data_in_gaps, dev_data_out_gaps, train_norm_gaps] = data
+	[train_norm_a_gaps, train_norm_d_gaps] = train_norm_gaps
+	model_name = args.current_model
+
+	os.makedirs('saved_models/training_'+model_name+'_'+args.current_dataset+'/', exist_ok=True)
+	checkpoint_path = "saved_models/training_"+model_name+"_"+args.current_dataset+"/cp_"+args.current_dataset+".ckpt"
+	best_dev_gap_mse = np.inf
+	best_dev_epoch = 0
+	enc_len = args.enc_len
+	comp_enc_len = args.comp_enc_len
+	batch_size = args.batch_size
+	dataset_name = args.current_dataset
+
+	train_losses = list()
+	for epoch in range(args.epochs):
+		print('Starting epoch', epoch)
+		step_train_loss = 0.0
+		step_cnt = 0
+		next_initial_state = None
+		for sm_step, (gaps_batch_in, gaps_batch_out) in enumerate(train_dataset_gaps):
+			with tf.GradientTape() as tape:
+				# TODO: Make sure to pass correct next_stat
+				gaps_pred_l2, D_l2, WT_l2, gaps_pred, D_l1, WT_l1, next_initial_state, _ = model(gaps_batch_in, 
+						initial_state=None, 
+						next_state_sno=1)
+
+				print(gaps_pred[0,0,:5])
+				print(gaps_pred_l2[0,:5])
+
+				# Compute the loss for this minibatch.
+				if NLL_loss:
+					gap_loss_fn = NegativeLogLikelihood(D_l1, WT_l1)
+					gap_loss_fn_l2 = NegativeLogLikelihood(D_l2, WT_l2)
+				else:
+					gap_loss_fn = MeanSquareLoss()
+					gap_loss_fn_l2 = MeanSquareLoss()
+
+				gaps_batch_out = tf.cast(gaps_batch_out, tf.float32)
+				gaps_batch_out_l2 = tf.reduce_sum(gaps_batch_out, axis=2)
+				gap_loss = gap_loss_fn(gaps_batch_out, gaps_pred)
+				gap_loss_l2 = gap_loss_fn_l2(gaps_batch_out_l2, gaps_pred_l2)
+				loss = gap_loss + gap_loss_l2
+				step_train_loss+=loss.numpy()
+
+				#TODO: Pred for l2 is same as l1?
+
+
+			grads = tape.gradient(loss, model.trainable_weights)
+			optimizer.apply_gradients(zip(grads, model.trainable_weights))
+
+			train_gap_metric_mae(gaps_batch_out, gaps_pred)
+			train_gap_metric_mse(gaps_batch_out, gaps_pred)
+			train_gap_mae = train_gap_metric_mae.result()
+			train_gap_mse = train_gap_metric_mse.result()
+			train_gap_metric_mae.reset_states()
+			train_gap_metric_mse.reset_states()
+
+			# print(float(train_gap_mae), float(train_gap_mse))
+			print('Training loss (for one batch) at step %s: %s' %(sm_step, float(loss)))
+			step_cnt += 1
+		
+		# Dev calculations
+		dev_gaps_pred_l2, _,_, dev_gaps_pred, _,_,_,_ = model(dev_data_in_gaps)
+		dev_gaps_pred_unnorm = utils.denormalize_avg(dev_gaps_pred, 
+										train_norm_a_gaps, train_norm_d_gaps)
+		
+		dev_gap_metric_mae(dev_data_out_gaps, dev_gaps_pred_unnorm)
+		dev_gap_metric_mse(dev_data_out_gaps, dev_gaps_pred_unnorm)
+		dev_gap_mae = dev_gap_metric_mae.result()
+		dev_gap_mse = dev_gap_metric_mse.result()
+		dev_gap_metric_mae.reset_states()
+		dev_gap_metric_mse.reset_states()
+
+		if best_dev_gap_mse > dev_gap_mse:
+			best_dev_gap_mse = dev_gap_mse
+			best_dev_epoch = epoch
+			print('Saving model at epoch', epoch)
+			model.save_weights(checkpoint_path)
+
+		step_train_loss /= step_cnt
+		print('Training loss after epoch %s: %s' %(epoch, float(step_train_loss)))
+		print('MAE and MSE of Dev data %s: %s' \
+			%(float(dev_gap_mae), float(dev_gap_mse)))
+		train_losses.append(step_train_loss)
+
+	plt.plot(range(len(train_losses)), train_losses)
+	plt.savefig('Outputs/train_'+model_name+'_'+args.current_dataset+'_loss.png')
+	plt.close()
+
+	print("Loading best model from epoch", best_dev_epoch)
+	model.load_weights(checkpoint_path)
+	dev_gaps_pred_l2, _,_, dev_gaps_pred, _,_,_,_ = model(dev_data_in_gaps)
+	dev_gaps_pred_unnorm = utils.denormalize_avg(dev_gaps_pred, 
+									train_norm_a_gaps, train_norm_d_gaps)
+	
+	dev_gap_metric_mae(dev_data_out_gaps, dev_gaps_pred_unnorm)
+	dev_gap_metric_mse(dev_data_out_gaps, dev_gaps_pred_unnorm)
+	dev_gap_mae = dev_gap_metric_mae.result()
+	dev_gap_mse = dev_gap_metric_mse.result()
+	dev_gap_metric_mae.reset_states()
+	dev_gap_metric_mse.reset_states()
+	print('Best MAE and MSE of Dev data %s: %s' \
+		%(float(dev_gap_mae), float(dev_gap_mse)))
+
+	return train_losses
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
+
+
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
+# Pure RMTPP Hierarchical run initialize with loss function for run_rmtpp
+def run_pure_hierarchical_init(args, data, test_data, NLL_loss=False):
+
+	[test_data_in_gaps_bin, test_end_hr_bins, test_data_in_time_end_bin, 
+	test_gap_in_bin_norm_a, test_gap_in_bin_norm_d] =  test_data
+	rmtpp_epochs = args.epochs
+	
+	use_intensity = True
+	if not NLL_loss:
+		use_intensity = False
+	model, optimizer = models.build_pure_hierarchical_model(args, use_intensity)
+	# model.summary()
+	if NLL_loss:
+		print('\nTraining Model with NLL Loss')
+	else:
+		print('\nTraining Model with Mean Square Loss')
+	train_loss = run_pure_hierarchical(args, model, optimizer, data, NLL_loss=NLL_loss, 
+							rmtpp_epochs=rmtpp_epochs)
+	return model, None
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
+
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 # RMTPP Comp run initialize with loss function for run_rmtpp with compound layer
 def run_rmtpp_comp_init(args, data, test_data, NLL_loss=False, use_var_model=False):
 	[test_data_in_gaps_bin, test_end_hr_bins, test_data_in_time_end_bin, 
@@ -941,6 +1074,91 @@ def simulate(model, times_in, gaps_in, t_b_plus, normalizers, prev_hidden_state 
 	all_times_pred = times_pred
 
 	return all_gaps_pred, all_times_pred, prev_hidden_state
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
+
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
+# Simulate model until t_b_plus
+def simulate_hierarchical(model, times_in, gaps_in, t_b_plus, normalizers, prev_hidden_state = None):
+	#TODO: Check for this modification in functions which calls this def
+	gaps_pred_l1_lst = list()
+	gaps_pred_l2_lst = list()
+	times_pred_l1_lst = list()
+	times_pred_l2_lst = list()
+	data_norm_a, data_norm_d = normalizers
+
+	# step_gaps_pred = gaps_in[:, -1]
+	gaps_pred_l2, _, _, gaps_pred_l1, _, _, prev_hidden_state, _ \
+			= model(gaps_in, initial_state=prev_hidden_state)
+
+	step_gaps_pred_l2 = gaps_pred_l2[:,-1:]
+	step_gaps_pred_l2 = tf.squeeze(step_gaps_pred_l2, axis=-1)
+	last_gaps_pred_unnorm = utils.denormalize_avg(step_gaps_pred_l2, data_norm_a, data_norm_d)
+
+	last_times_pred = times_in + last_gaps_pred_unnorm
+	gaps_pred_l2_lst.append(last_gaps_pred_unnorm)
+	times_pred_l2_lst.append(last_times_pred)
+
+	actual_bin_start = times_in
+	actual_bin_end = last_times_pred
+
+	gaps_in = tf.concat([gaps_in[:,1:], gaps_pred_l1[:,-1:]], axis=1)
+
+	step_gaps_pred_l1 = gaps_pred_l1[:,-1]
+	last_gaps_pred_unnorm = utils.denormalize_avg(step_gaps_pred_l1, data_norm_a, data_norm_d)
+	last_times_pred = tf.expand_dims(times_in, axis=-1) + tf.cumsum(last_gaps_pred_unnorm, axis=1)
+
+	bin_start = times_in
+	bin_end = last_times_pred[:,-1]
+
+	last_times_pred_scaled = (((actual_bin_end - actual_bin_start)/(bin_end - bin_start)) * \
+					 (tf.squeeze(last_times_pred, axis=-1) - bin_start)) + actual_bin_start
+	
+	last_gaps_pred_unnorm = last_times_pred_scaled - tf.concat([times_in, last_times_pred_scaled[:,:-1]], axis=1)
+
+	gaps_pred_l1_lst.append(last_gaps_pred_unnorm)
+	times_pred_l1_lst.append(last_times_pred_scaled)
+
+	simul_step = 0
+
+	while any(times_pred_l2_lst[-1]<t_b_plus):
+		gaps_pred_l2, _, _, gaps_pred_l1, _, _, prev_hidden_state, _ \
+				= model(gaps_in, initial_state=prev_hidden_state)
+
+		step_gaps_pred_l2 = gaps_pred_l2[:,-1:]
+		step_gaps_pred_l2 = tf.squeeze(step_gaps_pred_l2, axis=-1)
+		last_gaps_pred_unnorm = utils.denormalize_avg(step_gaps_pred_l2, data_norm_a, data_norm_d)
+		times_in_tmp = times_pred_l2_lst[-1]
+
+		last_times_pred = times_in_tmp + last_gaps_pred_unnorm
+		gaps_pred_l2_lst.append(last_gaps_pred_unnorm)
+		times_pred_l2_lst.append(last_times_pred)
+
+		actual_bin_start = times_in_tmp
+		actual_bin_end = last_times_pred
+
+		gaps_in = tf.concat([gaps_in[:,1:], gaps_pred_l1[:,-1:]], axis=1)
+
+		step_gaps_pred_l1 = gaps_pred_l1[:,-1]
+		last_gaps_pred_unnorm = utils.denormalize_avg(step_gaps_pred_l1, data_norm_a, data_norm_d)
+		last_times_pred = tf.expand_dims(times_in_tmp, axis=-1) + tf.cumsum(last_gaps_pred_unnorm, axis=1)
+
+		bin_start = times_in_tmp
+		bin_end = last_times_pred[:,-1]
+
+		last_times_pred_scaled = (((actual_bin_end - actual_bin_start)/(bin_end - bin_start)) * \
+						 (tf.squeeze(last_times_pred, axis=-1) - bin_start)) + actual_bin_start
+		
+		last_gaps_pred_unnorm = last_times_pred_scaled - tf.concat([times_in_tmp, last_times_pred_scaled[:,:-1]], axis=1)
+
+		gaps_pred_l1_lst.append(last_gaps_pred_unnorm)
+		times_pred_l1_lst.append(last_times_pred_scaled)
+		
+		simul_step += 1
+
+	all_gaps_pred = tf.concat(gaps_pred_l1_lst, axis=1)
+	all_times_pred = tf.concat(times_pred_l1_lst, axis=1)
+
+	return all_gaps_pred, all_times_pred, None
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
@@ -1481,6 +1699,57 @@ def run_rmtpp_count_cont_rmtpp_comp(args, models, data, test_data, test_data_com
 		
 		all_times_pred_lst.append(np.array([times_pred_all_bin_lst]))
 	all_times_pred = np.array(all_times_pred_lst)
+	return None, all_times_pred
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
+
+
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
+# Run rmtpp_count model with one rmtpp simulation untill 
+# all events of bins generated then scale , each bin has events
+# whose count generated by rmtpp_comp model
+def run_pure_hierarchical_infer(args, models, data, test_data, test_data_comp, rmtpp_type='nll'):
+	if rmtpp_type=='nll':
+		model_rmtpp = models['pure_hierarchical_nll']
+	elif rmtpp_type=='mse':
+		model_rmtpp = models['pure_hierarchical_mse']
+	else:
+		assert False, "rmtpp_type must be nll or mse"
+
+	model_check = (model_rmtpp is not None)
+	assert model_check, "run_pure_hierarchical_infer requires pure_hierarchical model"
+
+	[test_data_in_bin, test_data_out_bin, test_end_hr_bins,
+	test_data_in_time_end_bin, test_data_in_gaps_bin, test_mean_bin, test_std_bin,
+	test_gap_in_bin_norm_a, test_gap_in_bin_norm_d] = test_data
+
+	[test_data_in_gaps_bin_comp, _, _, test_gap_in_bin_norm_a_comp, test_gap_in_bin_norm_d_comp] =  test_data_comp
+	
+	enc_len = args.enc_len
+	comp_enc_len = args.comp_enc_len
+	dec_len = args.out_bin_sz
+	bin_size = args.bin_size
+	comp_bin_sz = args.comp_bin_sz
+	
+	next_hidden_state = None
+	scaled_rnn_hidden_state = None
+
+
+	test_data_init_time = test_data_in_time_end_bin.astype(np.float32)
+	test_data_input_gaps_bin = test_data_in_gaps_bin.astype(np.float32)
+	test_data_input_gaps_bin_comp = test_data_in_gaps_bin_comp.astype(np.float32)
+	all_events_in_bin_pred = list()
+
+
+	t_e_plus = test_end_hr_bins[:,-1]
+	all_gaps_pred, all_times_pred, _ = simulate_hierarchical(model_rmtpp,
+												test_data_init_time,
+												test_data_input_gaps_bin_comp,
+												t_e_plus,
+												(test_gap_in_bin_norm_a_comp,
+												test_gap_in_bin_norm_d_comp),
+												prev_hidden_state=next_hidden_state)
+
+	all_times_pred = tf.expand_dims(all_times_pred, axis=-1).numpy()
 	return None, all_times_pred
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 
@@ -4044,7 +4313,11 @@ def run_model(dataset_name, model_name, dataset, args, prev_models=None, run_mod
 		event_count_preds_cnt = run_count_model(args, data, test_data)
 		model, result = event_count_preds_cnt
 
-	if model_name in ['rmtpp_mse', 'rmtpp_nll', 'rmtpp_mse_var', 'rmtpp_mse_comp', 'rmtpp_nll_comp', 'wgan', 'rmtpp_count', 'hawkes_model']:
+	if model_name in ['rmtpp_mse', 'rmtpp_nll', 'rmtpp_mse_var', 
+					  'pure_hierarchical_nll', 'pure_hierarchical_mse', 
+					  'rmtpp_mse_comp', 'rmtpp_nll_comp', 'wgan', 
+					  'rmtpp_count', 'hawkes_model']:
+					  
 		train_data_in_gaps = dataset['train_data_in_gaps']
 		train_data_out_gaps = dataset['train_data_out_gaps']
 		train_data_in_gaps_comp = dataset['train_data_in_gaps_comp']
@@ -4084,6 +4357,24 @@ def run_model(dataset_name, model_name, dataset, args, prev_models=None, run_mod
 		train_norm_gaps_comp = [train_norm_a_gaps_comp ,train_norm_d_gaps_comp]
 		data_comp = [train_dataset_gaps_comp, dev_data_in_gaps_comp, dev_data_out_gaps_comp, train_norm_gaps_comp]
 
+		train_data_in_gaps_comp_full = dataset['train_data_in_gaps_comp_full']
+		train_data_out_gaps_comp_full = dataset['train_data_out_gaps_comp_full']
+		dev_data_in_gaps_comp_full = dataset['dev_data_in_gaps_comp_full']
+		dev_data_out_gaps_comp_full = dataset['dev_data_out_gaps_comp_full']
+		test_data_in_gaps_bin_comp_full = dataset['test_data_in_gaps_bin_comp_full']
+		test_gap_in_bin_norm_a_comp_full = dataset['test_gap_in_bin_norm_a_comp_full']
+		test_gap_in_bin_norm_d_comp_full = dataset['test_gap_in_bin_norm_d_comp_full']
+		train_norm_a_gaps_comp_full = dataset['train_norm_a_gaps_comp_full']
+		train_norm_d_gaps_comp_full = dataset['train_norm_d_gaps_comp_full']
+
+		train_dataset_gaps_comp_full = tf.data.Dataset.from_tensor_slices((train_data_in_gaps_comp_full,
+														train_data_out_gaps_comp_full)).batch(batch_size,
+														drop_remainder=True)
+		test_data_comp_full = [test_data_in_gaps_bin_comp_full, test_end_hr_bins, test_data_in_time_end_bin, 
+					test_gap_in_bin_norm_a_comp_full, test_gap_in_bin_norm_d_comp_full]
+		train_norm_gaps_comp_full = [train_norm_a_gaps_comp_full ,train_norm_d_gaps_comp_full]
+		data_comp_full = [train_dataset_gaps_comp_full, dev_data_in_gaps_comp_full, dev_data_out_gaps_comp_full, train_norm_gaps_comp_full]
+
 		if model_name == 'wgan':
 			model, result = run_wgan(args, data, test_data)
 
@@ -4104,6 +4395,12 @@ def run_model(dataset_name, model_name, dataset, args, prev_models=None, run_mod
 
 		if model_name == 'rmtpp_nll_comp':
 			model, _, rmtpp_var_model = run_rmtpp_comp_init(args, data_comp, test_data_comp, NLL_loss=True)
+
+		if model_name == 'pure_hierarchical_mse':
+			model, _ = run_pure_hierarchical_init(args, data_comp_full, test_data_comp_full, NLL_loss=False)
+
+		if model_name == 'pure_hierarchical_nll':
+			model, _ = run_pure_hierarchical_init(args, data_comp_full, test_data_comp_full, NLL_loss=True)
 
 		if model_name == 'hawkes_model':
 			hawkes_timestamps_pred = dataset['hawkes_timestamps_pred']
@@ -4152,6 +4449,28 @@ def run_model(dataset_name, model_name, dataset, args, prev_models=None, run_mod
 			print(test_out_event_count_true)
 			print("____________________________________________________________________")
 			print("")
+
+			if 'run_pure_hierarchical_infer_nll' in run_model_flags and run_model_flags['run_pure_hierarchical_infer_nll']:
+				print("Prediction for run_pure_hierarchical_infer_nll model")
+				_, all_times_bin_pred = run_pure_hierarchical_infer(args, prev_models, data, test_data, test_data_comp_full, rmtpp_type='nll')
+
+				deep_mae = compute_hierarchical_mae(all_times_bin_pred, query_1_data, test_out_all_event_true, compute_depth)
+				threshold_mae = compute_threshold_loss(all_times_bin_pred, query_2_data)
+				print("deep_mae", deep_mae)
+				compute_full_model_acc(args, test_data, None, all_times_bin_pred, test_out_times_in_bin, dataset_name, 'run_pure_hierarchical_infer_nll')
+				print("____________________________________________________________________")
+				print("")
+
+			if 'run_pure_hierarchical_infer_mse' in run_model_flags and run_model_flags['run_pure_hierarchical_infer_mse']:
+				print("Prediction for run_pure_hierarchical_infer_mse model")
+				_, all_times_bin_pred = run_pure_hierarchical_infer(args, prev_models, data, test_data, test_data_comp_full, rmtpp_type='mse')
+
+				deep_mae = compute_hierarchical_mae(all_times_bin_pred, query_1_data, test_out_all_event_true, compute_depth)
+				threshold_mae = compute_threshold_loss(all_times_bin_pred, query_2_data)
+				print("deep_mae", deep_mae)
+				compute_full_model_acc(args, test_data, None, all_times_bin_pred, test_out_times_in_bin, dataset_name, 'run_pure_hierarchical_infer_mse')
+				print("____________________________________________________________________")
+				print("")
 
 			if 'run_rmtpp_with_joint_optimization_fixed_cnt_solver_mse_comp' in run_model_flags and run_model_flags['run_rmtpp_with_joint_optimization_fixed_cnt_solver_mse_comp']:
 				print("Prediction for run_rmtpp_with_joint_optimization_fixed_cnt_solver_mse_comp model")

@@ -338,6 +338,29 @@ def get_end_time_from_bins_comp(test_inp_times_in_bin, test_end_hr_bins, enc_len
 	return [test_data_in_gaps_bin,
 			test_gap_in_bin_norm_a, test_gap_in_bin_norm_d]
 
+def get_end_time_from_bins_comp_full(test_inp_times_in_bin, test_end_hr_bins, enc_len=20, comp_bin_sz=10):
+	test_data_in_gaps_bin_full_lst = list()
+	for idx in range(len(test_end_hr_bins)):
+		cur_test_inp_times_in_bin = test_inp_times_in_bin[idx]
+		init_pad = (len(cur_test_inp_times_in_bin))%comp_bin_sz
+		if init_pad == 0:
+			init_pad+=comp_bin_sz
+
+		cur_test_inp_times_in_bin_simp = cur_test_inp_times_in_bin[init_pad-1:]
+
+		lst = list()
+		for seq_idx in range((len(cur_test_inp_times_in_bin_simp)-1)//comp_bin_sz):
+			A1 = np.array(cur_test_inp_times_in_bin_simp[(seq_idx*comp_bin_sz)+1:((seq_idx+1)*comp_bin_sz)+1])
+			A2 = np.array(cur_test_inp_times_in_bin_simp[(seq_idx*comp_bin_sz):((seq_idx+1)*comp_bin_sz)])
+			lst.append(A1-A2)
+		test_data_in_gaps_bin_full_lst.append(lst[-enc_len:])
+
+	test_data_in_gaps_bin_full = np.array(test_data_in_gaps_bin_full_lst)
+
+	test_data_in_gaps_bin_full, test_gap_in_bin_norm_a_comp_full, test_gap_in_bin_norm_d_comp_full = normalize_avg(test_data_in_gaps_bin_full)
+	return [test_data_in_gaps_bin_full,
+			test_gap_in_bin_norm_a_comp_full, test_gap_in_bin_norm_d_comp_full]
+
 def get_rand_interval_count(test_out_times_in_bin):
 	test_time_out_interval = [np.random.uniform(low=item[0], high=item[-1], size=2) for item in test_out_times_in_bin]
 	test_time_out_tb_plus = [min(item) for item in test_time_out_interval]
@@ -473,10 +496,6 @@ def get_interval_count_with_threshold(test_out_times_in_bin, interval_size, data
 	print('interval_range_count_more', interval_range_count_more - begin)
 	print('interval_range_count_less', interval_range_count_less - begin)
 	# print('more', sum((interval_range_count_more - begin)==0.0))
-	# print('less', sum((interval_range_count_less - begin)==0.0))
-	# print('all', sum((interval_range_count_less - begin)>=0.0))
-	# assert np.all(interval_range_count_more>=0.0), 'No range found in t_b range'
-	# assert np.all(interval_range_count_less>=0.0), 'No range found in t_b range'
 	return interval_range_count_less, interval_range_count_more, threshold_less, threshold_more
 
 def get_processed_data(dataset_name, args):
@@ -496,6 +515,14 @@ def get_processed_data(dataset_name, args):
 	gaps = timestamps[1:] - timestamps[:-1]
 	gaps = gaps.astype(np.float32)
 	data_bins, end_hr_bins, times_in_bin = create_bin(timestamps, bin_size)
+
+	timestamps_comp_full = list()
+	gaps_comp_full = list()
+	for idx in range(0,(len(timestamps)-comp_bin_sz-1),comp_bin_sz):
+		timestamps_comp_full.append(timestamps[idx+1:idx+comp_bin_sz+1])
+		gaps_comp_full.append(timestamps[idx+1:idx+comp_bin_sz+1] - timestamps[idx:idx+comp_bin_sz])
+	timestamps_comp_full = np.array(timestamps_comp_full)
+	gaps_comp_full = np.array(gaps_comp_full)
 
 	timestamps_comp = timestamps[::comp_bin_sz]
 	gaps_comp = timestamps_comp[1:] - timestamps_comp[:-1]
@@ -531,6 +558,10 @@ def get_processed_data(dataset_name, args):
 	[_, _, _, _, train_times_gaps_comp ,test_times_gaps_comp ,
 	train_times_timestamps_comp ,test_times_timestamps_comp] = \
 	generate_train_test_data(timestamps_comp, gaps_comp, data_bins, end_hr_bins, times_in_bin)
+
+	[_, _, _, _, train_times_gaps_comp_full ,test_times_gaps_comp_full ,
+	train_times_timestamps_comp_full ,test_times_timestamps_comp_full] = \
+	generate_train_test_data(timestamps_comp_full, gaps_comp_full, data_bins, end_hr_bins, times_in_bin)
 
 	hawkes_timestamps_pred = test_times_timestamps
 	train_times_gaps_norm, gaps_norm_a, gaps_norm_d = normalize_avg(train_times_gaps)
@@ -588,6 +619,11 @@ def get_processed_data(dataset_name, args):
 	train_data_in_timestamps_comp, train_data_out_timestamps_comp, _, _, _ = \
 	make_seq_from_data(train_times_timestamps_comp, comp_enc_len, in_bin_sz, out_bin_sz, batch_size, False, dataset_name=dataset_name)
 
+	train_data_in_gaps_comp_full, train_data_out_gaps_comp_full, _, _, _ = \
+	make_seq_from_data(train_times_gaps_comp_full, comp_enc_len, in_bin_sz, out_bin_sz, batch_size, False, dataset_name=dataset_name)
+	train_data_in_timestamps_comp_full, train_data_out_timestamps_comp_full, _, _, _ = \
+	make_seq_from_data(train_times_timestamps_comp_full, comp_enc_len, in_bin_sz, out_bin_sz, batch_size, False, dataset_name=dataset_name)
+
 	train_data_in_gaps, train_norm_a_gaps, train_norm_d_gaps = normalize_avg(train_data_in_gaps)
 	train_data_out_gaps = normalize_avg_given_param(train_data_out_gaps, train_norm_a_gaps, train_norm_d_gaps)
 	test_data_in_gaps, test_norm_a_gaps, test_norm_d_gaps = normalize_avg(test_data_in_gaps)
@@ -604,6 +640,14 @@ def get_processed_data(dataset_name, args):
 	train_data_in_timestamps_comp, train_data_out_timestamps_comp, dev_data_in_timestamps_comp,
 	dev_data_out_timestamps_comp] = generate_dev_data([train_data_in_gaps_comp, train_data_out_gaps_comp, \
 	train_data_in_timestamps_comp, train_data_out_timestamps_comp, train_norm_a_gaps_comp, train_norm_d_gaps_comp])
+
+	train_data_in_gaps_comp_full, train_norm_a_gaps_comp_full, train_norm_d_gaps_comp_full = normalize_avg(train_data_in_gaps_comp_full)
+	train_data_out_gaps_comp_full = normalize_avg_given_param(train_data_out_gaps_comp_full, train_norm_a_gaps_comp_full, train_norm_d_gaps_comp_full)
+
+	[train_data_in_gaps_comp_full, train_data_out_gaps_comp_full, dev_data_in_gaps_comp_full, dev_data_out_gaps_comp_full,
+	train_data_in_timestamps_comp_full, train_data_out_timestamps_comp_full, dev_data_in_timestamps_comp_full,
+	dev_data_out_timestamps_comp_full] = generate_dev_data([train_data_in_gaps_comp_full, train_data_out_gaps_comp_full, \
+	train_data_in_timestamps_comp_full, train_data_out_timestamps_comp_full, train_norm_a_gaps_comp_full, train_norm_d_gaps_comp_full])
 
 	[train_data_in_gaps, train_data_out_gaps, train_data_in_timestamps, train_data_out_timestamps] = \
 	stabalize_data( train_data_in_gaps, train_data_out_gaps, train_data_in_timestamps, 
@@ -624,6 +668,15 @@ def get_processed_data(dataset_name, args):
 	[dev_data_in_gaps_comp, dev_data_out_gaps_comp, dev_data_in_timestamps_comp, dev_data_out_timestamps_comp] = \
 	stabalize_data( dev_data_in_gaps_comp, dev_data_out_gaps_comp, 
 					dev_data_in_timestamps_comp, dev_data_out_timestamps_comp, batch_size)
+
+	[train_data_in_gaps_comp_full, train_data_out_gaps_comp_full, train_data_in_timestamps_comp_full, train_data_out_timestamps_comp_full] = \
+	stabalize_data( train_data_in_gaps_comp_full, train_data_out_gaps_comp_full, train_data_in_timestamps_comp_full, 
+					train_data_out_timestamps_comp_full, batch_size)
+
+	[dev_data_in_gaps_comp_full, dev_data_out_gaps_comp_full, dev_data_in_timestamps_comp_full, dev_data_out_timestamps_comp_full] = \
+	stabalize_data( dev_data_in_gaps_comp_full, dev_data_out_gaps_comp_full, 
+					dev_data_in_timestamps_comp_full, dev_data_out_timestamps_comp_full, batch_size)
+
 
 
 	print('')
@@ -654,6 +707,9 @@ def get_processed_data(dataset_name, args):
 	[test_data_in_gaps_bin_comp, test_gap_in_bin_norm_a_comp, test_gap_in_bin_norm_d_comp] = \
 	get_end_time_from_bins_comp(test_inp_times_in_bin, test_end_hr_bins, mx_enc_len, comp_bin_sz)
 
+	[test_data_in_gaps_bin_comp_full, test_gap_in_bin_norm_a_comp_full, test_gap_in_bin_norm_d_comp_full] = \
+	get_end_time_from_bins_comp_full(test_inp_times_in_bin, test_end_hr_bins, mx_enc_len, comp_bin_sz)
+
 	print('Test in', test_data_in_gaps_bin.shape)
 	print('')
 	print('(Compound gaps wise)')
@@ -662,6 +718,14 @@ def get_processed_data(dataset_name, args):
 	print('Comp Dev in', dev_data_in_gaps_comp.shape)
 	print('Comp Dev out', dev_data_out_gaps_comp.shape)
 	print('Comp Test in', test_data_in_gaps_bin_comp.shape)
+	print('')
+	print('')
+	print('(Full Compound gaps wise)')
+	print('Full comp Train in', train_data_in_gaps_comp_full.shape)
+	print('Full comp Train out', train_data_out_gaps_comp_full.shape)
+	print('Full comp Dev in', dev_data_in_gaps_comp_full.shape)
+	print('Full comp Dev out', dev_data_out_gaps_comp_full.shape)
+	print('Full comp Test in', test_data_in_gaps_bin_comp_full.shape)
 	print('')
 
 	[test_time_out_tb_plus, test_time_out_te_plus, 
@@ -678,6 +742,7 @@ def get_processed_data(dataset_name, args):
 	test_data_in_time_end_bin = np.expand_dims(test_data_in_time_end_bin, axis=-1)
 	test_data_in_gaps_bin = np.expand_dims(test_data_in_gaps_bin, axis=-1)
 	test_data_in_gaps_bin_comp = np.expand_dims(test_data_in_gaps_bin_comp, axis=-1)
+	test_data_in_gaps_bin_comp_full = np.expand_dims(test_data_in_gaps_bin_comp_full, axis=-1)
 
 	dataset = {
 		'train_data_in_gaps': train_data_in_gaps,
@@ -720,6 +785,16 @@ def get_processed_data(dataset_name, args):
 		'test_data_in_gaps_bin_comp': test_data_in_gaps_bin_comp,
 		'test_gap_in_bin_norm_a_comp': test_gap_in_bin_norm_a_comp,
 		'test_gap_in_bin_norm_d_comp': test_gap_in_bin_norm_d_comp,
+
+		'train_data_in_gaps_comp_full': train_data_in_gaps_comp_full,
+		'train_data_out_gaps_comp_full': train_data_out_gaps_comp_full,
+		'dev_data_in_gaps_comp_full': dev_data_in_gaps_comp_full,
+		'dev_data_out_gaps_comp_full': dev_data_out_gaps_comp_full,
+		'test_data_in_gaps_bin_comp_full': test_data_in_gaps_bin_comp_full,
+		'test_gap_in_bin_norm_a_comp_full': test_gap_in_bin_norm_a_comp_full,
+		'test_gap_in_bin_norm_d_comp_full': test_gap_in_bin_norm_d_comp_full,
+		'train_norm_a_gaps_comp_full': train_norm_a_gaps_comp_full,
+		'train_norm_d_gaps_comp_full': train_norm_d_gaps_comp_full,
 
 		'hawkes_timestamps_pred': hawkes_timestamps_pred,
 	}
