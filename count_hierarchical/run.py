@@ -2610,39 +2610,71 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(args, query_models, data, test_
 				gaps_uc = None
 
 			nc_range = np.arange(min_cnt, max_cnt)
-			for curr_cnt in nc_range:
+			def binary_search(counts_range, low, high):
+				print('low=', low, 'high=', high)
 
+				mid_1 = (low + high) // 2
+				mid_2 = mid_1 + 1
 				(
-					batch_bin_curr_cnt_opt_times_pred,
-					batch_bin_curr_cnt_opt_gaps_pred,
-					nc_loss
-				) \
-				= get_optimized_gaps(
+					batch_bin_curr_cnt_opt_times_pred_mid_1,
+					batch_bin_curr_cnt_opt_gaps_pred_mid_1,
+					nc_loss_mid_1
+				) = get_optimized_gaps(
 					batch_idx,
 					dec_idx,
-					curr_cnt,
+					counts_range[mid_1],
 					max_cnt,
 					best_past_cnt,
 					bin_start,
 					batch_times_pred,
 					gaps_uc=gaps_uc,
-				)		
-				#print('Example:', batch_idx, 'dec_idx:', dec_idx, 'curr_cnt:', curr_cnt, \
-				#	  'loss:', nc_loss, 'Mean:', event_count_preds_cnt[batch_idx, dec_idx])
+				)
 
-				#import ipdb
-				#ipdb.set_trace()
-		
-				batch_bin_cnt_times_pred.append(batch_bin_curr_cnt_opt_times_pred)
-				nc_loss_lst.append(nc_loss)
-				nc_lst.append(curr_cnt)
-	
-			best_nc_idx, best_nc_loss = min(enumerate(nc_loss_lst), key=itemgetter(1))
-			batch_bin_times_pred = batch_bin_cnt_times_pred[best_nc_idx]
+				if high > low:
+					(
+						batch_bin_curr_cnt_opt_times_pred_mid_2,
+						batch_bin_curr_cnt_opt_gaps_pred_mid_2,
+						nc_loss_mid_2
+					) = get_optimized_gaps(
+						batch_idx,
+						dec_idx,
+						counts_range[mid_2],
+						max_cnt,
+						best_past_cnt,
+						bin_start,
+						batch_times_pred,
+						gaps_uc=gaps_uc,
+					)
+
+					if nc_loss_mid_1 < nc_loss_mid_2:
+						high = mid_1
+					elif nc_loss_mid_1 > nc_loss_mid_2:
+						low = mid_2
+
+					return binary_search(counts_range, low, high)
+
+				elif high == low:
+					return (
+						mid_1,
+						nc_loss_mid_1,
+						batch_bin_curr_cnt_opt_times_pred_mid_1,
+						batch_bin_curr_cnt_opt_gaps_pred_mid_1,
+						counts_range[mid_1],
+					)
+
+			(
+				best_nc_idx,
+				best_nc_loss,
+				batch_bin_times_pred,
+				batch_bin_gaps_pred,
+				best_count,
+			) = binary_search(nc_range, 0, len(nc_range)-1)
+
 			batch_times_pred.append(batch_bin_times_pred)
-			best_past_cnt += int(nc_lst[best_nc_idx])
+			best_past_cnt += best_count
 
-			#print('Example:', batch_idx, 'dec_idx:', dec_idx, 'Best count:', nc_lst[best_nc_idx], 'Mean:', event_count_preds_cnt[batch_idx, dec_idx])
+			print('Example:', batch_idx, 'dec_idx:', dec_idx, 'Best count:', \
+				best_count, 'Mean:', event_count_preds_cnt[batch_idx, dec_idx])
 
 		#batch_times_pred = [t for bin_list in batch_times_pred for t in bin_list]
 		all_times_pred.append(batch_times_pred)

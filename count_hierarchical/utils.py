@@ -86,7 +86,7 @@ def get_optimal_bin_size(dataset_name):
 	if dataset_name in ['911_ems']:
 		event_count=100
 	if dataset_name in ['911_traffic']:
-		event_count=100
+		event_count=70
 	if dataset_name in ['taxi']:
 		event_count=250
 
