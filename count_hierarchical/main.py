@@ -6,7 +6,9 @@ from argparse import Namespace
 import multiprocessing as MP
 from operator import itemgetter
 import datetime
+from collections import OrderedDict
 from generator import generate_dataset, generate_twitter_dataset
+import json
 
 import run
 import utils
@@ -137,8 +139,8 @@ args.dataset_name = dataset_names
 
 model_names = list()
 if args.model_name == 'all':
-    model_names.append('hawkes_model')
-    model_names.append('wgan')
+    #model_names.append('hawkes_model')
+    #model_names.append('wgan')
     model_names.append('count_model')
     # model_names.append('hierarchical')
     model_names.append('rmtpp_nll')
@@ -155,27 +157,27 @@ run_model_flags = {
     'run_rmtpp_count_with_optimization': False,
     'run_rmtpp_with_optimization_fixed_cnt': False,
 
-    'run_count_only_model': True,
+    'count_only': True,
 }
 if 'rmtpp_nll' in model_names:
-    run_model_flags['run_rmtpp_with_optimization_fixed_cnt_solver_with_nll'] = True
-    run_model_flags['run_rmtpp_count_cont_rmtpp_with_nll'] = True
-    #run_model_flags['run_rmtpp_count_reinit_with_nll'] = True
-    run_model_flags['run_rmtpp_for_count_with_nll'] = True
+    run_model_flags['rmtpp_nll_opt'] = True
+    run_model_flags['rmtpp_nll_cont'] = True
+    #run_model_flags['rmtpp_nll_reinit'] = True
+    run_model_flags['rmtpp_nll_simu'] = True
 if 'rmtpp_mse' in model_names:
-    run_model_flags['run_rmtpp_with_optimization_fixed_cnt_solver_with_mse'] = True
-    run_model_flags['run_rmtpp_count_cont_rmtpp_with_mse'] = True
-    #run_model_flags['run_rmtpp_count_reinit_with_mse'] = True
-    run_model_flags['run_rmtpp_for_count_with_mse'] = True
+    run_model_flags['rmtpp_mse_opt'] = True
+    run_model_flags['rmtpp_mse_cont'] = True
+    #run_model_flags['rmtpp_mse_reinit'] = True
+    run_model_flags['rmtpp_mse_simu'] = True
 if 'rmtpp_mse_var' in model_names:
-    run_model_flags['run_rmtpp_with_optimization_fixed_cnt_solver_with_mse_var'] = True
-    run_model_flags['run_rmtpp_count_cont_rmtpp_with_mse_var'] = True
-    #run_model_flags['run_rmtpp_count_reinit_with_mse_var'] = True
-    run_model_flags['run_rmtpp_for_count_with_mse_var'] = True
+    run_model_flags['rmtpp_mse_var_opt'] = True
+    run_model_flags['rmtpp_mse_var_cont'] = True
+    #run_model_flags['rmtpp_mse_var_reinit'] = True
+    run_model_flags['rmtpp_mse_var_simu'] = True
 if 'wgan' in model_names:
-    run_model_flags['run_wgan_for_count'] = True
+    run_model_flags['wgan_simu'] = True
 if 'hawkes_model' in model_names:
-    run_model_flags['run_hawkes_model'] = True
+    run_model_flags['hawkes_simu'] = True
 
 automate_bin_sz = False
 if args.bin_size == 0:
@@ -207,7 +209,8 @@ generate_dataset()
 generate_twitter_dataset(twitter_dataset_names)
 print("####################################################################")
 
-event_count_result = dict()
+event_count_result = OrderedDict()
+results = dict()
 for dataset_name in dataset_names:
     print("Processing", dataset_name, "Datasets\n")
     if automate_bin_sz:
@@ -236,12 +239,13 @@ for dataset_name in dataset_names:
         args.current_model = model_name
         print("Running", model_name, "Model\n")
 
-        model, result, rmtpp_var_model \
+        model, result, rmtpp_var_model, results \
             = run.run_model(dataset_name,
                             model_name,
                             dataset,
                             args,
-                            per_model_save,
+                            results,
+                            prev_models=per_model_save,
                             run_model_flags=run_model_flags)
 
         if model_name == 'count_model':
@@ -254,15 +258,15 @@ for dataset_name in dataset_names:
             per_model_save['rmtpp_var_model'] = rmtpp_var_model
         print("Finished Running", model_name, "Model\n")
 
-        if model_name != 'rmtpp_count' and per_model_count[model_name] is not None:
-            old_stdout = sys.stdout
-            sys.stdout=open("Outputs/count_model_"+dataset_name+".txt","a")
-            print("____________________________________________________________________")
-            print(model_name, 'MAE for Count Prediction:', np.mean(np.abs(per_model_count['true']-per_model_count[model_name])))
-            print(model_name, 'MAE for Count Prediction (per bin):', np.mean(np.abs(per_model_count['true']-per_model_count[model_name]), axis=0))
-            print("____________________________________________________________________")
-            sys.stdout.close()
-            sys.stdout = old_stdout
+        #if model_name != 'rmtpp_count' and per_model_count[model_name] is not None:
+        #    old_stdout = sys.stdout
+        #    sys.stdout=open("Outputs/count_model_"+dataset_name+".txt","a")
+        #    print("____________________________________________________________________")
+        #    print(model_name, 'MAE for Count Prediction:', np.mean(np.abs(per_model_count['true']-per_model_count[model_name])))
+        #    print(model_name, 'MAE for Count Prediction (per bin):', np.mean(np.abs(per_model_count['true']-per_model_count[model_name]), axis=0))
+        #    print("____________________________________________________________________")
+        #    sys.stdout.close()
+        #    sys.stdout = old_stdout
 
         print('Got result', 'for model', model_name, 'on dataset', dataset_name)
 
@@ -272,3 +276,41 @@ for dataset_name in dataset_names:
     event_count_result[dataset_name] = per_model_count
     print("####################################################################")
 
+
+with open('Outputs/results_'+dataset_name+'.txt', 'w') as fp:
+
+    fp.write('\n\nCount MAE and Deep MAE in random interval:')
+    fp.write('\nModel Name & Count MAE & Deep MAE')
+    for model_name, metrics_dict in results.items():
+        fp.write(
+            '\n{} & {:.3f} & {:.3f} \\\\'.format(
+                model_name,
+                metrics_dict['count_mae_rh'],
+                metrics_dict['deep_mae_rh'],
+            )
+        )
+
+    fp.write('\n\nCount MAE and Deep MAE in Forecast Horizon:')
+    fp.write('\nModel Name & Count MAE & Deep MAE')
+    for model_name, metrics_dict in results.items():
+        fp.write(
+            '\n{} & {:.3f} & {:.3f} \\\\'.format(
+                model_name,
+                metrics_dict['count_mae_fh'],
+                metrics_dict['deep_mae_fh'],
+            )
+        )
+
+
+    fp.write('\n')
+    for model_name, metrics_dict in results.items():
+        fp.write('\n {}'.format(model_name))
+        for metric, val in metrics_dict.items():
+            fp.write('\n {}: {:.3f}'.format(metric, val))
+        fp.write('\n')
+
+
+#with open('Outputs/results_'+dataset_name+'.json', 'w') as fp:
+#    json.dump(results, fp)
+    #results_json = json.dumps(results, indent=4)
+    #fp.write(results_json)
