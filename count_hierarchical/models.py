@@ -151,8 +151,8 @@ class PureHierarchical(tf.keras.Model):
         self.use_count_model = use_count_model
         self.comp_bin_sz = comp_bin_sz
 
-        self.rnn_layer1 = RMTPP(hidden_layer_size, use_intensity=use_intensity, use_var_model=False)
-        self.rnn_layer2 = RMTPP(hidden_layer_size, use_intensity=use_intensity, use_var_model=False)
+        self.rnn_layer1 = RMTPP(hidden_layer_size, name="RMTPP_layer1", use_intensity=use_intensity, use_var_model=False)
+        self.rnn_layer2 = RMTPP(hidden_layer_size, name="RMTPP_layer2", use_intensity=use_intensity, use_var_model=False)
 
         self.state_transform_nw = layers.Dense(hidden_layer_size, name='state_transform_nw')
 
@@ -167,10 +167,11 @@ class PureHierarchical(tf.keras.Model):
             self.WT_layer = layers.Dense(1, activation=tf.nn.softplus, name='WT_layer')
 
 
-    def call(self, gaps, initial_state=None, next_state_sno=1):
+    def call(self, gaps, initial_state=None, gaps_out=None, next_state_sno=1):
         ''' Forward pass of the PureHierarchical model'''
 
         self.gaps = gaps
+        self.gaps_out = gaps_out
         self.initial_state = initial_state
         
         rnn_inputs_l2 = tf.reduce_sum(self.gaps, axis=2)
@@ -183,21 +184,40 @@ class PureHierarchical(tf.keras.Model):
         self.hidden_state_l2_transformed = self.state_transform_nw(self.hidden_state_l2)
 
         prev_gaps = rnn_inputs_l2/self.comp_bin_sz
-        rnn_inputs_l1 = tf.concat([tf.expand_dims(prev_gaps, axis=-1), self.gaps[:,:,:-1]], axis=2)
 
-        gaps_pred_l1_lst = list()
-        D_lst = list()
-        WT_lst = list()
-        for idx in range(self.gaps.shape[1]):
-            gaps_pred_tmp, D_pred, WT_pred, _, _ = \
-                self.rnn_layer1(rnn_inputs_l1[:,idx], 
-                    initial_state = self.hidden_state_l2_transformed[:,idx])
-            gaps_pred_l1_lst.append(gaps_pred_tmp)
-            D_lst.append(D_pred)
-            WT_lst.append(WT_pred)
-        self.gaps_pred_l1 = tf.stack(gaps_pred_l1_lst, axis=1)
-        self.D = tf.stack(D_lst, axis=1)
-        self.WT = tf.stack(WT_lst, axis=1)
+        if self.gaps_out is not None:
+            rnn_inputs_l1 = tf.concat([tf.expand_dims(prev_gaps, axis=-1), self.gaps_out[:,:,:-1]], axis=2)
+            gaps_pred_l1_lst = list()
+            D_lst = list()
+            WT_lst = list()
+            for idx in range(self.gaps.shape[1]):
+                gaps_pred_tmp, D_pred, WT_pred, _, _ = \
+                    self.rnn_layer1(rnn_inputs_l1[:,idx], 
+                        initial_state = self.hidden_state_l2_transformed[:,idx])
+                gaps_pred_l1_lst.append(gaps_pred_tmp)
+                D_lst.append(D_pred)
+                WT_lst.append(WT_pred)
+            self.gaps_pred_l1 = tf.stack(gaps_pred_l1_lst, axis=1)
+            self.D = tf.stack(D_lst, axis=1)
+            self.WT = tf.stack(WT_lst, axis=1)
+        else:
+            gaps_pred_l1_lst = list()
+            init_prev_state = self.hidden_state_l2_transformed
+            seq_idx = self.gaps.shape[1]-1
+            prev_state = init_prev_state[:,seq_idx]
+            prev_gaps_inp = prev_gaps[:,seq_idx]
+            rnn_inputs_l1 = tf.expand_dims(prev_gaps_inp, axis=-1)
+
+            for idx in range(self.gaps.shape[2]):
+                rnn_inputs_l1, _, _, prev_state, _ = \
+                    self.rnn_layer1(rnn_inputs_l1, 
+                        initial_state = prev_state)
+                gaps_pred_l1_lst.append(rnn_inputs_l1)
+
+            self.gaps_pred_l1 = tf.stack(gaps_pred_l1_lst, axis=2)
+            self.gaps_pred_l1 = tf.concat([self.gaps[:,:-1], self.gaps_pred_l1], axis=1)
+            self.D = None
+            self.WT = None
 
         return [self.gaps_pred_l2, self.D_l2, self.WT_l2,
                self.gaps_pred_l1, self.D, self.WT, 

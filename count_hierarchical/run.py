@@ -482,12 +482,14 @@ def run_pure_hierarchical(args, model, optimizer, data, NLL_loss, rmtpp_epochs=1
 		for sm_step, (gaps_batch_in, gaps_batch_out) in enumerate(train_dataset_gaps):
 			with tf.GradientTape() as tape:
 				# TODO: Make sure to pass correct next_stat
+				gaps_batch_out = tf.cast(gaps_batch_out, tf.float32)
 				gaps_pred_l2, D_l2, WT_l2, gaps_pred, D_l1, WT_l1, next_initial_state, _ = model(gaps_batch_in, 
 						initial_state=None, 
+						gaps_out=gaps_batch_out,
 						next_state_sno=1)
 
-				print(gaps_pred[0,0,:5])
-				print(gaps_pred_l2[0,:5])
+				# print(gaps_pred[0,0,:5])
+				# print(gaps_pred_l2[0,:5])
 
 				# Compute the loss for this minibatch.
 				if NLL_loss:
@@ -497,7 +499,6 @@ def run_pure_hierarchical(args, model, optimizer, data, NLL_loss, rmtpp_epochs=1
 					gap_loss_fn = MeanSquareLoss()
 					gap_loss_fn_l2 = MeanSquareLoss()
 
-				gaps_batch_out = tf.cast(gaps_batch_out, tf.float32)
 				gaps_batch_out_l2 = tf.reduce_sum(gaps_batch_out, axis=2)
 				gap_loss = gap_loss_fn(gaps_batch_out, gaps_pred)
 				gap_loss_l2 = gap_loss_fn_l2(gaps_batch_out_l2, gaps_pred_l2)
