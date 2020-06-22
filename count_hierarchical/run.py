@@ -2595,13 +2595,13 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(args, query_models, data, test_
 				be = test_end_hr_bins[batch_idx, dec_idx]
 				bs_cnt = bisect_right(batch_bin_cnrr_cnt_opt_times_pred_uc, bs)
 				be_cnt = bisect_right(batch_bin_cnrr_cnt_opt_times_pred_uc, be)
-				num_peaks_in_bin = be_cnt - bs_cnt
+				num_peaks_in_bin = np.maximum(be_cnt - bs_cnt, 1)
 				if num_peaks_in_bin <= event_count_preds_cnt[batch_idx, dec_idx]:
-					min_cnt = num_peaks_in_bin
+					min_cnt = int(num_peaks_in_bin)
 					max_cnt = int(event_count_preds_cnt[batch_idx, dec_idx] + 1)
 				else:
 					min_cnt = int(event_count_preds_cnt[batch_idx, dec_idx])
-					max_cnt = num_peaks_in_bin + 1
+					max_cnt = int(num_peaks_in_bin + 1)
 
 				if args.use_ratio_constraints:
 					gaps_uc = batch_bin_curr_cnt_opt_gaps_pred_uc

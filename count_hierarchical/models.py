@@ -119,6 +119,7 @@ class RMTPP(tf.keras.Model):
         
         # Gather input for the rnn
         if self.use_time_feats:
+            feats = feats/24.
             rnn_inputs = tf.concat([self.gaps, feats], axis=-1)
         else:
             rnn_inputs = self.gaps
@@ -241,13 +242,21 @@ class COUNT_MODEL(tf.keras.Model):
                 out_bin_sz,
                 distribution_name,
                 use_time_feats=True,
+                network_type='ff', # ff or rnn
                 name='count_model',
                 **kwargs):
         super(COUNT_MODEL, self).__init__(name=name, **kwargs)
         self.distribution_name = distribution_name
         self.use_time_feats = use_time_feats
+        self.network_type = network_type
 
-        self.dense1 = tf.keras.layers.Dense(hidden_layer_size, activation=tf.nn.relu, name="count_dense1")
+        if self.network_type == 'ff':
+            self.dense1 = tf.keras.layers.Dense(hidden_layer_size, activation=tf.nn.relu, name="count_dense1")
+        elif self.network_type == 'rnn':
+            self.rnn_layer = layers.GRU(hidden_layer_size, return_sequences=True,
+                                        return_state=True, stateful=False,
+                                        name='GRU_Layer')
+
         self.dense2 = tf.keras.layers.Dense(hidden_layer_size, activation=tf.nn.relu, name="count_dense2")
         self.out_layer = tf.keras.layers.Dense(hidden_layer_size, activation=tf.nn.relu, name="out_layer")
 
@@ -263,10 +272,16 @@ class COUNT_MODEL(tf.keras.Model):
     def call(self, inputs, feats, debug=False):
 
         if self.use_time_feats:
+            feats = feats/24.
             inputs = tf.concat([inputs, feats], axis=-1)
 
-        inputs = tf.reshape(inputs, [inputs.shape[0], -1])
-        hidden_state_1 = self.dense1(inputs)
+        if self.network_type == 'ff':
+            inputs = tf.reshape(inputs, [inputs.shape[0], -1])
+            hidden_state_1 = self.dense1(inputs)
+        elif self.network_type == 'rnn':
+            hidden_states, final_state \
+                = self.rnn_layer(inputs)
+            hidden_state_1 = final_state
         hidden_state_2 = self.dense2(hidden_state_1)
         output_state = self.out_layer(hidden_state_2)
 
@@ -334,6 +349,7 @@ def build_count_model(args, distribution_name):
         out_bin_sz, 
         distribution_name,
         use_time_feats=(not args.no_count_model_feats),
+        network_type=args.cnt_net_type,
     )
     #model.build(input_shape=(batch_size, in_bin_sz))
     optimizer = keras.optimizers.Adam(learning_rate)

@@ -577,6 +577,7 @@ def get_time_features(times):
     time_feature = time_feature / 3600.0
 
     time_feature = (times/3600.)%24
+    # time_feature = time_feature*1./24.
     return time_feature
 
 def get_processed_data(dataset_name, args):
