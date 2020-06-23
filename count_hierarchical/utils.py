@@ -288,9 +288,9 @@ def make_seq_from_data(data, enc_len, in_bin_sz, out_bin_sz, batch_size,
 	if dataset_name in ['taxi', '911_traffic', '911_ems']:
 		rmtpp_strid_len = stride_len
 		count_strid_len = 1
-	if dataset_name in ['taxi', '911_traffic', '911_ems', 'Trump'] \
-			and times_in_bin is not None:
-		count_strid_len = count_strid_len
+	#if dataset_name in ['taxi', '911_traffic', '911_ems', 'Trump'] \
+	#		and times_in_bin is not None:
+	#	count_strid_len = count_strid_len
 	
 
 	iter_range = len(data)-enc_len-out_bin_sz
@@ -792,6 +792,8 @@ def get_processed_data(dataset_name, args):
 	 										interval_size,
 	 										dataset_name)
 
+
+	train_end_hr_bins = np.expand_dims(train_end_hr_bins, axis=-1)
 	test_end_hr_bins = np.expand_dims(test_end_hr_bins, axis=-1)
 	test_data_in_time_end_bin = np.expand_dims(test_data_in_time_end_bin, axis=-1)
 	test_data_in_gaps_bin = np.expand_dims(test_data_in_gaps_bin, axis=-1)
@@ -801,12 +803,17 @@ def get_processed_data(dataset_name, args):
 	train_data_in_gaps_bin = np.expand_dims(train_data_in_gaps_bin, axis=-1)
 
 
+	train_out_end_hr_bins = train_end_hr_bins
+	test_out_end_hr_bins = test_end_hr_bins
 	train_data_in_bin = np.expand_dims(train_data_in_bin, axis=-1).astype(np.float32)
 	test_data_in_bin = np.expand_dims(test_data_in_bin, axis=-1).astype(np.float32)
 	train_in_end_hr_bins = np.expand_dims(train_in_end_hr_bins, axis=-1).astype(np.float32)
+	train_out_end_hr_bins = np.expand_dims(train_out_end_hr_bins, axis=-1).astype(np.float32)
 	test_in_end_hr_bins = np.expand_dims(test_in_end_hr_bins, axis=-1).astype(np.float32)
 	train_data_in_bin_feats = get_time_features(train_in_end_hr_bins-bin_size/2.)
 	test_data_in_bin_feats = get_time_features(test_in_end_hr_bins-bin_size/2.)
+	train_data_out_bin_feats = get_time_features(train_out_end_hr_bins-bin_size/2.)
+	test_data_out_bin_feats = get_time_features(test_out_end_hr_bins-bin_size/2.)
 
 
 	print(train_data_in_bin.shape)
@@ -867,7 +874,9 @@ def get_processed_data(dataset_name, args):
 		'test_data_in_feats_bin': test_data_in_feats_bin,
 
 		'train_data_in_bin_feats': train_data_in_bin_feats,
+		'train_data_out_bin_feats': train_data_out_bin_feats,
 		'test_data_in_bin_feats': test_data_in_bin_feats,
+		'test_data_out_bin_feats': test_data_out_bin_feats,
 	}
 
 	return dataset

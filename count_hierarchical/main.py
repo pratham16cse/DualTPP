@@ -216,8 +216,8 @@ event_count_result = OrderedDict()
 results = dict()
 for dataset_name in dataset_names:
     print("Processing", dataset_name, "Datasets\n")
+    args.current_dataset = dataset_name
     if automate_bin_sz:
-        args.current_dataset = dataset_name
         args.bin_size = utils.get_optimal_bin_size(dataset_name)
         print('New bin size is', args.bin_size)
     dataset = utils.get_processed_data(dataset_name, args)

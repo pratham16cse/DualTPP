@@ -522,7 +522,7 @@ def run_hierarchical(args, data, test_data):
 def run_count_model(args, data, test_data):
 	validation_split = 0.2
 	num_epochs = args.epochs * 100
-	patience = args.patience * 100
+	patience = args.patience * 0
 	distribution_name = 'Gaussian'
 	#distribution_name = 'var_model'
 
@@ -559,7 +559,7 @@ def run_count_model(args, data, test_data):
 
 	os.makedirs('saved_models/training_count_'+args.current_dataset+'/', exist_ok=True)
 	checkpoint_path = "saved_models/training_count_"+args.current_dataset+"/cp_"+args.current_dataset+".ckpt"
-	best_dev_gap_mse = np.inf
+	best_dev_gap_mae = np.inf
 	best_dev_epoch = 0
 
 	train_losses = list()
@@ -572,7 +572,11 @@ def run_count_model(args, data, test_data):
 		for sm_step, (bin_count_batch_in, bin_count_batch_in_feats,
 						bin_count_batch_out) in enumerate(train_dataset):
 			with tf.GradientTape() as tape:
-				bin_counts_pred, distribution_params = model(bin_count_batch_in, bin_count_batch_in_feats)
+				bin_counts_pred, distribution_params = model(
+					bin_count_batch_in,
+					bin_count_batch_in_feats,
+					bin_count_batch_out
+				)
 
 				loss_fn = models.NegativeLogLikelihood_CountModel(distribution_params, distribution_name)
 				loss = loss_fn(bin_count_batch_out, bin_counts_pred)
@@ -594,8 +598,8 @@ def run_count_model(args, data, test_data):
 		dev_gap_metric_mae.reset_states()
 		dev_gap_metric_mse.reset_states()
 
-		if best_dev_gap_mse > dev_gap_mse and patience <= epoch:
-			best_dev_gap_mse = dev_gap_mse
+		if best_dev_gap_mae > dev_gap_mae and patience <= epoch:
+			best_dev_gap_mae = dev_gap_mae
 			best_dev_epoch = epoch
 			print('Saving model at epoch', epoch)
 			model.save_weights(checkpoint_path)

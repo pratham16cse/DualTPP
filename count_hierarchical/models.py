@@ -3,6 +3,8 @@ from tensorflow import keras
 from tensorflow.keras import layers
 import tensorflow_probability as tfp
 
+from utils import get_time_features
+
 ETH = 10.0
 one_by = tf.math.reciprocal_no_nan
 
@@ -241,14 +243,21 @@ class COUNT_MODEL(tf.keras.Model):
                 hidden_layer_size,
                 out_bin_sz,
                 distribution_name,
+                bin_size,
                 use_time_feats=True,
-                network_type='ff', # ff or rnn
+                network_type='ff', # ff or rnn or deepar
                 name='count_model',
                 **kwargs):
         super(COUNT_MODEL, self).__init__(name=name, **kwargs)
         self.distribution_name = distribution_name
+        self.out_bin_sz = out_bin_sz
         self.use_time_feats = use_time_feats
         self.network_type = network_type
+        self.bin_size = bin_size
+        if self.network_type in ['ff', 'rnn']:
+            out_layer_size = out_bin_sz
+        elif self.network_type == 'deepar':
+            out_layer_size = 1
 
         if self.network_type == 'ff':
             self.dense1 = tf.keras.layers.Dense(hidden_layer_size, activation=tf.nn.relu, name="count_dense1")
@@ -256,24 +265,37 @@ class COUNT_MODEL(tf.keras.Model):
             self.rnn_layer = layers.GRU(hidden_layer_size, return_sequences=True,
                                         return_state=True, stateful=False,
                                         name='GRU_Layer')
+        elif self.network_type == 'deepar':
+            self.enc_layer = layers.GRU(hidden_layer_size, return_sequences=True,
+                                        return_state=True, stateful=False,
+                                        name='enc_layer')
+            self.dec_layer = layers.GRU(hidden_layer_size, return_sequences=True,
+                                        return_state=True, stateful=False,
+                                        name='dec_layer')
 
         self.dense2 = tf.keras.layers.Dense(hidden_layer_size, activation=tf.nn.relu, name="count_dense2")
         self.out_layer = tf.keras.layers.Dense(hidden_layer_size, activation=tf.nn.relu, name="out_layer")
 
         if self.distribution_name in ['NegativeBinomial', 'Gaussian']:
-            self.out_alpha_layer = tf.keras.layers.Dense(out_bin_sz, name="out_alpha_layer")
-            self.out_mu_layer = tf.keras.layers.Dense(out_bin_sz, name="out_mu_layer")
+            self.out_alpha_layer = tf.keras.layers.Dense(out_layer_size, name="out_alpha_layer")
+            self.out_mu_layer = tf.keras.layers.Dense(out_layer_size, name="out_mu_layer")
 
         elif self.distribution_name == 'var_model':
-            self.count_out_layer = tf.keras.layers.Dense(out_bin_sz, name="count_out_layer")
+            self.count_out_layer = tf.keras.layers.Dense(out_layer_size, name="count_out_layer")
             self.var_dense1 = tf.keras.layers.Dense(hidden_layer_size, activation=tf.nn.relu, name="var_count_dense1")
-            self.var_out_layer = tf.keras.layers.Dense(out_bin_sz, activation=tf.keras.activations.softplus, name="var_out_layer")
+            self.var_out_layer = tf.keras.layers.Dense(out_layer_size, activation=tf.keras.activations.softplus, name="var_out_layer")
 
-    def call(self, inputs, feats, debug=False):
+    def call(self, inputs, feats_in, true_outputs=None, debug=False):
 
         if self.use_time_feats:
-            feats = feats/24.
-            inputs = tf.concat([inputs, feats], axis=-1)
+            if self.network_type == 'deepar':
+                feats_out = feats_in[:, -1:] + tf.cumsum(tf.ones([1, self.out_bin_sz, 1]), axis=1) * self.bin_size/3600.
+                feats_out = get_time_features(feats_out * 3600.)
+                feats_out = feats_out / 24.
+
+            feats_in = feats_in/24.
+            inputs = tf.concat([inputs, feats_in], axis=-1)
+
 
         if self.network_type == 'ff':
             inputs = tf.reshape(inputs, [inputs.shape[0], -1])
@@ -282,59 +304,131 @@ class COUNT_MODEL(tf.keras.Model):
             hidden_states, final_state \
                 = self.rnn_layer(inputs)
             hidden_state_1 = final_state
-        hidden_state_2 = self.dense2(hidden_state_1)
-        output_state = self.out_layer(hidden_state_2)
+        elif self.network_type == 'deepar':
+            hidden_states, final_enc_state \
+                = self.enc_layer(inputs)
 
-        bin_count_output = None
 
-        if self.distribution_name == 'NegativeBinomial':
-            out_alpha = self.out_alpha_layer(output_state)
-            out_mu = self.out_mu_layer(output_state)
+        def step(hidden_state):
 
-            out_alpha = (tf.math.softplus(out_alpha))
-            out_mu = (tf.math.softplus(out_mu))
+            hidden_state_2 = self.dense2(hidden_state)
+            output_state = self.out_layer(hidden_state_2)
 
-            out_alpha = tf.clip_by_value(out_alpha, 1e-3, 50.0)
-            out_mu = tf.clip_by_value(out_mu, 1e-3, 50.0)
+            bin_count_output = None
+    
+            if self.distribution_name == 'NegativeBinomial':
+                out_alpha = self.out_alpha_layer(output_state)
+                out_mu = self.out_mu_layer(output_state)
+    
+                out_alpha = (tf.math.softplus(out_alpha))
+                out_mu = (tf.math.softplus(out_mu))
+    
+                out_alpha = tf.clip_by_value(out_alpha, 1e-3, 50.0)
+                out_mu = tf.clip_by_value(out_mu, 1e-3, 50.0)
+    
+                total_count = 1.0 / out_alpha
+    
+                alpha_mu = (out_alpha * out_mu)
+                probs = (alpha_mu / (1.0+alpha_mu))
+    
+                nb_distribution = tfp.distributions.NegativeBinomial(
+                    total_count, logits=None, probs=probs, validate_args=False, allow_nan_stats=True,
+                    name='NegativeBinomial'
+                )
+                # output_samples = nb_distribution.sample(1000)
+                # bin_count_output = tf.reduce_mean(output_samples, axis=0)
+                #dist_params = [total_count, probs]
+                dist_params_mu = total_count
+                dist_params_stddev = probs
+                bin_count_output = total_count
+    
+            elif self.distribution_name == 'Gaussian':
+                out_alpha = self.out_alpha_layer(output_state)
+                out_mu = self.out_mu_layer(output_state)
+    
+                #TODO: Can this layer outputs stddev of distributions
+                out_stddev = (tf.math.softplus(out_alpha))
+    
+                gaussian_distribution = tfp.distributions.Normal(
+                    out_mu, out_stddev, validate_args=False, allow_nan_stats=True, 
+                    name='Normal'
+                )
+                # output_samples = gaussian_distribution.sample(1000)
+                # bin_count_output = tf.reduce_mean(output_samples, axis=0)
+                #dist_params = [out_mu, out_stddev]
+                dist_params_mu = out_mu
+                dist_params_stddev = out_stddev
+                bin_count_output = out_mu
+    
+            elif self.distribution_name == 'var_model':
+                bin_count_output = self.count_out_layer(output_state)
+    
+                var_hidden_state_1 = self.var_dense1(output_state)
+                output_variance = self.var_out_layer(var_hidden_state_1)
+                #dist_params = [None, output_variance]
+                dist_params_mu = None
+                dist_params_stddev = output_variance
 
-            total_count = 1.0 / out_alpha
+            return bin_count_output, dist_params_mu, dist_params_stddev
 
-            alpha_mu = (out_alpha * out_mu)
-            probs = (alpha_mu / (1.0+alpha_mu))
+        if self.network_type in ['ff', 'rnn']:
+            (
+                bin_count_output,
+                dist_params_mu,
+                dist_params_stddev
+            ) = step(hidden_state_1)
+        elif self.network_type == 'deepar':
+            all_bin_count_output = list()
+            all_dist_params_mu = list()
+            all_dist_params_stddev = list()
 
-            nb_distribution = tfp.distributions.NegativeBinomial(
-                total_count, logits=None, probs=probs, validate_args=False, allow_nan_stats=True,
-                name='NegativeBinomial'
-            )
-            # output_samples = nb_distribution.sample(1000)
-            # bin_count_output = tf.reduce_mean(output_samples, axis=0)
-            distribution_params = [total_count, probs]
-            bin_count_output = total_count
+            curr_dec_state = final_enc_state
+            if true_outputs is not None:
 
-        elif self.distribution_name == 'Gaussian':
-            out_alpha = self.out_alpha_layer(output_state)
-            out_mu = self.out_mu_layer(output_state)
+                inputs = tf.expand_dims(true_outputs, axis=-1)
+                if self.use_time_feats:
+                    inputs = tf.concat([inputs, feats_out], axis=-1)
+                dec_states, _ = self.dec_layer(inputs, initial_state=curr_dec_state)
+                (
+                    bin_count_output,
+                    dist_params_mu,
+                    dist_params_stddev
+                ) = step(dec_states)
+                bin_count_output = tf.squeeze(bin_count_output, axis=-1)
+                dist_params_mu = tf.squeeze(dist_params_mu, axis=-1)
+                dist_params_stddev = tf.squeeze(dist_params_stddev, axis=-1)
+            else:
+                for j in range(self.out_bin_sz):
+                    (
+                        bin_count_output,
+                        dist_params_mu,
+                        dist_params_stddev
+                    ) = step(curr_dec_state)
+    
+                    all_bin_count_output.append(bin_count_output)
+                    all_dist_params_mu.append(dist_params_mu)
+                    all_dist_params_stddev.append(dist_params_stddev)
+    
+                    curr_feats_out = feats_in[:, -1] + (j+1.) * self.bin_size/3600.
+                    curr_feats_out = get_time_features(curr_feats_out * 3600.)
+                    curr_feats_out = curr_feats_out / 24.
+                    if true_outputs is not None: # Training Mode
+                        inputs = true_outputs[:, j:j+1]
+                    else: # Inference Mode
+                        inputs = dist_params_mu
 
-            #TODO: Can this layer outputs stddev of distributions
-            out_stddev = (tf.math.softplus(out_alpha))
+                    if self.use_time_feats:
+                        inputs = tf.stack([inputs, curr_feats_out], axis=-1)
+    
+                    _, curr_dec_state = self.dec_layer(inputs, initial_state=curr_dec_state)
+    
+                bin_count_output = tf.concat(all_bin_count_output, axis=1)
+                dist_params_mu = tf.concat(all_dist_params_mu, axis=1)
+                dist_params_stddev = tf.concat(all_dist_params_stddev, axis=1)
 
-            gaussian_distribution = tfp.distributions.Normal(
-                out_mu, out_stddev, validate_args=False, allow_nan_stats=True, 
-                name='Normal'
-            )
-            # output_samples = gaussian_distribution.sample(1000)
-            # bin_count_output = tf.reduce_mean(output_samples, axis=0)
-            distribution_params = [out_mu, out_stddev]
-            bin_count_output = out_mu
+        dist_params = [dist_params_mu, dist_params_stddev]
 
-        elif self.distribution_name == 'var_model':
-            bin_count_output = self.count_out_layer(output_state)
-
-            var_hidden_state_1 = self.var_dense1(output_state)
-            output_variance = self.var_out_layer(var_hidden_state_1)
-            distribution_params = [None, output_variance]
-
-        return bin_count_output, distribution_params
+        return bin_count_output, dist_params
 
 
 def build_count_model(args, distribution_name):
@@ -348,6 +442,7 @@ def build_count_model(args, distribution_name):
         hidden_layer_size,
         out_bin_sz, 
         distribution_name,
+        args.bin_size,
         use_time_feats=(not args.no_count_model_feats),
         network_type=args.cnt_net_type,
     )
