@@ -1322,6 +1322,8 @@ def run_rmtpp_count_cont_rmtpp(args, models, data, test_data, rmtpp_type):
 
 	test_predictions_cnt = utils.denormalize_data(test_predictions_norm_cnt, test_mean_bin, test_std_bin)
 	event_count_preds_cnt = np.clip(np.round(test_predictions_cnt), 1.0, np.inf)
+
+	#event_count_preds_cnt = test_data_out_bin
 	event_count_preds_true = test_data_out_bin
 
 	output_event_count_pred = tf.expand_dims(event_count_preds_cnt, axis=-1).numpy()
@@ -1411,6 +1413,8 @@ def run_count_only_model(args, models, data, test_data):
 
 	test_predictions_cnt = utils.denormalize_data(test_predictions_norm_cnt, test_mean_bin, test_std_bin)
 	event_count_preds_cnt = np.clip(np.round(test_predictions_cnt), 1.0, np.inf).astype(np.int32)
+
+	#event_count_preds_cnt = test_data_out_bin.astype(np.int32)
 	event_count_preds_true = test_data_out_bin
 
 	all_times_pred_lst = list()
@@ -2146,7 +2150,15 @@ def run_rmtpp_with_optimization_fixed_cnt(args, query_models, data, test_data):
 # by using solver library
 # Select the final count as the count that produces best rmtpp_loss across
 # all counts
-def run_rmtpp_with_optimization_fixed_cnt_solver(args, query_models, data, test_data, test_data_out_gaps_bin, rmtpp_type='nll'):
+def run_rmtpp_with_optimization_fixed_cnt_solver(
+	args,
+	query_models,
+	data,
+	test_data,
+	test_data_out_gaps_bin,
+	dataset,
+	rmtpp_type='nll'
+):
 
 	[test_data_in_bin, test_data_in_bin_feats, test_data_out_bin, test_end_hr_bins,
 	 test_data_in_time_end_bin, test_data_in_gaps_bin, test_data_in_feats_bin,
@@ -2236,10 +2248,10 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(args, query_models, data, test_
 			test_norm_a,
 			test_norm_d
 		)
-		constraints = [cp.sum(gaps[0, :nc])<=init_end_diff_norm-1e-6,
-					   cp.sum(gaps[0, :nc+1])>=init_end_diff_norm+1e-6,
-					   gaps[0, 0]>=first_gap_lb+1e-6,
-					   gaps>=0]
+		constraints = [cp.sum(gaps[0, :nc])<=init_end_diff_norm-1e-2,
+					   cp.sum(gaps[0, :nc+1])>=init_end_diff_norm+1e-2,
+					   gaps[0, 0]>=first_gap_lb+1e-2,
+					   gaps>=1e-3]
 
 		if unconstrained==False and args.use_ratio_constraints:
 			assert gaps_uc is not None
@@ -2261,9 +2273,9 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(args, query_models, data, test_
 		except cp.error.SolverError:
 			rmtpp_loss = prob.solve(solver='SCS', warm_start=True)
 
-		if gaps.value is None:
-			gaps.value = all_bins_gaps_pred
-			rmtpp_loss = opt_loss.value
+		#if gaps.value is None:
+		#	gaps.value = all_bins_gaps_pred
+		#	rmtpp_loss = opt_loss.value
 
 		test_mean_bin, test_std_bin = test_data_count_normalizer
 		nc_norm = utils.normalize_data_given_param(nc, test_mean_bin, test_std_bin)
@@ -2277,14 +2289,10 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(args, query_models, data, test_
 		#import ipdb
 		#ipdb.set_trace()
 
-		args.bin_size
-		init_end_diff_norm*test_norm_d
-		first_gap_lb*test_norm_d
 
-
-		# if gaps.value is None:
-		# 	import ipdb
-		#  	ipdb.set_trace()
+		#if gaps.value is None:
+		#	import ipdb
+		#	ipdb.set_trace()
 		loss = rmtpp_loss + count_loss
 
 		all_bins_gaps_pred = gaps.value[0:1, :nc]
@@ -2327,7 +2335,9 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(args, query_models, data, test_
 
 	output_event_count_pred = tf.expand_dims(event_count_preds_cnt, axis=-1).numpy()
 	
+	#output_event_count_pred_cumm = tf.reduce_sum(event_count_preds_true, axis=-1).numpy() + 2.
 	output_event_count_pred_cumm = tf.reduce_sum(event_count_preds_cnt, axis=-1).numpy() + tf.reduce_sum(event_count_preds_stddev, axis=-1).numpy()
+
 	full_cnt_event_all_bins_pred = max(output_event_count_pred_cumm) * np.ones_like(output_event_count_pred_cumm)
 	full_cnt_event_all_bins_pred = np.expand_dims(full_cnt_event_all_bins_pred, axis=-1)
 	#full_cnt_event_all_bins_pred += num_counts
@@ -2358,8 +2368,8 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(args, query_models, data, test_
 		gaps_uc=None
 	):
 
-		event_cnt = best_past_cnt + int(max_cnt)-1
-		output_event_count_curr = np.zeros_like(output_event_count_pred) + max_cnt-1
+		event_cnt = best_past_cnt + int(max_cnt)+1
+		output_event_count_curr = np.zeros_like(output_event_count_pred) + max_cnt+1
 
 		batch_bin_curr_cnt_times_pred = all_times_pred_simu[batch_idx,best_past_cnt:event_cnt]
 
@@ -2516,8 +2526,8 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(args, query_models, data, test_
 														 	test_gap_in_bin_norm_a,
 														 	test_gap_in_bin_norm_d)
 
-		# import ipdb
-		# ipdb.set_trace()
+		#import ipdb
+		#ipdb.set_trace()
 
 		batch_bin_curr_cnt_opt_gaps_pred, nc_loss \
 			= optimize_gaps(model_rmtpp_params,
@@ -2538,9 +2548,16 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(args, query_models, data, test_
 											   	test_gap_in_bin_norm_a,
 											   	test_gap_in_bin_norm_d)
 	
+		#import ipdb
+		#ipdb.set_trace()
+
+		#batch_bin_curr_cnt_opt_times_pred \
+		#	= ((test_data_init_time_batch + tf.cast(tf.cumsum(batch_bin_curr_cnt_opt_gaps_pred, axis=1), tf.float64))
+		#	   * tf.cast(batch_bin_curr_cnt_opt_gaps_pred>0., tf.float64))
+		batch_bin_curr_cnt_opt_gaps_pred \
+			= batch_bin_curr_cnt_opt_gaps_pred * tf.cast(batch_bin_curr_cnt_opt_gaps_pred>0., tf.float64)
 		batch_bin_curr_cnt_opt_times_pred \
-			= ((test_data_init_time_batch + tf.cast(tf.cumsum(batch_bin_curr_cnt_opt_gaps_pred, axis=1), tf.float64))
-			   * tf.cast(batch_bin_curr_cnt_opt_gaps_pred>0., tf.float64))
+			= (test_data_init_time_batch + tf.cast(tf.cumsum(batch_bin_curr_cnt_opt_gaps_pred, axis=1), tf.float64))
 		batch_bin_curr_cnt_opt_times_pred = batch_bin_curr_cnt_opt_times_pred[0].numpy()
 
 		return (
@@ -2563,7 +2580,7 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(args, query_models, data, test_
 			clipped_stddev = np.clip(event_count_preds_stddev[batch_idx, dec_idx], 1.0, count_sigma)
 			min_cnt = event_count_preds_cnt[batch_idx, dec_idx] - clipped_stddev
 			min_cnt = int(np.maximum(1., min_cnt))
-			max_cnt = int(event_count_preds_cnt[batch_idx, dec_idx] + clipped_stddev + 1.)
+			max_cnt = int(event_count_preds_cnt[batch_idx, dec_idx] + clipped_stddev)
 
 			if dec_idx == 0:
 				gaps_before_bin = all_times_pred_simu[batch_idx,:1] - test_data_init_time[batch_idx]
@@ -2588,7 +2605,7 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(args, query_models, data, test_
 				) = get_optimized_gaps(
 					batch_idx,
 					dec_idx,
-					max_cnt-1,
+					max_cnt,
 					max_cnt,
 					best_past_cnt,
 					bin_start,
@@ -2602,19 +2619,28 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(args, query_models, data, test_
 				num_peaks_in_bin = np.maximum(be_cnt - bs_cnt, 1)
 				if num_peaks_in_bin <= event_count_preds_cnt[batch_idx, dec_idx]:
 					min_cnt = int(num_peaks_in_bin)
-					max_cnt = int(event_count_preds_cnt[batch_idx, dec_idx] + 1)
+					max_cnt = int(event_count_preds_cnt[batch_idx, dec_idx])
 				else:
 					min_cnt = int(event_count_preds_cnt[batch_idx, dec_idx])
-					max_cnt = int(num_peaks_in_bin + 1)
+					max_cnt = int(num_peaks_in_bin)
 
 				if args.use_ratio_constraints:
 					gaps_uc = batch_bin_curr_cnt_opt_gaps_pred_uc
+					gaps_uc = utils.normalize_avg_given_param(
+						gaps_uc,
+						test_gap_in_bin_norm_a,
+						test_gap_in_bin_norm_d
+					)
 				else:
 					gaps_uc = None
 			else:
 				gaps_uc = None
 
-			nc_range = np.arange(min_cnt, max_cnt)
+			#min_cnt = dataset['test_data_out_bin'][batch_idx, dec_idx]
+			#max_cnt = min_cnt
+			#min_cnt = int(event_count_preds_cnt[batch_idx, dec_idx])
+			#max_cnt = int(event_count_preds_cnt[batch_idx, dec_idx])
+			nc_range = np.arange(min_cnt, max_cnt+1)
 			def binary_search(counts_range, low, high):
 				# print('low=', low, 'high=', high)
 
@@ -3532,7 +3558,15 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 			if 'rmtpp_nll_opt' in run_model_flags and run_model_flags['rmtpp_nll_opt']:
 				print("Prediction for rmtpp_nll_opt model")
 				test_data_out_gaps_bin = dataset['test_data_out_gaps_bin']
-				_, all_times_bin_pred_opt = run_rmtpp_with_optimization_fixed_cnt_solver(args, models, data, test_data, test_data_out_gaps_bin, rmtpp_type='nll')
+				_, all_times_bin_pred_opt = run_rmtpp_with_optimization_fixed_cnt_solver(
+					args,
+					models,
+					data,
+					test_data,
+					test_data_out_gaps_bin,
+					dataset,
+					rmtpp_type='nll'
+				)
 				deep_mae_rh, count_mae_rh, count_mse_rh = compute_hierarchical_mae(
 					all_times_bin_pred_opt,
 					query_1_data,
@@ -3565,7 +3599,15 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 			if 'rmtpp_mse_opt' in run_model_flags and run_model_flags['rmtpp_mse_opt']:
 				print("Prediction for rmtpp_mse_opt model")
 				test_data_out_gaps_bin = dataset['test_data_out_gaps_bin']
-				_, all_times_bin_pred_opt = run_rmtpp_with_optimization_fixed_cnt_solver(args, models, data, test_data, test_data_out_gaps_bin, rmtpp_type='mse')
+				_, all_times_bin_pred_opt = run_rmtpp_with_optimization_fixed_cnt_solver(
+					args,
+					models,
+					data,
+					test_data,
+					test_data_out_gaps_bin,
+					dataset,
+					rmtpp_type='mse'
+				)
 				deep_mae_rh, count_mae_rh, count_mse_rh = compute_hierarchical_mae(
 					all_times_bin_pred_opt,
 					query_1_data,
@@ -3598,7 +3640,15 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 			if 'rmtpp_mse_var_opt' in run_model_flags and run_model_flags['rmtpp_mse_var_opt']:
 				print("Prediction for rmtpp_mse_var_opt model")
 				test_data_out_gaps_bin = dataset['test_data_out_gaps_bin']
-				_, all_times_bin_pred_opt = run_rmtpp_with_optimization_fixed_cnt_solver(args, models, data, test_data, test_data_out_gaps_bin, rmtpp_type='mse_var')
+				_, all_times_bin_pred_opt = run_rmtpp_with_optimization_fixed_cnt_solver(
+					args,
+					models,
+					data,
+					test_data,
+					test_data_out_gaps_bin,
+					dataset,
+					rmtpp_type='mse_var'
+				)
 				deep_mae_rh, count_mae_rh, count_mse_rh = compute_hierarchical_mae(
 					all_times_bin_pred_opt,
 					query_1_data,
