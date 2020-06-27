@@ -72,6 +72,17 @@ def add_metrics_to_dict(
 
 	return metrics_dict
 
+def write_arr_to_file(output_path, arr_true, arr_pred):
+	# Files are saved in .npy format
+	np.save(
+		output_path + '__' + 'fh_times_true',
+		arr_true,
+	)
+	np.save(
+		output_path + '__' + 'fh_times_pred',
+		arr_pred,
+	)
+
 def normalize_data(data):
 	mean = np.mean(data)
 	std = np.std(data)

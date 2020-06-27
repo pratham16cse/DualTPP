@@ -21,6 +21,7 @@ import sys
 from utils import IntensityHomogenuosPoisson, generate_sample
 from utils import get_time_features
 from utils import add_metrics_to_dict
+from utils import write_arr_to_file
 
 train_gap_metric_mae = tf.keras.metrics.MeanAbsoluteError()
 train_gap_metric_mse = tf.keras.metrics.MeanSquaredError()
@@ -2945,7 +2946,15 @@ def clean_dict_for_na_model(all_run_fun_pdf, run_model_flags):
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 
 
-def compute_full_model_acc(args, test_data, all_bins_count_pred, all_times_bin_pred, test_out_times_in_bin, dataset_name, model_name=None):
+def compute_full_model_acc(
+	args,
+	test_data,
+	all_bins_count_pred,
+	all_times_bin_pred,
+	test_out_times_in_bin,
+	dataset_name,
+	model_name=None
+):
 	[test_data_in_bin, test_data_in_bin_feats, test_data_out_bin, test_end_hr_bins,
 	 test_data_in_time_end_bin, test_data_in_gaps_bin, test_data_in_feats_bin,
 	 test_mean_bin, test_std_bin,
@@ -2996,7 +3005,13 @@ def compute_full_model_acc(args, test_data, all_bins_count_pred, all_times_bin_p
 	count_mae_fh_per_bin = np.mean(np.abs(all_bins_count_true-all_bins_count_pred ), axis=0)
 	deep_mae_fh = deep_mae
 
-	return deep_mae_fh, count_mae_fh, count_mae_fh_per_bin
+	return (
+		deep_mae_fh,
+		count_mae_fh,
+		count_mae_fh_per_bin,
+		test_out_times_in_bin,
+		all_times_pred,
+	)
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 
 
@@ -3575,7 +3590,13 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 				)
 				threshold_mae = compute_threshold_loss(all_times_bin_pred_opt, query_2_data)
 				print("deep_mae", deep_mae_rh)
-				deep_mae_fh, count_mae_fh, count_mae_fh_per_bin = compute_full_model_acc(
+				(
+					deep_mae_fh,
+					count_mae_fh,
+					count_mae_fh_per_bin,
+					all_times_true,
+					all_times_pred,
+				) = compute_full_model_acc(
 					args,
 					test_data,
 					None,
@@ -3592,6 +3613,14 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					deep_mae_fh,
 					count_mae_rh,
 					deep_mae_rh,
+				)
+				write_arr_to_file(
+					os.path.join(
+						'Outputs',
+						args.current_dataset+'__'+'rmtpp_nll_opt',
+					),
+					all_times_true,
+					all_times_pred,
 				)
 				print("____________________________________________________________________")
 				print("")
@@ -3616,7 +3645,13 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 				)
 				threshold_mae = compute_threshold_loss(all_times_bin_pred_opt, query_2_data)
 				print("deep_mae", deep_mae_rh)
-				deep_mae_fh, count_mae_fh, count_mae_fh_per_bin = compute_full_model_acc(
+				(
+					deep_mae_fh,
+					count_mae_fh,
+					count_mae_fh_per_bin,
+					all_times_true,
+					all_times_pred,
+				) = compute_full_model_acc(
 					args,
 					test_data,
 					None,
@@ -3633,6 +3668,14 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					deep_mae_fh,
 					count_mae_rh,
 					deep_mae_rh,
+				)
+				write_arr_to_file(
+					os.path.join(
+						'Outputs',
+						args.current_dataset+'__'+'rmtpp_mse_opt',
+					),
+					all_times_true,
+					all_times_pred,
 				)
 				print("____________________________________________________________________")
 				print("")
@@ -3657,7 +3700,13 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 				)
 				threshold_mae = compute_threshold_loss(all_times_bin_pred_opt, query_2_data)
 				print("deep_mae", deep_mae_rh)
-				deep_mae_fh, count_mae_fh, count_mae_fh_per_bin = compute_full_model_acc(
+				(
+					deep_mae_fh,
+					count_mae_fh,
+					count_mae_fh_per_bin,
+					all_times_true,
+					all_times_pred,
+				) = compute_full_model_acc(
 					args,
 					test_data,
 					None,
@@ -3674,6 +3723,14 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					deep_mae_fh,
 					count_mae_rh,
 					deep_mae_rh,
+				)
+				write_arr_to_file(
+					os.path.join(
+						'Outputs',
+						args.current_dataset+'__'+'rmtpp_mse_var_opt',
+					),
+					all_times_true,
+					all_times_pred,
 				)
 				print("____________________________________________________________________")
 				print("")
@@ -3692,7 +3749,13 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 				)
 				threshold_mae = compute_threshold_loss(all_times_bin_pred, query_2_data)
 				print("deep_mae", deep_mae_rh)
-				deep_mae_fh, count_mae_fh, count_mae_fh_per_bin = compute_full_model_acc(
+				(
+					deep_mae_fh,
+					count_mae_fh,
+					count_mae_fh_per_bin,
+					all_times_true,
+					all_times_pred,
+				) = compute_full_model_acc(
 					args,
 					test_data,
 					all_bins_count_pred,
@@ -3710,6 +3773,14 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					count_mae_rh,
 					deep_mae_rh,
 				)
+				write_arr_to_file(
+					os.path.join(
+						'Outputs',
+						args.current_dataset+'__'+'rmtpp_nll_cont',
+					),
+					all_times_true,
+					all_times_pred,
+				)
 				print("____________________________________________________________________")
 				print("")
 
@@ -3724,7 +3795,13 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 				)
 				threshold_mae = compute_threshold_loss(all_times_bin_pred, query_2_data)
 				print("deep_mae", deep_mae_rh)
-				deep_mae_fh, count_mae_fh, count_mae_fh_per_bin = compute_full_model_acc(
+				(
+					deep_mae_fh,
+					count_mae_fh,
+					count_mae_fh_per_bin,
+					all_times_true,
+					all_times_pred,
+				) = compute_full_model_acc(
 					args,
 					test_data,
 					all_bins_count_pred,
@@ -3742,6 +3819,14 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					count_mae_rh,
 					deep_mae_rh,
 				)
+				write_arr_to_file(
+					os.path.join(
+						'Outputs',
+						args.current_dataset+'__'+'rmtpp_mse_cont',
+					),
+					all_times_true,
+					all_times_pred,
+				)
 				print("____________________________________________________________________")
 				print("")
 
@@ -3756,7 +3841,13 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 				)
 				threshold_mae = compute_threshold_loss(all_times_bin_pred, query_2_data)
 				print("deep_mae", deep_mae_rh)
-				deep_mae_fh, count_mae_fh, count_mae_fh_per_bin = compute_full_model_acc(
+				(
+					deep_mae_fh,
+					count_mae_fh,
+					count_mae_fh_per_bin,
+					all_times_true,
+					all_times_pred,
+				) = compute_full_model_acc(
 					args,
 					test_data,
 					all_bins_count_pred,
@@ -3774,6 +3865,14 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					count_mae_rh,
 					deep_mae_rh,
 				)
+				write_arr_to_file(
+					os.path.join(
+						'Outputs',
+						args.current_dataset+'__'+'rmtpp_mse_var_cont',
+					),
+					all_times_true,
+					all_times_pred,
+				)
 				print("____________________________________________________________________")
 				print("")
 
@@ -3788,7 +3887,13 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 				)
 				threshold_mae = compute_threshold_loss(all_times_bin_pred, query_2_data)
 				print("deep_mae", deep_mae_rh)
-				deep_mae_fh, count_mae_fh, count_mae_fh_per_bin = compute_full_model_acc(
+				(
+					deep_mae_fh,
+					count_mae_fh,
+					count_mae_fh_per_bin,
+					all_times_true,
+					all_times_pred,
+				) = compute_full_model_acc(
 					args,
 					test_data,
 					all_bins_count_pred,
@@ -3806,6 +3911,14 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					count_mae_rh,
 					deep_mae_rh,
 				)
+				write_arr_to_file(
+					os.path.join(
+						'Outputs',
+						args.current_dataset+'__'+'rmtpp_nll_reinit',
+					),
+					all_times_true,
+					all_times_pred,
+				)
 				print("____________________________________________________________________")
 				print("")
 
@@ -3820,7 +3933,13 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 				)
 				threshold_mae = compute_threshold_loss(all_times_bin_pred, query_2_data)
 				print("deep_mae", deep_mae_rh)
-				deep_mae_fh, count_mae_fh, count_mae_fh_per_bin = compute_full_model_acc(
+				(
+					deep_mae_fh,
+					count_mae_fh,
+					count_mae_fh_per_bin,
+					all_times_true,
+					all_times_pred,
+				) = compute_full_model_acc(
 					args,
 					test_data,
 					all_bins_count_pred,
@@ -3838,6 +3957,14 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					count_mae_rh,
 					deep_mae_rh,
 				)
+				write_arr_to_file(
+					os.path.join(
+						'Outputs',
+						args.current_dataset+'__'+'rmtpp_mse_reinit',
+					),
+					all_times_true,
+					all_times_pred,
+				)
 				print("____________________________________________________________________")
 				print("")
 
@@ -3852,7 +3979,13 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 				)
 				threshold_mae = compute_threshold_loss(all_times_bin_pred, query_2_data)
 				print("deep_mae", deep_mae_rh)
-				deep_mae_fh, count_mae_fh, count_mae_fh_per_bin = compute_full_model_acc(
+				(
+					deep_mae_fh,
+					count_mae_fh,
+					count_mae_fh_per_bin,
+					all_times_true,
+					all_times_pred,
+				) = compute_full_model_acc(
 					args,
 					test_data,
 					all_bins_count_pred,
@@ -3869,6 +4002,14 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					deep_mae_fh,
 					count_mae_rh,
 					deep_mae_rh,
+				)
+				write_arr_to_file(
+					os.path.join(
+						'Outputs',
+						args.current_dataset+'__'+'rmtpp_mse_var_reinit',
+					),
+					all_times_true,
+					all_times_pred,
 				)
 				print("____________________________________________________________________")
 				print("")
@@ -3887,7 +4028,13 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 				)
 				threshold_mae = compute_threshold_loss(all_times_bin_pred, query_2_data)
 				print("deep_mae", deep_mae_rh)
-				deep_mae_fh, count_mae_fh, count_mae_fh_per_bin = compute_full_model_acc(
+				(
+					deep_mae_fh,
+					count_mae_fh,
+					count_mae_fh_per_bin,
+					all_times_true,
+					all_times_pred,
+				) = compute_full_model_acc(
 					args,
 					test_data,
 					None,
@@ -3905,6 +4052,14 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					count_mae_rh,
 					deep_mae_rh,
 				)
+				write_arr_to_file(
+					os.path.join(
+						'Outputs',
+						args.current_dataset+'__'+'hawkes_simu',
+					),
+					all_times_true,
+					all_times_pred,
+				)
 				print("____________________________________________________________________")
 				print("")
 
@@ -3919,7 +4074,13 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 				)
 				threshold_mae = compute_threshold_loss(all_times_bin_pred, query_2_data)
 				print("deep_mae", deep_mae_rh)
-				deep_mae_fh, count_mae_fh, count_mae_fh_per_bin = compute_full_model_acc(
+				(
+					deep_mae_fh,
+					count_mae_fh,
+					count_mae_fh_per_bin,
+					all_times_true,
+					all_times_pred,
+				) = compute_full_model_acc(
 					args,
 					test_data,
 					all_bins_count_pred,
@@ -3937,6 +4098,14 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					count_mae_rh,
 					deep_mae_rh,
 				)
+				write_arr_to_file(
+					os.path.join(
+						'Outputs',
+						args.current_dataset+'__'+'count_only',
+					),
+					all_times_true,
+					all_times_pred,
+				)
 				print("____________________________________________________________________")
 				print("")
 
@@ -3951,7 +4120,13 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 				)
 				threshold_mae = compute_threshold_loss(all_times_bin_pred, query_2_data)
 				print("deep_mae", deep_mae_rh)
-				deep_mae_fh, count_mae_fh, count_mae_fh_per_bin = compute_full_model_acc(
+				(
+					deep_mae_fh,
+					count_mae_fh,
+					count_mae_fh_per_bin,
+					all_times_true,
+					all_times_pred,
+				) = compute_full_model_acc(
 					args,
 					test_data,
 					None,
@@ -3969,6 +4144,14 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					count_mae_rh,
 					deep_mae_rh,
 				)
+				write_arr_to_file(
+					os.path.join(
+						'Outputs',
+						args.current_dataset+'__'+'rmtpp_nll_simu',
+					),
+					all_times_true,
+					all_times_pred,
+				)
 				print("____________________________________________________________________")
 				print("")
 
@@ -3983,7 +4166,13 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 				)
 				threshold_mae = compute_threshold_loss(all_times_bin_pred, query_2_data)
 				print("deep_mae", deep_mae_rh)
-				deep_mae_fh, count_mae_fh, count_mae_fh_per_bin = compute_full_model_acc(
+				(
+					deep_mae_fh,
+					count_mae_fh,
+					count_mae_fh_per_bin,
+					all_times_true,
+					all_times_pred,
+				) = compute_full_model_acc(
 					args,
 					test_data,
 					None,
@@ -4001,6 +4190,14 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					count_mae_rh,
 					deep_mae_rh,
 				)
+				write_arr_to_file(
+					os.path.join(
+						'Outputs',
+						args.current_dataset+'__'+'rmtpp_mse_simu',
+					),
+					all_times_true,
+					all_times_pred,
+				)
 				print("____________________________________________________________________")
 				print("")
 
@@ -4015,7 +4212,13 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 				)
 				threshold_mae = compute_threshold_loss(all_times_bin_pred, query_2_data)
 				print("deep_mae", deep_mae_rh)
-				deep_mae_fh, count_mae_fh, count_mae_fh_per_bin = compute_full_model_acc(
+				(
+					deep_mae_fh,
+					count_mae_fh,
+					count_mae_fh_per_bin,
+					all_times_true,
+					all_times_pred,
+				) = compute_full_model_acc(
 					args,
 					test_data,
 					None,
@@ -4033,6 +4236,14 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					count_mae_rh,
 					deep_mae_rh,
 				)
+				write_arr_to_file(
+					os.path.join(
+						'Outputs',
+						args.current_dataset+'__'+'rmtpp_mse_var_simu',
+					),
+					all_times_true,
+					all_times_pred,
+				)
 				print("____________________________________________________________________")
 				print("")
 
@@ -4047,7 +4258,13 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 				)
 				threshold_mae = compute_threshold_loss(all_times_bin_pred, query_2_data)
 				print("deep_mae", deep_mae_rh)
-				deep_mae_fh, count_mae_fh, count_mae_fh_per_bin = compute_full_model_acc(
+				(
+					deep_mae_fh,
+					count_mae_fh,
+					count_mae_fh_per_bin,
+					all_times_true,
+					all_times_pred,
+				) = compute_full_model_acc(
 					args,
 					test_data,
 					None,
@@ -4064,6 +4281,14 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					deep_mae_fh,
 					count_mae_rh,
 					deep_mae_rh,
+				)
+				write_arr_to_file(
+					os.path.join(
+						'Outputs',
+						args.current_dataset+'__'+'wgan_simu',
+					),
+					all_times_true,
+					all_times_pred,
 				)
 				print("____________________________________________________________________")
 				print("")
