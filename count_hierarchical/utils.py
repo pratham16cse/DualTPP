@@ -58,15 +58,19 @@ def add_metrics_to_dict(
 	count_mae_fh,
 	count_mae_fh_per_bin,
 	deep_mae_fh,
+	wass_dist_fh,
 	count_mae_rh,
 	deep_mae_rh,
+	wass_dist_rh,
 ):
 	if model_name not in metrics_dict:
 		metrics_dict[model_name] = dict()
 	metrics_dict[model_name]['count_mae_fh'] = count_mae_fh
 	metrics_dict[model_name]['deep_mae_fh'] = deep_mae_fh
+	metrics_dict[model_name]['wass_dist_fh'] = wass_dist_fh
 	metrics_dict[model_name]['count_mae_rh'] = count_mae_rh
 	metrics_dict[model_name]['deep_mae_rh'] = deep_mae_rh
+	metrics_dict[model_name]['wass_dist_rh'] = wass_dist_rh
 	for i in range(len(count_mae_fh_per_bin)):
 		metrics_dict[model_name]['count_mae_fh_bin_'+str(i)] = count_mae_fh_per_bin[i]
 

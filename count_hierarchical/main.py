@@ -286,10 +286,11 @@ with open('Outputs/results_'+dataset_name+'.txt', 'w') as fp:
     fp.write('\nModel Name & Count MAE & Deep MAE')
     for model_name, metrics_dict in results.items():
         fp.write(
-            '\n{} & {:.3f} & {:.3f} \\\\'.format(
+            ' & \n{} & {:.3f} & {:.3f} & {:.3f} \\\\'.format(
                 model_name,
                 metrics_dict['count_mae_rh'],
                 metrics_dict['deep_mae_rh'],
+                metrics_dict['wass_dist_rh'],
             )
         )
 
@@ -297,10 +298,11 @@ with open('Outputs/results_'+dataset_name+'.txt', 'w') as fp:
     fp.write('\nModel Name & Count MAE & Deep MAE')
     for model_name, metrics_dict in results.items():
         fp.write(
-            '\n{} & {:.3f} & {:.3f} \\\\'.format(
+            ' & \n{} & {:.3f} & {:.3f} & {:.3f} \\\\'.format(
                 model_name,
                 metrics_dict['count_mae_fh'],
                 metrics_dict['deep_mae_fh'],
+                metrics_dict['wass_dist_fh'],
             )
         )
 
