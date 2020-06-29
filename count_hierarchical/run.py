@@ -22,6 +22,7 @@ from utils import IntensityHomogenuosPoisson, generate_sample
 from utils import get_time_features
 from utils import add_metrics_to_dict
 from utils import write_arr_to_file
+from utils import write_pe_metrics_to_file
 
 train_gap_metric_mae = tf.keras.metrics.MeanAbsoluteError()
 train_gap_metric_mse = tf.keras.metrics.MeanSquaredError()
@@ -2993,7 +2994,12 @@ def compute_full_model_acc(
 	compute_depth = 10
 	t_b_plus = test_end_hr_bins[:,0] - bin_size
 	t_e_plus = test_end_hr_bins[:,-1]
-	deep_mae = compute_hierarchical_mae_deep(all_times_pred, test_out_times_in_bin, t_b_plus, t_e_plus, compute_depth)
+	deep_mae, deep_mae_fh_pe = compute_hierarchical_mae_deep(
+		all_times_pred,
+		test_out_times_in_bin,
+		t_b_plus, t_e_plus,
+		compute_depth
+	)
 
 	print("____________________________________________________________________")
 	print(model_name, 'Full-eval: MAE for Count Prediction:', np.mean(np.abs(all_bins_count_true-all_bins_count_pred )))
@@ -3001,11 +3007,13 @@ def compute_full_model_acc(
 	print(model_name, 'Full-eval: Deep MAE for events Prediction:', deep_mae, 'at depth', compute_depth)
 	print("____________________________________________________________________")
 
-	count_mae_fh = np.mean(np.abs(all_bins_count_true-all_bins_count_pred ))
-	count_mae_fh_per_bin = np.mean(np.abs(all_bins_count_true-all_bins_count_pred ), axis=0)
+	count_mae_fh = np.mean(np.abs(all_bins_count_true-all_bins_count_pred))
+	count_mae_fh_per_bin = np.mean(np.abs(all_bins_count_true-all_bins_count_pred), axis=0)
 	deep_mae_fh = deep_mae
 
-	wasserstein_dist_fh = compute_wasserstein_dist(
+	count_mae_fh_pe = np.mean(np.abs(all_bins_count_true-all_bins_count_pred), axis=1)
+
+	wasserstein_dist_fh, wass_dist_fh_pe = compute_wasserstein_dist(
 		all_times_pred,
 		test_out_times_in_bin,
 		t_b_plus,
@@ -3017,6 +3025,9 @@ def compute_full_model_acc(
 		count_mae_fh,
 		count_mae_fh_per_bin,
 		wasserstein_dist_fh,
+		count_mae_fh_pe,
+		deep_mae_fh_pe,
+		wass_dist_fh_pe,
 		test_out_times_in_bin,
 		all_times_pred,
 	)
@@ -3042,22 +3053,29 @@ def compute_mae_cur_bound(all_event_pred, all_event_true, t_b_plus, t_e_plus):
 	all_event_true_count = np.array(all_event_true_count)
 	all_event_true = [all_event_true[idx][times_out_indices_tb[idx]:times_out_indices_te[idx]] for idx in range(len(t_b_plus))]
 	mae = np.mean(np.abs(all_event_pred_count - all_event_true_count))
+	mae_pe = np.abs(all_event_pred_count - all_event_true_count)
 
-	return all_event_pred, all_event_true, mae 
+	return all_event_pred, all_event_true, mae, mae_pe
 
 def compute_hierarchical_mae_deep(all_event_pred, all_event_true, t_b_plus, t_e_plus, compute_depth):
 	if compute_depth == 0:
-		return 0
+		return 0, np.zeros((len(all_event_pred)))
 	
-	all_event_pred, all_event_true, res = compute_mae_cur_bound(all_event_pred, 
-											all_event_true, t_b_plus, t_e_plus)
+	all_event_pred, all_event_true, res, res_pe = compute_mae_cur_bound(
+		all_event_pred, 
+		all_event_true,
+		t_b_plus, t_e_plus
+	)
 
 	t_b_e_mid = (t_b_plus + t_e_plus) / 2.0
 	compute_depth -= 1
 
-	res1 = compute_hierarchical_mae_deep(all_event_pred, all_event_true, t_b_plus, t_b_e_mid, compute_depth)
-	res2 = compute_hierarchical_mae_deep(all_event_pred, all_event_true, t_b_e_mid, t_e_plus, compute_depth)
-	return res + res1 + res2
+	res1, res1_pe = compute_hierarchical_mae_deep(all_event_pred, all_event_true, t_b_plus, t_b_e_mid, compute_depth)
+	res2, res2_pe = compute_hierarchical_mae_deep(all_event_pred, all_event_true, t_b_e_mid, t_e_plus, compute_depth)
+	return (
+		res + res1 + res2,
+		res_pe + res1_pe + res2_pe,
+	)
 
 def compute_hierarchical_mae(all_event_pred_uncut, query_data, all_event_true, compute_depth):
 	[t_b_plus, t_e_plus, true_count] = query_data
@@ -3070,24 +3088,28 @@ def compute_hierarchical_mae(all_event_pred_uncut, query_data, all_event_true, c
 	print("MSE of event count in range:", event_count_mse)
 	print("MAE of event count in range:", event_count_mae)
 
-	wasserstein_dist_rh = compute_wasserstein_dist(
+	wasserstein_dist_rh, wass_dist_rh_pe = compute_wasserstein_dist(
 		all_event_pred,
 		all_event_true,
 		t_b_plus,
 		t_e_plus
-	) 
+	)
+
+	deep_mae_rh, deep_mae_rh_pe = compute_hierarchical_mae_deep(
+		all_event_pred,
+		all_event_true,
+		t_b_plus,
+		t_e_plus,
+		compute_depth
+	)
 
 	return (
-		compute_hierarchical_mae_deep(
-			all_event_pred,
-			all_event_true,
-			t_b_plus,
-			t_e_plus,
-			compute_depth
-		),
+		deep_mae_rh,
 		event_count_mae,
 		event_count_mse,
 		wasserstein_dist_rh,
+		deep_mae_rh_pe,
+		wass_dist_rh_pe,
 	)
 
 def compute_wasserstein_dist(all_event_pred, all_event_true, t_b_plus, t_e_plus):
@@ -3100,9 +3122,11 @@ def compute_wasserstein_dist(all_event_pred, all_event_true, t_b_plus, t_e_plus)
 	all_event_true = [all_event_true[idx][idx_tb[idx]:idx_te[idx]] for idx in range(len(t_b_plus))]
 
 
-	def w_dist(true_ts, pred_ts, T):
-		true_ts = np.array(true_ts)
-		pred_ts = np.array(pred_ts)
+	def w_dist(true_ts, pred_ts, B, E):
+		true_ts = np.array(true_ts) * 1. / (E - B) # Normalize all times
+		pred_ts = np.array(pred_ts) * 1. / (E - B) # Normalize all times
+		E_norm = E * 1. / (E - B)
+		B_norm = B * 1. / (E - B)
 		min_len = min(len(true_ts), len(pred_ts))
 		dist = 0.
 		dist += np.sum(np.abs(true_ts[:min_len] - pred_ts[:min_len]))
@@ -3114,25 +3138,32 @@ def compute_wasserstein_dist(all_event_pred, all_event_true, t_b_plus, t_e_plus)
 			leftover = None
 	
 		if leftover is not None:
-			dist += np.sum(np.abs(T - leftover))
+			dist += np.sum(np.abs(E_norm - leftover))
 	
 		dist = np.sum(dist)
+
+		n = min_len
+		if leftover is not None:
+			n += len(leftover)
 	
-		return dist
+		return dist, n
 
-	dist = []
-	for true_ts, pred_ts, T in zip(all_event_true, all_event_pred, t_e_plus):
-		dist.append(
-			w_dist(
-				true_ts,
-				pred_ts,
-				T,
-			)
+	dist_lst = []
+	n_lst = []
+	for true_ts, pred_ts, B, E in zip(all_event_true, all_event_pred, t_b_plus, t_e_plus):
+		dist, n = w_dist(
+			true_ts,
+			pred_ts,
+			B, E,
 		)
+		dist_lst.append(dist)
+		n_lst.append(n)
 
-	avg_dist = np.mean(dist)
+	sum_dist = np.sum(dist_lst)
+	n = np.sum(n_lst)
+	avg_dist = sum_dist / n * 1.
 
-	return avg_dist
+	return sum_dist, dist_lst
 
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 
@@ -3589,7 +3620,14 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 			if 'run_rmtpp_count_with_optimization' in run_model_flags and run_model_flags['run_rmtpp_count_with_optimization']:
 				print("Prediction for run_rmtpp_count_with_optimization model")
 				_, all_times_bin_pred_opt = run_rmtpp_count_with_optimization(args, models, data, test_data)
-				deep_mae_rh, count_mae_rh, count_mse_rh, wass_dist_rh = compute_hierarchical_mae(
+				(
+					deep_mae_rh,
+					count_mae_rh,
+					count_mse_rh,
+					wass_dist_rh,
+					deep_mae_rh_pe,
+					wass_dist_rh_pe,
+				) = compute_hierarchical_mae(
 					all_times_bin_pred_opt,
 					query_1_data,
 					test_out_all_event_true,
@@ -3612,7 +3650,14 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 			if 'run_rmtpp_with_optimization_fixed_cnt' in run_model_flags and run_model_flags['run_rmtpp_with_optimization_fixed_cnt']:
 				print("Prediction for run_rmtpp_with_optimization_fixed_cnt model")
 				_, all_times_bin_pred_opt = run_rmtpp_with_optimization_fixed_cnt(args, models, data, test_data)
-				deep_mae_rh, count_mae_rh, count_mse_rh, wass_dist_rh = compute_hierarchical_mae(
+				(
+					deep_mae_rh,
+					count_mae_rh,
+					count_mse_rh,
+					wass_dist_rh,
+					deep_mae_rh_pe,
+					wass_dist_rh_pe,
+				) = compute_hierarchical_mae(
 					all_times_bin_pred_opt,
 					query_1_data,
 					test_out_all_event_true,
@@ -3644,7 +3689,14 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					dataset,
 					rmtpp_type='nll'
 				)
-				deep_mae_rh, count_mae_rh, count_mse_rh, wass_dist_rh = compute_hierarchical_mae(
+				(
+					deep_mae_rh,
+					count_mae_rh,
+					count_mse_rh,
+					wass_dist_rh,
+					deep_mae_rh_pe,
+					wass_dist_rh_pe,
+				) = compute_hierarchical_mae(
 					all_times_bin_pred_opt,
 					query_1_data,
 					test_out_all_event_true,
@@ -3657,6 +3709,9 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					count_mae_fh,
 					count_mae_fh_per_bin,
 					wass_dist_fh,
+					count_mae_fh_pe,
+					deep_mae_fh_pe,
+					wass_dist_fh_pe,
 					all_times_true,
 					all_times_pred,
 				) = compute_full_model_acc(
@@ -3687,6 +3742,15 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					all_times_true,
 					all_times_pred,
 				)
+				write_pe_metrics_to_file(
+					os.path.join(
+						'Outputs',
+						args.current_dataset+'__'+'rmtpp_nll_opt',
+					),
+					count_mae_fh_pe,
+					deep_mae_fh_pe,
+					wass_dist_fh_pe,
+				)
 				print("____________________________________________________________________")
 				print("")
 
@@ -3702,7 +3766,14 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					dataset,
 					rmtpp_type='mse'
 				)
-				deep_mae_rh, count_mae_rh, count_mse_rh, wass_dist_rh = compute_hierarchical_mae(
+				(
+					deep_mae_rh,
+					count_mae_rh,
+					count_mse_rh,
+					wass_dist_rh,
+					deep_mae_rh_pe,
+					wass_dist_rh_pe,
+				) = compute_hierarchical_mae(
 					all_times_bin_pred_opt,
 					query_1_data,
 					test_out_all_event_true,
@@ -3715,6 +3786,9 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					count_mae_fh,
 					count_mae_fh_per_bin,
 					wass_dist_fh,
+					count_mae_fh_pe,
+					deep_mae_fh_pe,
+					wass_dist_fh_pe,
 					all_times_true,
 					all_times_pred,
 				) = compute_full_model_acc(
@@ -3745,6 +3819,15 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					all_times_true,
 					all_times_pred,
 				)
+				write_pe_metrics_to_file(
+					os.path.join(
+						'Outputs',
+						args.current_dataset+'__'+'rmtpp_mse_opt',
+					),
+					count_mae_fh_pe,
+					deep_mae_fh_pe,
+					wass_dist_fh_pe,
+				)
 				print("____________________________________________________________________")
 				print("")
 
@@ -3760,7 +3843,14 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					dataset,
 					rmtpp_type='mse_var'
 				)
-				deep_mae_rh, count_mae_rh, count_mse_rh, wass_dist_rh = compute_hierarchical_mae(
+				(
+					deep_mae_rh,
+					count_mae_rh,
+					count_mse_rh,
+					wass_dist_rh,
+					deep_mae_rh_pe,
+					wass_dist_rh_pe,
+				) = compute_hierarchical_mae(
 					all_times_bin_pred_opt,
 					query_1_data,
 					test_out_all_event_true,
@@ -3773,6 +3863,9 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					count_mae_fh,
 					count_mae_fh_per_bin,
 					wass_dist_fh,
+					count_mae_fh_pe,
+					deep_mae_fh_pe,
+					wass_dist_fh_pe,
 					all_times_true,
 					all_times_pred,
 				) = compute_full_model_acc(
@@ -3803,6 +3896,15 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					all_times_true,
 					all_times_pred,
 				)
+				write_pe_metrics_to_file(
+					os.path.join(
+						'Outputs',
+						args.current_dataset+'__'+'rmtpp_mse_var_opt',
+					),
+					count_mae_fh_pe,
+					deep_mae_fh_pe,
+					wass_dist_fh_pe,
+				)
 				print("____________________________________________________________________")
 				print("")
 
@@ -3812,7 +3914,14 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 			if 'rmtpp_nll_cont' in run_model_flags and run_model_flags['rmtpp_nll_cont']:
 				print("Prediction for run_rmtpp_count_cont_rmtpp model with rmtpp_nll")
 				all_bins_count_pred, all_times_bin_pred = run_rmtpp_count_cont_rmtpp(args, models, data, test_data, rmtpp_type='nll')
-				deep_mae_rh, count_mae_rh, count_mse_rh, wass_dist_rh = compute_hierarchical_mae(
+				(
+					deep_mae_rh,
+					count_mae_rh,
+					count_mse_rh,
+					wass_dist_rh,
+					deep_mae_rh_pe,
+					wass_dist_rh_pe,
+				) = compute_hierarchical_mae(
 					all_times_bin_pred,
 					query_1_data,
 					test_out_all_event_true,
@@ -3825,6 +3934,9 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					count_mae_fh,
 					count_mae_fh_per_bin,
 					wass_dist_fh,
+					count_mae_fh_pe,
+					deep_mae_fh_pe,
+					wass_dist_fh_pe,
 					all_times_true,
 					all_times_pred,
 				) = compute_full_model_acc(
@@ -3855,13 +3967,29 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					all_times_true,
 					all_times_pred,
 				)
+				write_pe_metrics_to_file(
+					os.path.join(
+						'Outputs',
+						args.current_dataset+'__'+'rmtpp_nll_cont',
+					),
+					count_mae_fh_pe,
+					deep_mae_fh_pe,
+					wass_dist_fh_pe,
+				)
 				print("____________________________________________________________________")
 				print("")
 
 			if 'rmtpp_mse_cont' in run_model_flags and run_model_flags['rmtpp_mse_cont']:
 				print("Prediction for run_rmtpp_count_cont_rmtpp model with rmtpp_mse")
 				all_bins_count_pred, all_times_bin_pred = run_rmtpp_count_cont_rmtpp(args, models, data, test_data, rmtpp_type='mse')
-				deep_mae_rh, count_mae_rh, count_mse_rh, wass_dist_rh = compute_hierarchical_mae(
+				(
+					deep_mae_rh,
+					count_mae_rh,
+					count_mse_rh,
+					wass_dist_rh,
+					deep_mae_rh_pe,
+					wass_dist_rh_pe,
+				) = compute_hierarchical_mae(
 					all_times_bin_pred,
 					query_1_data,
 					test_out_all_event_true,
@@ -3874,6 +4002,9 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					count_mae_fh,
 					count_mae_fh_per_bin,
 					wass_dist_fh,
+					count_mae_fh_pe,
+					deep_mae_fh_pe,
+					wass_dist_fh_pe,
 					all_times_true,
 					all_times_pred,
 				) = compute_full_model_acc(
@@ -3904,13 +4035,29 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					all_times_true,
 					all_times_pred,
 				)
+				write_pe_metrics_to_file(
+					os.path.join(
+						'Outputs',
+						args.current_dataset+'__'+'rmtpp_mse_cont',
+					),
+					count_mae_fh_pe,
+					deep_mae_fh_pe,
+					wass_dist_fh_pe,
+				)
 				print("____________________________________________________________________")
 				print("")
 
 			if 'rmtpp_mse_var_cont' in run_model_flags and run_model_flags['rmtpp_mse_var_cont']:
 				print("Prediction for run_rmtpp_count_cont_rmtpp model with rmtpp_mse_var")
 				all_bins_count_pred, all_times_bin_pred = run_rmtpp_count_cont_rmtpp(args, models, data, test_data, rmtpp_type='mse_var')
-				deep_mae_rh, count_mae_rh, count_mse_rh, wass_dist_rh = compute_hierarchical_mae(
+				(
+					deep_mae_rh,
+					count_mae_rh,
+					count_mse_rh,
+					wass_dist_rh,
+					deep_mae_rh_pe,
+					wass_dist_rh_pe,
+				) = compute_hierarchical_mae(
 					all_times_bin_pred,
 					query_1_data,
 					test_out_all_event_true,
@@ -3923,6 +4070,9 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					count_mae_fh,
 					count_mae_fh_per_bin,
 					wass_dist_fh,
+					count_mae_fh_pe,
+					deep_mae_fh_pe,
+					wass_dist_fh_pe,
 					all_times_true,
 					all_times_pred,
 				) = compute_full_model_acc(
@@ -3953,13 +4103,29 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					all_times_true,
 					all_times_pred,
 				)
+				write_pe_metrics_to_file(
+					os.path.join(
+						'Outputs',
+						args.current_dataset+'__'+'rmtpp_mse_var_cont',
+					),
+					count_mae_fh_pe,
+					deep_mae_fh_pe,
+					wass_dist_fh_pe,
+				)
 				print("____________________________________________________________________")
 				print("")
 
 			if 'rmtpp_nll_reinit' in run_model_flags and run_model_flags['rmtpp_nll_reinit']:
 				print("Prediction for run_rmtpp_count_reinit model with rmtpp_nll")
 				all_bins_count_pred, all_times_bin_pred = run_rmtpp_count_reinit(args, models, data, test_data, rmtpp_type='nll')
-				deep_mae_rh, count_mae_rh, count_mse_rh, wass_dist_rh = compute_hierarchical_mae(
+				(
+					deep_mae_rh,
+					count_mae_rh,
+					count_mse_rh,
+					wass_dist_rh,
+					deep_mae_rh_pe,
+					wass_dist_rh_pe,
+				) = compute_hierarchical_mae(
 					all_times_bin_pred,
 					query_1_data,
 					test_out_all_event_true,
@@ -3972,6 +4138,9 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					count_mae_fh,
 					count_mae_fh_per_bin,
 					wass_dist_fh,
+					count_mae_fh_pe,
+					deep_mae_fh_pe,
+					wass_dist_fh_pe,
 					all_times_true,
 					all_times_pred,
 				) = compute_full_model_acc(
@@ -4002,13 +4171,29 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					all_times_true,
 					all_times_pred,
 				)
+				write_pe_metrics_to_file(
+					os.path.join(
+						'Outputs',
+						args.current_dataset+'__'+'rmtpp_nll_reinit',
+					),
+					count_mae_fh_pe,
+					deep_mae_fh_pe,
+					wass_dist_fh_pe,
+				)
 				print("____________________________________________________________________")
 				print("")
 
 			if 'rmtpp_mse_reinit' in run_model_flags and run_model_flags['rmtpp_mse_reinit']:
 				print("Prediction for run_rmtpp_count_reinit model with rmtpp_mse")
 				all_bins_count_pred, all_times_bin_pred = run_rmtpp_count_reinit(args, models, data, test_data, rmtpp_type='mse')
-				deep_mae_rh, count_mae_rh, count_mse_rh, wass_dist_rh = compute_hierarchical_mae(
+				(
+					deep_mae_rh,
+					count_mae_rh,
+					count_mse_rh,
+					wass_dist_rh,
+					deep_mae_rh_pe,
+					wass_dist_rh_pe,
+				) = compute_hierarchical_mae(
 					all_times_bin_pred,
 					query_1_data,
 					test_out_all_event_true,
@@ -4021,6 +4206,9 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					count_mae_fh,
 					count_mae_fh_per_bin,
 					wass_dist_fh,
+					count_mae_fh_pe,
+					deep_mae_fh_pe,
+					wass_dist_fh_pe,
 					all_times_true,
 					all_times_pred,
 				) = compute_full_model_acc(
@@ -4051,13 +4239,29 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					all_times_true,
 					all_times_pred,
 				)
+				write_pe_metrics_to_file(
+					os.path.join(
+						'Outputs',
+						args.current_dataset+'__'+'rmtpp_mse_reinit',
+					),
+					count_mae_fh_pe,
+					deep_mae_fh_pe,
+					wass_dist_fh_pe,
+				)
 				print("____________________________________________________________________")
 				print("")
 
 			if 'rmtpp_mse_var_reinit' in run_model_flags and run_model_flags['rmtpp_mse_var_reinit']:
 				print("Prediction for run_rmtpp_count_reinit model with rmtpp_mse_var")
 				all_bins_count_pred, all_times_bin_pred = run_rmtpp_count_reinit(args, models, data, test_data, rmtpp_type='mse_var')
-				deep_mae_rh, count_mae_rh, count_mse_rh, wass_dist_rh = compute_hierarchical_mae(
+				(
+					deep_mae_rh,
+					count_mae_rh,
+					count_mse_rh,
+					wass_dist_rh,
+					deep_mae_rh_pe,
+					wass_dist_rh_pe,
+				) = compute_hierarchical_mae(
 					all_times_bin_pred,
 					query_1_data,
 					test_out_all_event_true,
@@ -4070,6 +4274,9 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					count_mae_fh,
 					count_mae_fh_per_bin,
 					wass_dist_fh,
+					count_mae_fh_pe,
+					deep_mae_fh_pe,
+					wass_dist_fh_pe,
 					all_times_true,
 					all_times_pred,
 				) = compute_full_model_acc(
@@ -4100,6 +4307,15 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					all_times_true,
 					all_times_pred,
 				)
+				write_pe_metrics_to_file(
+					os.path.join(
+						'Outputs',
+						args.current_dataset+'__'+'rmtpp_mse_var_reinit',
+					),
+					count_mae_fh_pe,
+					deep_mae_fh_pe,
+					wass_dist_fh_pe,
+				)
 				print("____________________________________________________________________")
 				print("")
 
@@ -4109,7 +4325,14 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 				hawkes_timestamps_pred = dataset['hawkes_timestamps_pred']
 				print("Prediction for hawkes_simu model with rmtpp_mse")
 				_, all_times_bin_pred = run_hawkes_model(args, hawkes_timestamps_pred, None, test_data)
-				deep_mae_rh, count_mae_rh, count_mse_rh, wass_dist_rh = compute_hierarchical_mae(
+				(
+					deep_mae_rh,
+					count_mae_rh,
+					count_mse_rh,
+					wass_dist_rh,
+					deep_mae_rh_pe,
+					wass_dist_rh_pe,
+				) = compute_hierarchical_mae(
 					all_times_bin_pred,
 					query_1_data,
 					test_out_all_event_true,
@@ -4122,6 +4345,9 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					count_mae_fh,
 					count_mae_fh_per_bin,
 					wass_dist_fh,
+					count_mae_fh_pe,
+					deep_mae_fh_pe,
+					wass_dist_fh_pe,
 					all_times_true,
 					all_times_pred,
 				) = compute_full_model_acc(
@@ -4152,13 +4378,29 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					all_times_true,
 					all_times_pred,
 				)
+				write_pe_metrics_to_file(
+					os.path.join(
+						'Outputs',
+						args.current_dataset+'__'+'hawkes_simu',
+					),
+					count_mae_fh_pe,
+					deep_mae_fh_pe,
+					wass_dist_fh_pe,
+				)
 				print("____________________________________________________________________")
 				print("")
 
 			if 'count_only' in run_model_flags and run_model_flags['count_only']:
 				print("Prediction for count_only model with rmtpp_mse")
 				all_bins_count_pred, all_times_bin_pred = run_count_only_model(args, models, data, test_data)
-				deep_mae_rh, count_mae_rh, count_mse_rh, wass_dist_rh = compute_hierarchical_mae(
+				(
+					deep_mae_rh,
+					count_mae_rh,
+					count_mse_rh,
+					wass_dist_rh,
+					deep_mae_rh_pe,
+					wass_dist_rh_pe,
+				) = compute_hierarchical_mae(
 					all_times_bin_pred,
 					query_1_data,
 					test_out_all_event_true,
@@ -4171,6 +4413,9 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					count_mae_fh,
 					count_mae_fh_per_bin,
 					wass_dist_fh,
+					count_mae_fh_pe,
+					deep_mae_fh_pe,
+					wass_dist_fh_pe,
 					all_times_true,
 					all_times_pred,
 				) = compute_full_model_acc(
@@ -4201,13 +4446,29 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					all_times_true,
 					all_times_pred,
 				)
+				write_pe_metrics_to_file(
+					os.path.join(
+						'Outputs',
+						args.current_dataset+'__'+'count_only',
+					),
+					count_mae_fh_pe,
+					deep_mae_fh_pe,
+					wass_dist_fh_pe,
+				)
 				print("____________________________________________________________________")
 				print("")
 
 			if 'rmtpp_nll_simu' in run_model_flags and run_model_flags['rmtpp_nll_simu']:
 				print("Prediction for plain_rmtpp_count model with rmtpp_nll")
 				result, all_times_bin_pred = run_rmtpp_for_count(args, models, data, test_data, rmtpp_type='nll')
-				deep_mae_rh, count_mae_rh, count_mse_rh, wass_dist_rh = compute_hierarchical_mae(
+				(
+					deep_mae_rh,
+					count_mae_rh,
+					count_mse_rh,
+					wass_dist_rh,
+					deep_mae_rh_pe,
+					wass_dist_rh_pe,
+				) = compute_hierarchical_mae(
 					all_times_bin_pred,
 					query_1_data,
 					test_out_all_event_true,
@@ -4220,6 +4481,9 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					count_mae_fh,
 					count_mae_fh_per_bin,
 					wass_dist_fh,
+					count_mae_fh_pe,
+					deep_mae_fh_pe,
+					wass_dist_fh_pe,
 					all_times_true,
 					all_times_pred,
 				) = compute_full_model_acc(
@@ -4250,13 +4514,29 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					all_times_true,
 					all_times_pred,
 				)
+				write_pe_metrics_to_file(
+					os.path.join(
+						'Outputs',
+						args.current_dataset+'__'+'rmtpp_nll_simu',
+					),
+					count_mae_fh_pe,
+					deep_mae_fh_pe,
+					wass_dist_fh_pe,
+				)
 				print("____________________________________________________________________")
 				print("")
 
 			if 'rmtpp_mse_simu' in run_model_flags and run_model_flags['rmtpp_mse_simu']:
 				print("Prediction for plain_rmtpp_count model with rmtpp_mse")
 				result, all_times_bin_pred = run_rmtpp_for_count(args, models, data, test_data, rmtpp_type='mse')
-				deep_mae_rh, count_mae_rh, count_mse_rh, wass_dist_rh = compute_hierarchical_mae(
+				(
+					deep_mae_rh,
+					count_mae_rh,
+					count_mse_rh,
+					wass_dist_rh,
+					deep_mae_rh_pe,
+					wass_dist_rh_pe,
+				) = compute_hierarchical_mae(
 					all_times_bin_pred,
 					query_1_data,
 					test_out_all_event_true,
@@ -4269,6 +4549,9 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					count_mae_fh,
 					count_mae_fh_per_bin,
 					wass_dist_fh,
+					count_mae_fh_pe,
+					deep_mae_fh_pe,
+					wass_dist_fh_pe,
 					all_times_true,
 					all_times_pred,
 				) = compute_full_model_acc(
@@ -4299,13 +4582,29 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					all_times_true,
 					all_times_pred,
 				)
+				write_pe_metrics_to_file(
+					os.path.join(
+						'Outputs',
+						args.current_dataset+'__'+'rmtpp_mse_simu',
+					),
+					count_mae_fh_pe,
+					deep_mae_fh_pe,
+					wass_dist_fh_pe,
+				)
 				print("____________________________________________________________________")
 				print("")
 
 			if 'rmtpp_mse_var_simu' in run_model_flags and run_model_flags['rmtpp_mse_var_simu']:
 				print("Prediction for plain_rmtpp_count model with rmtpp_mse_var")
 				result, all_times_bin_pred = run_rmtpp_for_count(args, models, data, test_data, rmtpp_type='mse_var')
-				deep_mae_rh, count_mae_rh, count_mse_rh, wass_dist_rh = compute_hierarchical_mae(
+				(
+					deep_mae_rh,
+					count_mae_rh,
+					count_mse_rh,
+					wass_dist_rh,
+					deep_mae_rh_pe,
+					wass_dist_rh_pe,
+				) = compute_hierarchical_mae(
 					all_times_bin_pred,
 					query_1_data,
 					test_out_all_event_true,
@@ -4318,6 +4617,9 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					count_mae_fh,
 					count_mae_fh_per_bin,
 					wass_dist_fh,
+					count_mae_fh_pe,
+					deep_mae_fh_pe,
+					wass_dist_fh_pe,
 					all_times_true,
 					all_times_pred,
 				) = compute_full_model_acc(
@@ -4348,13 +4650,29 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					all_times_true,
 					all_times_pred,
 				)
+				write_pe_metrics_to_file(
+					os.path.join(
+						'Outputs',
+						args.current_dataset+'__'+'rmtpp_mse_var_simu',
+					),
+					count_mae_fh_pe,
+					deep_mae_fh_pe,
+					wass_dist_fh_pe,
+				)
 				print("____________________________________________________________________")
 				print("")
 
 			if 'wgan_simu' in run_model_flags and run_model_flags['wgan_simu']:
 				print("Prediction for plain_wgan_count model")
 				result, all_times_bin_pred = run_wgan_for_count(args, models, data, test_data)
-				deep_mae_rh, count_mae_rh, count_mse_rh, wass_dist_rh = compute_hierarchical_mae(
+				(
+					deep_mae_rh,
+					count_mae_rh,
+					count_mse_rh,
+					wass_dist_rh,
+					deep_mae_rh_pe,
+					wass_dist_rh_pe,
+				) = compute_hierarchical_mae(
 					all_times_bin_pred,
 					query_1_data,
 					test_out_all_event_true,
@@ -4367,6 +4685,9 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					count_mae_fh,
 					count_mae_fh_per_bin,
 					wass_dist_fh,
+					count_mae_fh_pe,
+					deep_mae_fh_pe,
+					wass_dist_fh_pe,
 					all_times_true,
 					all_times_pred,
 				) = compute_full_model_acc(
@@ -4396,6 +4717,15 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					),
 					all_times_true,
 					all_times_pred,
+				)
+				write_pe_metrics_to_file(
+					os.path.join(
+						'Outputs',
+						args.current_dataset+'__'+'wgan_simu',
+					),
+					count_mae_fh_pe,
+					deep_mae_fh_pe,
+					wass_dist_fh_pe,
 				)
 				print("____________________________________________________________________")
 				print("")

@@ -87,6 +87,25 @@ def write_arr_to_file(output_path, arr_true, arr_pred):
 		arr_pred,
 	)
 
+def write_pe_metrics_to_file(
+	output_path,
+	count_mae_fh_pe,
+	deep_mae_fh_pe,
+	wass_dist_fh_pe,
+):
+	np.save(
+		output_path + '__' + 'count_mae_fh_pe',
+		count_mae_fh_pe,
+	)
+	np.save(
+		output_path + '__' + 'deep_mae_fh_pe',
+		deep_mae_fh_pe,
+	)
+	np.save(
+		output_path + '__' + 'wass_dist_fh_pe',
+		wass_dist_fh_pe,
+	)
+
 def normalize_data(data):
 	mean = np.mean(data)
 	std = np.std(data)
