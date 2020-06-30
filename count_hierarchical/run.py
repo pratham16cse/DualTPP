@@ -23,6 +23,7 @@ from utils import get_time_features
 from utils import add_metrics_to_dict
 from utils import write_arr_to_file
 from utils import write_pe_metrics_to_file
+from utils import write_opt_losses_to_file
 
 train_gap_metric_mae = tf.keras.metrics.MeanAbsoluteError()
 train_gap_metric_mse = tf.keras.metrics.MeanSquaredError()
@@ -2223,6 +2224,7 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(
 		gaps.value = all_bins_gaps_pred
 
 		D, WT = model_rmtpp_params[0], model_rmtpp_params[1]
+
 		if rmtpp_type=='nll':
 			opt_loss = -cp.sum(rmtpp_loglikelihood_loss(gaps, D, WT, events_count_per_batch))/all_bins_gaps_pred.shape[1]
 		elif rmtpp_type=='mse':
@@ -2230,10 +2232,11 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(
 				opt_loss = cp.sum(mse_loglikelihood_loss(gaps, D, WT, events_count_per_batch))/all_bins_gaps_pred.shape[1]
 			else:
 				WT = np.ones_like(WT)
-				D = all_bins_gaps_pred
 				opt_loss = cp.sum(mse_loss(gaps, D, WT, events_count_per_batch))/all_bins_gaps_pred.shape[1]
 		elif rmtpp_type=='mse_var':
 			opt_loss = cp.sum(mse_loglikelihood_loss(gaps, D, WT, events_count_per_batch))/all_bins_gaps_pred.shape[1]
+
+		rmtpp_loss_cont = opt_loss.value
 
 		objective = cp.Minimize(opt_loss)
 
@@ -2274,7 +2277,9 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(
 			rmtpp_loss = prob.solve(warm_start=True)
 		except cp.error.SolverError:
 			rmtpp_loss = prob.solve(solver='SCS', warm_start=True)
+		#rmtpp_loss = prob.solve(warm_start=True, solver=cp.OSQP)
 
+		rmtpp_loss_opt = rmtpp_loss
 		#if gaps.value is None:
 		#	gaps.value = all_bins_gaps_pred
 		#	rmtpp_loss = opt_loss.value
@@ -2301,7 +2306,13 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(
 		#print('Loss after optimization:', loss)
 	
 		# Shape: list of 92 different length tensors
-		return all_bins_gaps_pred, loss
+		return (
+			all_bins_gaps_pred,
+			loss,
+			rmtpp_loss_opt,
+			rmtpp_loss_cont,
+			np.array(count_loss),
+		)
 
 
 	num_counts = args.opt_num_counts # Number of counts to take before and after mean
@@ -2383,12 +2394,15 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(
 		actual_bin_start = test_end_hr_bins[batch_idx,dec_idx]-args.bin_size
 		actual_bin_end = test_end_hr_bins[batch_idx,dec_idx]
 
-		if args.no_rescale_rmtpp_params:
-			batch_bin_curr_cnt_times_pred_scaled = batch_bin_curr_cnt_times_pred
-		else:
-			batch_bin_curr_cnt_times_pred_scaled \
-				= (((actual_bin_end - actual_bin_start)/(bin_end - bin_start))
-					* (batch_bin_curr_cnt_times_pred - bin_start)) + actual_bin_start
+#		if args.no_rescale_rmtpp_params:
+#			batch_bin_curr_cnt_times_pred_scaled = batch_bin_curr_cnt_times_pred
+#		else:
+#			batch_bin_curr_cnt_times_pred_scaled \
+#				= (((actual_bin_end - actual_bin_start)/(bin_end - bin_start))
+#					* (batch_bin_curr_cnt_times_pred - bin_start)) + actual_bin_start
+		batch_bin_curr_cnt_times_pred_scaled \
+			= (((actual_bin_end - actual_bin_start)/(bin_end - bin_start))
+				* (batch_bin_curr_cnt_times_pred - bin_start)) + actual_bin_start
 		batch_bin_curr_cnt_times_pred_scaled = batch_bin_curr_cnt_times_pred_scaled.numpy()
 
 
@@ -2418,11 +2432,11 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(
 				lst.append(
 					batch_temp_times_pred[idx]-np.concatenate([test_data_init_time[batch_idx],batch_temp_times_pred[idx][:-1]])
 				)
-			elif idx==len(batch_temp_times_pred)-1 and args.no_rescale_rmtpp_params==True:
-				lst.append(
-					all_times_pred_simu[batch_idx,best_past_cnt:event_cnt].numpy()
-					- all_times_pred_simu[batch_idx,best_past_cnt-1:event_cnt-1].numpy()
-				)
+			#elif idx==len(batch_temp_times_pred)-1 and args.no_rescale_rmtpp_params==True:
+			#	lst.append(
+			#		all_times_pred_simu[batch_idx,best_past_cnt:event_cnt].numpy()
+			#		- all_times_pred_simu[batch_idx,best_past_cnt-1:event_cnt-1].numpy()
+			#	)
 			else:
 				lst.append(
 					batch_temp_times_pred[idx]-np.concatenate([batch_temp_times_pred[idx-1][-1:],batch_temp_times_pred[idx][:-1]])
@@ -2502,6 +2516,9 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(
 		batch_bin_curr_cnt_D_pred = D[:, best_past_cnt:event_cnt, 0].numpy()
 		batch_bin_curr_cnt_WT_pred = WT[:, best_past_cnt:event_cnt, 0].numpy()
 
+		#import ipdb
+		#ipdb.set_trace()
+
 		model_rmtpp_params = [batch_bin_curr_cnt_D_pred, batch_bin_curr_cnt_WT_pred]
 		model_count_params = [model_cnt_distribution_params[0][batch_idx, dec_idx],
 							  model_cnt_distribution_params[1][batch_idx, dec_idx]]
@@ -2528,11 +2545,14 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(
 														 	test_gap_in_bin_norm_a,
 														 	test_gap_in_bin_norm_d)
 
-		#import ipdb
-		#ipdb.set_trace()
 
-		batch_bin_curr_cnt_opt_gaps_pred, nc_loss \
-			= optimize_gaps(model_rmtpp_params,
+		(
+			batch_bin_curr_cnt_opt_gaps_pred,
+			nc_loss,
+			nc_loss_opt,
+			nc_loss_cont,
+			nc_count_loss,
+		) = optimize_gaps(model_rmtpp_params,
 							rmtpp_loglikelihood_loss,
 							model_count_params,
 							int(curr_cnt),
@@ -2566,12 +2586,21 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(
 			batch_bin_curr_cnt_opt_times_pred,
 			batch_bin_curr_cnt_opt_gaps_pred,
 			nc_loss,
+			nc_loss_opt,
+			nc_loss_cont,
+			nc_count_loss,
 		)
 
 	count_sigma = args.opt_num_counts
 	all_times_pred = []
+	all_best_opt_nc_losses = []
+	all_best_cont_nc_losses = []
+	all_best_nc_count_losses = []
 	for batch_idx in range(len(all_times_pred_simu)):
 		batch_times_pred = []
+		batch_best_opt_nc_losses = []
+		batch_best_cont_nc_losses = []
+		batch_best_nc_count_losses = []
 		event_cnt=0
 		best_past_cnt=0
 
@@ -2603,7 +2632,10 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(
 				(
 					batch_bin_cnrr_cnt_opt_times_pred_uc, 
 					batch_bin_curr_cnt_opt_gaps_pred_uc,
-					nc_loss
+					nc_loss,
+					nc_loss_opt,
+					nc_loss_cont,
+					nc_count_loss,
 				) = get_optimized_gaps(
 					batch_idx,
 					dec_idx,
@@ -2651,7 +2683,10 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(
 				(
 					batch_bin_curr_cnt_opt_times_pred_mid_1,
 					batch_bin_curr_cnt_opt_gaps_pred_mid_1,
-					nc_loss_mid_1
+					nc_loss_mid_1,
+					nc_loss_mid_1_opt,
+					nc_loss_mid_1_cont,
+					nc_count_loss_mid_1,
 				) = get_optimized_gaps(
 					batch_idx,
 					dec_idx,
@@ -2667,7 +2702,10 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(
 					(
 						batch_bin_curr_cnt_opt_times_pred_mid_2,
 						batch_bin_curr_cnt_opt_gaps_pred_mid_2,
-						nc_loss_mid_2
+						nc_loss_mid_2,
+						nc_loss_mid2_opt,
+						nc_loss_mid2_cont,
+						nc_count_loss_mid_2,
 					) = get_optimized_gaps(
 						batch_idx,
 						dec_idx,
@@ -2693,6 +2731,9 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(
 						batch_bin_curr_cnt_opt_times_pred_mid_1,
 						batch_bin_curr_cnt_opt_gaps_pred_mid_1,
 						counts_range[mid_1],
+						nc_loss_mid_1_opt,
+						nc_loss_mid_1_cont,
+						nc_count_loss_mid_1,
 					)
 
 			(
@@ -2701,9 +2742,15 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(
 				batch_bin_times_pred,
 				batch_bin_gaps_pred,
 				best_count,
+				best_nc_loss_opt,
+				best_nc_loss_cont,
+				best_nc_count_loss,
 			) = binary_search(nc_range, 0, len(nc_range)-1)
 
 			batch_times_pred.append(batch_bin_times_pred)
+			batch_best_opt_nc_losses.append(best_nc_loss_opt)
+			batch_best_cont_nc_losses.append(best_nc_loss_cont)
+			batch_best_nc_count_losses.append(best_nc_count_loss)
 			best_past_cnt += best_count
 
 			print('Example:', batch_idx, 'dec_idx:', dec_idx, 'Best count:', \
@@ -2711,11 +2758,17 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(
 
 		#batch_times_pred = [t for bin_list in batch_times_pred for t in bin_list]
 		all_times_pred.append(batch_times_pred)
+		all_best_opt_nc_losses.append(batch_best_opt_nc_losses)
+		all_best_cont_nc_losses.append(batch_best_cont_nc_losses)
+		all_best_nc_count_losses.append(batch_best_nc_count_losses)
 
 	all_times_pred = np.array(all_times_pred)
+	all_best_opt_nc_losses = np.array(all_best_opt_nc_losses)
+	all_best_cont_nc_losses = np.array(all_best_cont_nc_losses)
+	all_best_nc_count_losses = np.array(all_best_nc_count_losses)
 	# [99, dec_len, ...]
 
-	return None, all_times_pred
+	return None, all_times_pred, all_best_opt_nc_losses, all_best_cont_nc_losses, all_best_nc_count_losses
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 
 
@@ -3680,7 +3733,13 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 			if 'rmtpp_nll_opt' in run_model_flags and run_model_flags['rmtpp_nll_opt']:
 				print("Prediction for rmtpp_nll_opt model")
 				test_data_out_gaps_bin = dataset['test_data_out_gaps_bin']
-				_, all_times_bin_pred_opt = run_rmtpp_with_optimization_fixed_cnt_solver(
+				(
+					_,
+					all_times_bin_pred_opt,
+					all_best_opt_nc_losses,
+					all_best_cont_nc_losses,
+					all_best_nc_count_losses,
+				) = run_rmtpp_with_optimization_fixed_cnt_solver(
 					args,
 					models,
 					data,
@@ -3733,6 +3792,9 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					count_mae_rh,
 					deep_mae_rh,
 					wass_dist_rh,
+					np.mean(all_best_opt_nc_losses),
+					np.mean(all_best_cont_nc_losses),
+					np.mean(all_best_nc_count_losses),
 				)
 				write_arr_to_file(
 					os.path.join(
@@ -3751,13 +3813,28 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					deep_mae_fh_pe,
 					wass_dist_fh_pe,
 				)
+				write_opt_losses_to_file(
+					os.path.join(
+						'Outputs',
+						args.current_dataset + '__' + 'rmtpp_nll_opt',
+					),
+					all_best_opt_nc_losses,
+					all_best_cont_nc_losses,
+					all_best_nc_count_losses,
+				)
 				print("____________________________________________________________________")
 				print("")
 
 			if 'rmtpp_mse_opt' in run_model_flags and run_model_flags['rmtpp_mse_opt']:
 				print("Prediction for rmtpp_mse_opt model")
 				test_data_out_gaps_bin = dataset['test_data_out_gaps_bin']
-				_, all_times_bin_pred_opt = run_rmtpp_with_optimization_fixed_cnt_solver(
+				(
+					_,
+					all_times_bin_pred_opt,
+					all_best_opt_nc_losses,
+					all_best_cont_nc_losses,
+					all_best_nc_count_losses,
+				) = run_rmtpp_with_optimization_fixed_cnt_solver(
 					args,
 					models,
 					data,
@@ -3810,6 +3887,9 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					count_mae_rh,
 					deep_mae_rh,
 					wass_dist_rh,
+					np.mean(all_best_opt_nc_losses),
+					np.mean(all_best_cont_nc_losses),
+					np.mean(all_best_nc_count_losses),
 				)
 				write_arr_to_file(
 					os.path.join(
@@ -3828,13 +3908,28 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					deep_mae_fh_pe,
 					wass_dist_fh_pe,
 				)
+				write_opt_losses_to_file(
+					os.path.join(
+						'Outputs',
+						args.current_dataset + '__' + 'rmtpp_mse_opt',
+					),
+					all_best_opt_nc_losses,
+					all_best_cont_nc_losses,
+					all_best_nc_count_losses,
+				)
 				print("____________________________________________________________________")
 				print("")
 
 			if 'rmtpp_mse_var_opt' in run_model_flags and run_model_flags['rmtpp_mse_var_opt']:
 				print("Prediction for rmtpp_mse_var_opt model")
 				test_data_out_gaps_bin = dataset['test_data_out_gaps_bin']
-				_, all_times_bin_pred_opt = run_rmtpp_with_optimization_fixed_cnt_solver(
+				(
+					_,
+					all_times_bin_pred_opt,
+					all_best_opt_nc_losses,
+					all_best_cont_nc_losses,
+					all_best_nc_count_losses,
+				) = run_rmtpp_with_optimization_fixed_cnt_solver(
 					args,
 					models,
 					data,
@@ -3887,6 +3982,9 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					count_mae_rh,
 					deep_mae_rh,
 					wass_dist_rh,
+					np.mean(all_best_opt_nc_losses),
+					np.mean(all_best_cont_nc_losses),
+					np.mean(all_best_nc_count_losses),
 				)
 				write_arr_to_file(
 					os.path.join(
@@ -3904,6 +4002,15 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					count_mae_fh_pe,
 					deep_mae_fh_pe,
 					wass_dist_fh_pe,
+				)
+				write_opt_losses_to_file(
+					os.path.join(
+						'Outputs',
+						args.current_dataset + '__' + 'rmtpp_mse_var_opt',
+					),
+					all_best_opt_nc_losses,
+					all_best_cont_nc_losses,
+					all_best_nc_count_losses,
 				)
 				print("____________________________________________________________________")
 				print("")

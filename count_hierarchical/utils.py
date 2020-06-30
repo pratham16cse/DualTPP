@@ -62,6 +62,9 @@ def add_metrics_to_dict(
 	count_mae_rh,
 	deep_mae_rh,
 	wass_dist_rh,
+	opt_loss=0.,
+	cont_loss=0.,
+	count_loss=0.,
 ):
 	if model_name not in metrics_dict:
 		metrics_dict[model_name] = dict()
@@ -73,6 +76,10 @@ def add_metrics_to_dict(
 	metrics_dict[model_name]['wass_dist_rh'] = wass_dist_rh
 	for i in range(len(count_mae_fh_per_bin)):
 		metrics_dict[model_name]['count_mae_fh_bin_'+str(i)] = count_mae_fh_per_bin[i]
+
+	metrics_dict[model_name]['opt_loss'] = opt_loss
+	metrics_dict[model_name]['cont_loss'] = cont_loss
+	metrics_dict[model_name]['count_loss'] = count_loss
 
 	return metrics_dict
 
@@ -104,6 +111,25 @@ def write_pe_metrics_to_file(
 	np.save(
 		output_path + '__' + 'wass_dist_fh_pe',
 		wass_dist_fh_pe,
+	)
+
+def write_opt_losses_to_file(
+	output_path,
+	opt_losses,
+	cont_losses,
+	count_losses,
+):
+	np.save(
+		output_path + '__' + 'opt_losses',
+		opt_losses,
+	)
+	np.save(
+		output_path + '__' + 'cont_losses',
+		cont_losses,
+	)
+	np.save(
+		output_path + '__' + 'count_losses',
+		count_losses,
 	)
 
 def normalize_data(data):
