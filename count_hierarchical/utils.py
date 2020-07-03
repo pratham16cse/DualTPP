@@ -861,6 +861,7 @@ def get_processed_data(dataset_name, args):
 	train_end_hr_bins_relative = np.expand_dims(train_end_hr_bins_relative, axis=-1)
 	train_data_in_time_end_bin = np.expand_dims(train_data_in_time_end_bin, axis=-1)
 	train_data_in_gaps_bin = np.expand_dims(train_data_in_gaps_bin, axis=-1)
+	train_data_in_times_bin = np.expand_dims(train_data_in_times_bin, axis=-1)
 
 
 	train_out_end_hr_bins = train_end_hr_bins
@@ -918,7 +919,9 @@ def get_processed_data(dataset_name, args):
 		'test_out_times_in_bin': test_out_times_in_bin,
 
 		'train_data_in_gaps_bin': train_data_in_gaps_bin,
+		'train_data_in_times_bin': train_data_in_times_bin,
 		'train_data_out_gaps_bin': train_data_out_gaps_bin,
+		'train_data_out_times_bin': train_data_out_times_bin,
 		'train_data_in_time_end_bin': train_data_in_time_end_bin,
 	 	'train_end_hr_bins_relative': train_end_hr_bins_relative,
 	 	'train_gap_in_bin_norm_a': train_gap_in_bin_norm_a,

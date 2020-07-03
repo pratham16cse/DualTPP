@@ -238,7 +238,7 @@ def run_rmtpp(args, model, optimizer, data, var_data, NLL_loss,
 			print("Training considering independent sequence")
 			stride_move = 0
 
-	if args.extra_var_model and rmtpp_type=='mse':
+	if rmtpp_type=='mse_extvar':
 		hls = args.hidden_layer_size
 		num_grps = args.num_grps #TODO make it command line argument later
 		num_pos = args.num_pos
@@ -334,18 +334,20 @@ def run_rmtpp(args, model, optimizer, data, var_data, NLL_loss,
 			%(float(dev_gap_mae), float(dev_gap_mse)))
 		train_losses.append(step_train_loss)
 
-	if args.extra_var_model and rmtpp_type=='mse':# and epoch%5==0:
+	print(args.model_name)
+	if rmtpp_type=='mse_extvar':# and epoch%5==0:
 		var_gaps_pred_lst, bin_ids_lst, grp_ids_lst, pos_ids_lst = [], [], [], []
-		for epoch in range(args.epochs+5):
+		for epoch in range(args.epochs):
 			var_epoch_loss = 0.
 			for sm_step, (var_gaps_batch_in, var_gaps_batch_out,
-					var_bch_in_time_end_bin, var_bch_end_hr_bins) \
+					var_bch_in_time_end_bin, var_bch_end_hr_bins,
+					var_times_batch_in) \
 				in enumerate(var_dataset_gaps):
 				with tf.GradientTape() as var_tape:
 					if epoch==0:
 						var_gaps_pred, _, bin_ids, grp_ids, pos_ids \
 							= simulate_v2(model,
-									  	var_bch_in_time_end_bin,
+									  	var_times_batch_in,
 									  	var_gaps_batch_in,
 									  	var_bch_end_hr_bins.numpy(),
 									  	(train_gap_in_bin_norm_a,
@@ -362,6 +364,7 @@ def run_rmtpp(args, model, optimizer, data, var_data, NLL_loss,
 						bin_ids = bin_ids_lst[sm_step]
 						grp_ids = grp_ids_lst[sm_step]
 						pos_ids = pos_ids_lst[sm_step]
+					#var_gaps_pred = tf.expand_dims(var_gaps_pred, axis=-1)
 					var_model_inputs = tf.cumsum(var_gaps_pred, axis=1)
 					var_pred = rmtpp_var_model(var_model_inputs,
 											   bin_ids, grp_ids, pos_ids)
@@ -402,7 +405,7 @@ def run_rmtpp(args, model, optimizer, data, var_data, NLL_loss,
 	print('Best MAE and MSE of Dev data %s: %s' \
 		%(float(dev_gap_mae), float(dev_gap_mse)))
 
-	if args.extra_var_model and rmtpp_type=='mse':	
+	if rmtpp_type=='mse_extvar':
 		print("Loading best rmtpp_var_model from epoch", best_var_epoch)
 		rmtpp_var_model.load_weights(var_checkpoint_path)
 
@@ -921,25 +924,14 @@ def simulate_v2(model, times_in, gaps_in, bins_end_hrs, normalizers,
 	times_pred = list()
 	data_norm_a, data_norm_d = normalizers
 	
-	# step_gaps_pred = gaps_in[:, -1]
-	#step_gaps_pred, _, _, prev_hidden_state, _ \
-	#		= model(gaps_in, initial_state=prev_hidden_state)
-
-	#step_gaps_pred = step_gaps_pred[:,-1:]
-	#gaps_in = tf.concat([gaps_in[:,1:], step_gaps_pred], axis=1)
-	#step_gaps_pred = tf.squeeze(step_gaps_pred, axis=-1)
-	#last_gaps_pred_unnorm = utils.denormalize_avg(step_gaps_pred, data_norm_a, data_norm_d)
-	#last_times_pred = times_in + last_gaps_pred_unnorm
-	#gaps_pred.append(last_gaps_pred_unnorm)
-	#times_pred.append(last_times_pred)
-
 	simul_step = 0
 
-	times_pred.append(times_in)
+	times_pred.append(times_in[:, -1])
+	feats_in = get_time_features(times_in)
 	#while any(times_pred[-1]<bins_end_hrs[:, -1]):
 	while simul_step < gaps_out_true.shape[1]:
 		step_gaps_pred, _, _, prev_hidden_state, _ \
-				= model(gaps_in, initial_state=prev_hidden_state)
+				= model(gaps_in, feats_in, initial_state=prev_hidden_state)
 
 		step_gaps_pred = step_gaps_pred[:,-1:]
 		gaps_in = step_gaps_pred
@@ -948,8 +940,10 @@ def simulate_v2(model, times_in, gaps_in, bins_end_hrs, normalizers,
 		prev_hidden_state = model.hidden_states[:, -1]
 
 		last_times_pred = times_pred[-1] + last_gaps_pred_unnorm.numpy()
+		feats_in = get_time_features(tf.expand_dims(last_times_pred, axis=-1))
 		gaps_pred.append(last_gaps_pred_unnorm)
 		times_pred.append(last_times_pred)
+
 
 		simul_step += 1
 
@@ -1298,8 +1292,10 @@ def run_rmtpp_count_cont_rmtpp(args, models, data, test_data, rmtpp_type):
 		model_rmtpp = models['rmtpp_mse']
 	elif rmtpp_type=='mse_var':
 		model_rmtpp = models['rmtpp_mse_var']
+	elif rmtpp_type=='mse_extvar':
+		model_rmtpp = models['rmtpp_mse']
 	else:
-		assert False, "rmtpp_type must be nll or mse"
+		assert False, "rmtpp_type must be in [nll, mse, mse_var, mse_extvar]"
 	model_check = (model_cnt is not None) and (model_rmtpp is not None)
 	assert model_check, "run_rmtpp_count_cont_rmtpp requires count and RMTPP model"
 
@@ -2173,12 +2169,13 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(
 		model_rmtpp = query_models['rmtpp_nll']
 	elif rmtpp_type=='mse':
 		model_rmtpp = query_models['rmtpp_mse']
-		if args.extra_var_model:
-			rmtpp_var_model = query_models['rmtpp_var_model']
 	elif rmtpp_type=='mse_var':
 		model_rmtpp = query_models['rmtpp_mse_var']
+	elif rmtpp_type == 'mse_extvar':
+		model_rmtpp = query_models['rmtpp_mse']
+		rmtpp_var_model = query_models['rmtpp_var_model']
 	else:
-		assert False, "rmtpp_type must be nll or mse"
+		assert False, "rmtpp_type must be in [nll, mse, mse_var, mse_extvar]"
 	
 	model_check = (model_cnt is not None) and (model_rmtpp is not None)
 	assert model_check, "run_rmtpp_count_with_optimization requires count and RMTPP model"
@@ -2228,12 +2225,11 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(
 		if rmtpp_type=='nll':
 			opt_loss = -cp.sum(rmtpp_loglikelihood_loss(gaps, D, WT, events_count_per_batch))/all_bins_gaps_pred.shape[1]
 		elif rmtpp_type=='mse':
-			if args.extra_var_model:
-				opt_loss = cp.sum(mse_loglikelihood_loss(gaps, D, WT, events_count_per_batch))/all_bins_gaps_pred.shape[1]
-			else:
-				WT = np.ones_like(WT)
-				opt_loss = cp.sum(mse_loss(gaps, D, WT, events_count_per_batch))/all_bins_gaps_pred.shape[1]
+			WT = np.ones_like(WT)
+			opt_loss = cp.sum(mse_loss(gaps, D, WT, events_count_per_batch))/all_bins_gaps_pred.shape[1]
 		elif rmtpp_type=='mse_var':
+			opt_loss = cp.sum(mse_loglikelihood_loss(gaps, D, WT, events_count_per_batch))/all_bins_gaps_pred.shape[1]
+		elif rmtpp_type=='mse_extvar':
 			opt_loss = cp.sum(mse_loglikelihood_loss(gaps, D, WT, events_count_per_batch))/all_bins_gaps_pred.shape[1]
 
 		rmtpp_loss_cont = opt_loss.value
@@ -2477,9 +2473,15 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(
 				initial_state=input_final_state
 			)
 
-		if args.extra_var_model and rmtpp_type=='mse':
+		if rmtpp_type=='mse_extvar':
+
+			# TODO: Fix batch_temp_times_pred: Do not use scaled values for
+			# rmtpp_var_input
 			batch_temp_times_pred_flatten \
 				= np.concatenate(batch_temp_times_pred)
+			#batch_temp_times_pred_flatten = np.cumsum(
+			#	all_gaps_pred_simu[batch_idx, best_past_cnt:event_cnt]
+			#)
 
 			batch_temp_times_pred_flatten = np.expand_dims(
 				batch_temp_times_pred_flatten,
@@ -2508,6 +2510,7 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(
 			pos_ids = (bin_ranks-1)%num_pos + 1
 
 			rmtpp_var_input = tf.cumsum(batch_temp_gaps_pred_unnorm, axis=1)
+			rmtpp_var_input = rmtpp_var_input[0, :, 0]
 			WT = rmtpp_var_model(rmtpp_var_input, bin_ids, grp_ids, pos_ids)
 			WT = tf.expand_dims(WT, axis=0)
 
@@ -3532,7 +3535,9 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 		event_count_preds_cnt = run_count_model(args, data, test_data)
 		model, result = event_count_preds_cnt
 
-	if model_name in ['rmtpp_mse', 'rmtpp_nll', 'rmtpp_mse_var', 'wgan', 'rmtpp_count', 'hawkes_model']:
+	if model_name in ['rmtpp_mse', 'rmtpp_nll', 'rmtpp_mse_var',
+					  'rmtpp_mse_extvar', 'wgan',
+					  'rmtpp_count', 'hawkes_model']:
 		train_data_in_gaps = dataset['train_data_in_gaps']
 		train_data_in_feats = dataset['train_data_in_feats'].astype(np.float32)
 		train_data_out_gaps = dataset['train_data_out_gaps']
@@ -3580,11 +3585,13 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 		train_data_in_time_end_bin = dataset['train_data_in_time_end_bin']
 		train_data_in_time_end_bin = train_data_in_time_end_bin.astype(np.float32)
 		train_end_hr_bins_relative = dataset['train_end_hr_bins_relative']
+		train_data_in_times_bin = dataset['train_data_in_times_bin'].astype(np.float32)
 		var_dataset_gaps = tf.data.Dataset.from_tensor_slices(
 			(train_data_in_gaps_bin,
 			 train_data_out_gaps_bin,
 			 train_data_in_time_end_bin,
-			 train_end_hr_bins_relative)
+			 train_end_hr_bins_relative,
+			 train_data_in_times_bin,)
 		).batch(
 			batch_size,
 			drop_remainder=True
@@ -3602,7 +3609,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 			event_count_preds_mse = run_rmtpp_init(args, data, test_data,
 												   var_data, NLL_loss=False,
 												   rmtpp_type='mse')
-			model, result, rmtpp_var_model = event_count_preds_mse
+			model, result, _ = event_count_preds_mse
 
 		if model_name == 'rmtpp_nll':
 			event_count_preds_nll = run_rmtpp_init(args, data, test_data,
@@ -3617,6 +3624,14 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 													   use_var_model=True,
 													   rmtpp_type='mse_var')
 			model, result, _ = event_count_preds_mse_var
+
+		if model_name == 'rmtpp_mse_extvar':
+			event_count_preds_mse_extvar = run_rmtpp_init(args, data, test_data,
+													   var_data,
+													   NLL_loss=False,
+													   use_var_model=False,
+													   rmtpp_type='mse_extvar')
+			model, result, rmtpp_var_model = event_count_preds_mse_extvar
 
 		if model_name == 'hawkes_model':
 			hawkes_timestamps_pred = dataset['hawkes_timestamps_pred']
@@ -4018,6 +4033,104 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 
 			print("")
 
+			if 'rmtpp_mse_extvar_opt' in run_model_flags and run_model_flags['rmtpp_mse_extvar_opt']:
+				print("Prediction for rmtpp_mse_extvar_opt model")
+				test_data_out_gaps_bin = dataset['test_data_out_gaps_bin']
+				(
+					_,
+					all_times_bin_pred_opt,
+					all_best_opt_nc_losses,
+					all_best_cont_nc_losses,
+					all_best_nc_count_losses,
+				) = run_rmtpp_with_optimization_fixed_cnt_solver(
+					args,
+					models,
+					data,
+					test_data,
+					test_data_out_gaps_bin,
+					dataset,
+					rmtpp_type='mse_extvar'
+				)
+				(
+					deep_mae_rh,
+					count_mae_rh,
+					count_mse_rh,
+					wass_dist_rh,
+					deep_mae_rh_pe,
+					wass_dist_rh_pe,
+				) = compute_hierarchical_mae(
+					all_times_bin_pred_opt,
+					query_1_data,
+					test_out_all_event_true,
+					compute_depth
+				)
+				threshold_mae = compute_threshold_loss(all_times_bin_pred_opt, query_2_data)
+				print("deep_mae", deep_mae_rh)
+				(
+					deep_mae_fh,
+					count_mae_fh,
+					count_mae_fh_per_bin,
+					wass_dist_fh,
+					count_mae_fh_pe,
+					deep_mae_fh_pe,
+					wass_dist_fh_pe,
+					all_times_true,
+					all_times_pred,
+				) = compute_full_model_acc(
+					args,
+					test_data,
+					None,
+					all_times_bin_pred_opt,
+					test_out_times_in_bin,
+					dataset_name,
+					'rmtpp_mse_extvar_opt'
+				)
+				results = add_metrics_to_dict(
+					results,
+					'rmtpp_mse_extvar_opt',
+					count_mae_fh,
+					count_mae_fh_per_bin,
+					deep_mae_fh,
+					wass_dist_fh,
+					count_mae_rh,
+					deep_mae_rh,
+					wass_dist_rh,
+					np.mean(all_best_opt_nc_losses),
+					np.mean(all_best_cont_nc_losses),
+					np.mean(all_best_nc_count_losses),
+				)
+				write_arr_to_file(
+					os.path.join(
+						'Outputs',
+						args.current_dataset+'__'+'rmtpp_mse_extvar_opt',
+					),
+					all_times_true,
+					all_times_pred,
+				)
+				write_pe_metrics_to_file(
+					os.path.join(
+						'Outputs',
+						args.current_dataset+'__'+'rmtpp_mse_extvar_opt',
+					),
+					count_mae_fh_pe,
+					deep_mae_fh_pe,
+					wass_dist_fh_pe,
+				)
+				write_opt_losses_to_file(
+					os.path.join(
+						'Outputs',
+						args.current_dataset + '__' + 'rmtpp_mse_extvar_opt',
+					),
+					all_best_opt_nc_losses,
+					all_best_cont_nc_losses,
+					all_best_nc_count_losses,
+				)
+				print("____________________________________________________________________")
+				print("")
+
+
+			print("")
+
 			if 'rmtpp_nll_cont' in run_model_flags and run_model_flags['rmtpp_nll_cont']:
 				print("Prediction for run_rmtpp_count_cont_rmtpp model with rmtpp_nll")
 				all_bins_count_pred, all_times_bin_pred = run_rmtpp_count_cont_rmtpp(args, models, data, test_data, rmtpp_type='nll')
@@ -4214,6 +4327,74 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					os.path.join(
 						'Outputs',
 						args.current_dataset+'__'+'rmtpp_mse_var_cont',
+					),
+					count_mae_fh_pe,
+					deep_mae_fh_pe,
+					wass_dist_fh_pe,
+				)
+				print("____________________________________________________________________")
+				print("")
+
+			if 'rmtpp_mse_extvar_cont' in run_model_flags and run_model_flags['rmtpp_mse_extvar_cont']:
+				print("Prediction for run_rmtpp_count_cont_rmtpp model with rmtpp_mse_extvar")
+				all_bins_count_pred, all_times_bin_pred = run_rmtpp_count_cont_rmtpp(args, models, data, test_data, rmtpp_type='mse_extvar')
+				(
+					deep_mae_rh,
+					count_mae_rh,
+					count_mse_rh,
+					wass_dist_rh,
+					deep_mae_rh_pe,
+					wass_dist_rh_pe,
+				) = compute_hierarchical_mae(
+					all_times_bin_pred,
+					query_1_data,
+					test_out_all_event_true,
+					compute_depth
+				)
+				threshold_mae = compute_threshold_loss(all_times_bin_pred, query_2_data)
+				print("deep_mae", deep_mae_rh)
+				(
+					deep_mae_fh,
+					count_mae_fh,
+					count_mae_fh_per_bin,
+					wass_dist_fh,
+					count_mae_fh_pe,
+					deep_mae_fh_pe,
+					wass_dist_fh_pe,
+					all_times_true,
+					all_times_pred,
+				) = compute_full_model_acc(
+					args,
+					test_data,
+					all_bins_count_pred,
+					all_times_bin_pred,
+					test_out_times_in_bin,
+					dataset_name,
+					'rmtpp_mse_extvar_cont'
+				)
+				results = add_metrics_to_dict(
+					results,
+					'rmtpp_mse_extvar_cont',
+					count_mae_fh,
+					count_mae_fh_per_bin,
+					deep_mae_fh,
+					wass_dist_fh,
+					count_mae_rh,
+					deep_mae_rh,
+					wass_dist_rh,
+				)
+				write_arr_to_file(
+					os.path.join(
+						'Outputs',
+						args.current_dataset+'__'+'rmtpp_mse_extvar_cont',
+					),
+					all_times_true,
+					all_times_pred,
+				)
+				write_pe_metrics_to_file(
+					os.path.join(
+						'Outputs',
+						args.current_dataset+'__'+'rmtpp_mse_extvar_cont',
 					),
 					count_mae_fh_pe,
 					deep_mae_fh_pe,
@@ -4869,7 +5050,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 			#sys.stdout.close()
 			#sys.stdout = old_stdout
 
-	if model_name != 'rmtpp_mse':
+	if model_name != 'rmtpp_mse_extvar':
 		rmtpp_var_model = None
 			
 	return model, result, rmtpp_var_model, results

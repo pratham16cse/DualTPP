@@ -38,12 +38,15 @@ class RMTPP_VAR(tf.keras.Model):
                                            name='bl_out')
 
     def call(self, inputs, bin_id, grp_id, pos_id, debug=False):
+        inputs = get_time_features(inputs)
+        inputs = inputs / 24.
         bin_embed = self.layer_bin_embd(bin_id)
         grp_embed = self.layer_grp_embd(grp_id)
         pos_embed = self.layer_pos_embd(pos_id)
 
 
-        inputs = tf.concat([bin_embed, grp_embed, pos_embed], axis=-1)
+        inputs = tf.expand_dims(inputs, axis=-1)
+        #inputs = tf.concat([inputs, bin_embed], axis=-1)#, grp_embed, pos_embed], axis=-1)
         l_1_out = self.l_1(inputs)
         l_2_out = self.l_2(l_1_out)
         l_out = self.l_out(l_2_out)

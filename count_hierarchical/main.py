@@ -89,8 +89,6 @@ parser.add_argument('--parallel_hparam', action='store_true', default=False,
 # Flags for RMTPP calibration
 parser.add_argument('--calibrate_rmtpp', action='store_true', default=False,
                     help='Whether to calibrate RMTPP')
-parser.add_argument('--extra_var_model', action='store_true', default=False,
-                    help='Use a separate model to train the variance of RMTPP')
 
 # Flags for optimizer
 parser.add_argument('--opt_num_counts', type=int, default=5,
@@ -149,6 +147,7 @@ if args.model_name == 'all':
     model_names.append('rmtpp_nll')
     model_names.append('rmtpp_mse')
     model_names.append('rmtpp_mse_var')
+    model_names.append('rmtpp_mse_extvar')
     model_names.append('rmtpp_count')
 else:
     model_names.append(args.model_name)
@@ -177,6 +176,11 @@ if 'rmtpp_mse_var' in model_names:
     run_model_flags['rmtpp_mse_var_cont'] = True
     #run_model_flags['rmtpp_mse_var_reinit'] = True
     run_model_flags['rmtpp_mse_var_simu'] = True
+if 'rmtpp_mse_extvar' in model_names:
+    run_model_flags['rmtpp_mse_extvar_opt'] = True
+    run_model_flags['rmtpp_mse_extvar_cont'] = True
+    #run_model_flags['rmtpp_mse_extvar_reinit'] = True
+    run_model_flags['rmtpp_mse_extvar_simu'] = True
 if 'wgan' in model_names:
     run_model_flags['wgan_simu'] = True
 if 'hawkes_model' in model_names:
@@ -257,7 +261,7 @@ for dataset_name in dataset_names:
 
         per_model_count[model_name] = result
         per_model_save[model_name] = model
-        if model_name == 'rmtpp_mse' and args.extra_var_model:
+        if model_name == 'rmtpp_mse_extvar':
             per_model_save['rmtpp_var_model'] = rmtpp_var_model
         print("Finished Running", model_name, "Model\n")
 
