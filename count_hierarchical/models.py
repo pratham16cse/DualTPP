@@ -175,6 +175,102 @@ def build_rmtpp_model(args, use_intensity, use_var_model=False):
     optimizer = keras.optimizers.Adam(learning_rate)
     return model, optimizer
 
+class PureHierarchical(tf.keras.Model):
+    def __init__(self,
+                 hidden_layer_size,
+                 name='PureHierarchical',
+                 use_intensity=True,
+                 use_count_model=False,
+                 comp_bin_sz=False,
+                 **kwargs):
+        super(PureHierarchical, self).__init__(name=name, **kwargs)
+        self.use_intensity = use_intensity
+        self.use_count_model = use_count_model
+        self.comp_bin_sz = comp_bin_sz
+
+        self.rnn_layer1 = RMTPP(hidden_layer_size, name="RMTPP_layer1", use_intensity=use_intensity, use_var_model=False)
+        self.rnn_layer2 = RMTPP(hidden_layer_size, name="RMTPP_layer2", use_intensity=use_intensity, use_var_model=False)
+
+        self.state_transform_nw = layers.Dense(hidden_layer_size, name='state_transform_nw')
+
+        if not self.use_intensity:
+            self.D_layer = layers.Dense(1, name='D_layer')
+        else:
+            self.D_layer = layers.Dense(1, activation=tf.nn.softplus, name='D_layer')
+            self.WT_layer = layers.Dense(1, activation=tf.nn.softplus, name='WT_layer')
+            self.gaps_output_layer = InverseTransformSampling()
+
+        if self.use_count_model:
+            self.WT_layer = layers.Dense(1, activation=tf.nn.softplus, name='WT_layer')
+
+
+    def call(self, gaps, initial_state=None, gaps_out=None, next_state_sno=1):
+        ''' Forward pass of the PureHierarchical model'''
+
+        self.gaps = gaps
+        self.gaps_out = gaps_out
+        self.initial_state = initial_state
+        
+        rnn_inputs_l2 = tf.reduce_sum(self.gaps, axis=2)
+
+        self.gaps_pred_l2, self.D_l2, self.WT_l2, next_initial_state, final_state \
+                = self.rnn_layer2(rnn_inputs_l2,
+                                 initial_state=self.initial_state)
+
+        self.hidden_state_l2 = self.rnn_layer2.hidden_states
+        self.hidden_state_l2_transformed = self.state_transform_nw(self.hidden_state_l2)
+
+        prev_gaps = rnn_inputs_l2/self.comp_bin_sz
+
+        if self.gaps_out is not None:
+            rnn_inputs_l1 = tf.concat([tf.expand_dims(prev_gaps, axis=-1), self.gaps_out[:,:,:-1]], axis=2)
+            gaps_pred_l1_lst = list()
+            D_lst = list()
+            WT_lst = list()
+            for idx in range(self.gaps.shape[1]):
+                gaps_pred_tmp, D_pred, WT_pred, _, _ = \
+                    self.rnn_layer1(rnn_inputs_l1[:,idx], 
+                        initial_state = self.hidden_state_l2_transformed[:,idx])
+                gaps_pred_l1_lst.append(gaps_pred_tmp)
+                D_lst.append(D_pred)
+                WT_lst.append(WT_pred)
+            self.gaps_pred_l1 = tf.stack(gaps_pred_l1_lst, axis=1)
+            self.D = tf.stack(D_lst, axis=1)
+            self.WT = tf.stack(WT_lst, axis=1)
+        else:
+            gaps_pred_l1_lst = list()
+            init_prev_state = self.hidden_state_l2_transformed
+            seq_idx = self.gaps.shape[1]-1
+            prev_state = init_prev_state[:,seq_idx]
+            prev_gaps_inp = prev_gaps[:,seq_idx]
+            rnn_inputs_l1 = tf.expand_dims(prev_gaps_inp, axis=-1)
+
+            for idx in range(self.gaps.shape[2]):
+                rnn_inputs_l1, _, _, prev_state, _ = \
+                    self.rnn_layer1(rnn_inputs_l1, 
+                        initial_state = prev_state)
+                gaps_pred_l1_lst.append(rnn_inputs_l1)
+
+            self.gaps_pred_l1 = tf.stack(gaps_pred_l1_lst, axis=2)
+            self.gaps_pred_l1 = tf.concat([self.gaps[:,:-1], self.gaps_pred_l1], axis=1)
+            self.D = None
+            self.WT = None
+
+        return [self.gaps_pred_l2, self.D_l2, self.WT_l2,
+               self.gaps_pred_l1, self.D, self.WT, 
+               next_initial_state, final_state]
+
+def build_pure_hierarchical_model(args, use_intensity):
+    hidden_layer_size = args.hidden_layer_size
+    batch_size = args.batch_size
+    enc_len = args.comp_enc_len
+    comp_bin_sz = args.comp_bin_sz
+    learning_rate = args.learning_rate
+    model = PureHierarchical(hidden_layer_size, use_intensity=use_intensity, comp_bin_sz=comp_bin_sz)
+    model.build(input_shape=(batch_size, enc_len, comp_bin_sz, 1))
+    optimizer = keras.optimizers.Adam(learning_rate)
+    return model, optimizer
+
 def hierarchical_model(args):
     hidden_layer_size = args.hidden_layer_size
     in_bin_sz = args.in_bin_sz

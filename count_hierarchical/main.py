@@ -20,7 +20,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('dataset_name', type=str, help='dataset_name')
 parser.add_argument('model_name', type=str, help='model_name')
 
-parser.add_argument('--epochs', type=int, default=15,
+parser.add_argument('--epochs', type=int, default=0,
                     help='number of training epochs')
 parser.add_argument('--patience', type=int, default=2,
                     help='Number of epochs to wait for \
@@ -52,7 +52,7 @@ parser.add_argument('--in_bin_sz', type=int,
 # dec_len = 8   # For All Models
 parser.add_argument('--out_bin_sz', type=int,
                     help='Output count of bin',
-                    default=5)
+                    default=1)
 
 parser.add_argument('--cnt_net_type', type=str,
                     help='Count model network type (ff or rnn)')
@@ -60,6 +60,14 @@ parser.add_argument('--cnt_net_type', type=str,
 # enc_len = 80  # For RMTPP
 parser.add_argument('--enc_len', type=int, default=80,
                     help='Input length for rnn of rmtpp')
+
+# comp_enc_len = 40  # For Compound RMTPP
+parser.add_argument('--comp_enc_len', type=int, default=40,
+                    help='Input length for rnn of compound rmtpp')
+
+# comp_bin_sz = 10  # For Compound RMTPP
+parser.add_argument('--comp_bin_sz', type=int, default=10,
+                    help='events inside one bin of compound rmtpp')
 
 # wgan_enc_len = 60  # For WGAN
 parser.add_argument('--wgan_enc_len', type=int, default=60,
@@ -75,7 +83,7 @@ parser.add_argument('--batch_size', type=int, default=32,
                     help='Input batch size')
 parser.add_argument('--query', type=int, default=1,
                     help='Query number')
-parser.add_argument('--stride_len', type=int, default=3,
+parser.add_argument('--stride_len', type=int, default=1,
                     help='Stride len for RMTPP number')
 parser.add_argument('--normalization', type=str, default='average',
                     help='gap normalization method')
@@ -146,9 +154,14 @@ if args.model_name == 'all':
     #model_names.append('wgan')
     model_names.append('count_model')
     # model_names.append('hierarchical')
-    model_names.append('rmtpp_nll')
+    #model_names.append('rmtpp_nll')
     model_names.append('rmtpp_mse')
     model_names.append('rmtpp_mse_var')
+    #model_names.append('rmtpp_nll_comp')
+    model_names.append('rmtpp_mse_comp')
+    model_names.append('rmtpp_mse_var_comp')
+    #model_names.append('pure_hierarchical_nll')
+    #model_names.append('pure_hierarchical_mse')
     model_names.append('rmtpp_count')
 else:
     model_names.append(args.model_name)
@@ -177,6 +190,22 @@ if 'rmtpp_mse_var' in model_names:
     run_model_flags['rmtpp_mse_var_cont'] = True
     #run_model_flags['rmtpp_mse_var_reinit'] = True
     run_model_flags['rmtpp_mse_var_simu'] = True
+if 'rmtpp_nll_comp' in model_names:
+    #run_model_flags['run_rmtpp_with_joint_optimization_fixed_cnt_solver_nll_comp'] = True
+    run_model_flags['rmtpp_nll_opt_comp'] = True
+    run_model_flags['rmtpp_nll_cont_comp'] = True
+if 'rmtpp_mse_comp' in model_names:
+    #run_model_flags['run_rmtpp_with_joint_optimization_fixed_cnt_solver_mse_comp'] = True
+    run_model_flags['rmtpp_mse_opt_comp'] = True
+    run_model_flags['rmtpp_mse_cont_comp'] = True
+if 'rmtpp_mse_var_comp' in model_names:
+    #run_model_flags['run_rmtpp_with_joint_optimization_fixed_cnt_solver_mse_var_comp'] = True
+    run_model_flags['rmtpp_mse_var_opt_comp'] = True
+    run_model_flags['rmtpp_mse_var_cont_comp'] = True
+if 'pure_hierarchical_nll' in model_names:
+    run_model_flags['run_pure_hierarchical_infer_nll'] = True
+if 'pure_hierarchical_mse' in model_names:
+    run_model_flags['run_pure_hierarchical_infer_mse'] = True
 if 'wgan' in model_names:
     run_model_flags['wgan_simu'] = True
 if 'hawkes_model' in model_names:
@@ -217,9 +246,11 @@ results = dict()
 for dataset_name in dataset_names:
     print("Processing", dataset_name, "Datasets\n")
     args.current_dataset = dataset_name
+    if dataset_name == 'Trump':
+        args.comp_enc_len = 25
     if automate_bin_sz:
         args.bin_size = utils.get_optimal_bin_size(dataset_name)
-        print('New bin size is', args.bin_size)
+        print('New bin size is', args.bin_size, 'sec')
     dataset = utils.get_processed_data(dataset_name, args)
 
     test_data_out_bin = dataset['test_data_out_bin']
