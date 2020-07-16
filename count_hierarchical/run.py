@@ -3416,9 +3416,22 @@ def run_rmtpp_with_optimization_fixed_cnt_solver_comp(
 		D, WT = model_rmtpp_params[0][:,:comp_bin_sz], model_rmtpp_params[1][:,:comp_bin_sz]
 		D_comp, WT_comp = model_rmtpp_params_comp[0].numpy(), model_rmtpp_params_comp[1].numpy()
 
+		test_norm_a, test_norm_d = test_data_rmtpp_normalizer
+		test_norm_a_comp, test_norm_d_comp = test_data_rmtpp_normalizer_comp
+
+		gaps_sum = utils.normalize_avg_given_param(
+			utils.denormalize_avg(
+				cp.sum(gaps),
+				test_norm_a,
+				test_norm_d,
+			),
+			test_norm_a_comp,
+			test_norm_d_comp,
+		)
+
 		if rmtpp_type=='nll':
 			#WT = np.minimum(WT, ETH)
-			opt_loss = cp.sum(rmtpp_loglikelihood_loss(cp.sum(gaps), D_comp, WT_comp) + \
+			opt_loss = cp.sum(rmtpp_loglikelihood_loss(gaps_sum, D_comp, WT_comp) + \
 					cp.sum(rmtpp_loglikelihood_loss(gaps, D, WT))/all_bins_gaps_pred.shape[1])
 		elif rmtpp_type=='mse':
 			if args.extra_var_model:
@@ -3426,17 +3439,13 @@ def run_rmtpp_with_optimization_fixed_cnt_solver_comp(
 					cp.sum(mse_loglikelihood_loss(gaps, D, WT))/all_bins_gaps_pred.shape[1])
 			else:
 				WT = np.ones_like(WT)
-				D = all_bins_gaps_pred[:,:comp_bin_sz]
-				opt_loss = cp.sum(mse_loss(cp.sum(gaps), D_comp, WT_comp) + \
+				opt_loss = cp.sum(mse_loss(gaps_sum, D_comp, WT_comp) + \
 						cp.sum(mse_loss(gaps, D, WT))/all_bins_gaps_pred.shape[1])
 		elif rmtpp_type=='mse_var':
-			opt_loss = cp.sum(mse_loglikelihood_loss(cp.sum(gaps), D_comp, WT_comp) + \
+			opt_loss = cp.sum(mse_loglikelihood_loss(gaps_sum, D_comp, WT_comp) + \
 				cp.sum(mse_loglikelihood_loss(gaps, D, WT))/all_bins_gaps_pred.shape[1])
 
 		objective = cp.Minimize(opt_loss)
-
-		test_norm_a, test_norm_d = test_data_rmtpp_normalizer
-		test_norm_a_comp, test_norm_d_comp = test_data_rmtpp_normalizer_comp
 
 		init_end_diff_unnorm = utils.denormalize_avg(all_bins_gaps_pred_comp, test_norm_a_comp, test_norm_d_comp)
 		init_end_diff_norm = utils.normalize_avg_given_param(init_end_diff_unnorm, test_norm_a, test_norm_d)
@@ -3464,6 +3473,9 @@ def run_rmtpp_with_optimization_fixed_cnt_solver_comp(
 		if gaps.value is None:
 			gaps.value = all_bins_gaps_pred[:,:comp_bin_sz]
 			rmtpp_loss = opt_loss.value
+
+		#import ipdb
+		#ipdb.set_trace()
 
 		all_bins_gaps_pred = gaps.value[0:1, :comp_bin_sz]
 		print('Loss after optimization:', rmtpp_loss)
@@ -3612,8 +3624,8 @@ def run_rmtpp_with_optimization_fixed_cnt_solver_comp(
 			# if no_rescale_rmtpp_params==True.
 			#batch_bin_curr_cnt_D_pred = D[:,(comp_bin_sz*dec_idx):,0].numpy()
 			#batch_bin_curr_cnt_WT_pred = WT[:,(comp_bin_sz*dec_idx):,0].numpy()
-			batch_bin_curr_cnt_D_pred = D[:,(comp_bin_sz*dec_idx):(comp_bin_sz*dec_idx)+1,0].numpy()
-			batch_bin_curr_cnt_WT_pred = WT[:,(comp_bin_sz*dec_idx):(comp_bin_sz*dec_idx)+1,0].numpy()
+			batch_bin_curr_cnt_D_pred = D[:,(comp_bin_sz*dec_idx):(comp_bin_sz*(dec_idx+1)),0].numpy()
+			batch_bin_curr_cnt_WT_pred = WT[:,(comp_bin_sz*dec_idx):(comp_bin_sz*(dec_idx+1)),0].numpy()
 			batch_bin_curr_cnt_gaps_pred_comp = all_gaps_pred_comp[batch_idx, dec_idx]
 
 			model_rmtpp_params = [batch_bin_curr_cnt_D_pred, batch_bin_curr_cnt_WT_pred]
@@ -3633,6 +3645,9 @@ def run_rmtpp_with_optimization_fixed_cnt_solver_comp(
 			batch_bin_curr_cnt_gaps_pred_comp = utils.normalize_avg_given_param(batch_bin_curr_cnt_gaps_pred_comp,
 															 	test_gap_in_bin_norm_a_comp,
 															 	test_gap_in_bin_norm_d_comp)
+
+			#import ipdb
+			#ipdb.set_trace()
 
 	
 			batch_bin_curr_cnt_opt_gaps_pred, nc_loss \
