@@ -3451,28 +3451,17 @@ def run_rmtpp_with_optimization_fixed_cnt_solver_comp(
 		init_end_diff_norm = utils.normalize_avg_given_param(init_end_diff_unnorm, test_norm_a, test_norm_d)
 
 		constraints = [gaps>=0]
-		# TODO Need normalizer for constraints
+
 		prob = cp.Problem(objective, constraints)
-		#print('D:')
-		#print(D)
-		#print('WT:')
-		#print(WT)
-		#print('all_bins_gaps_pred:')
-		#print(all_bins_gaps_pred)
-		#print('all_bins_end_time:')
-		#print(all_bins_end_time)
-		#print('test_data_init_time:')
-		#print(test_data_init_time)
-		#print('\n'),
 
 		try:
 			rmtpp_loss = prob.solve(warm_start=True)
 		except cp.error.SolverError:
 			rmtpp_loss = prob.solve(solver='SCS', warm_start=True)
 
-		if gaps.value is None:
-			gaps.value = all_bins_gaps_pred[:,:comp_bin_sz]
-			rmtpp_loss = opt_loss.value
+		#if gaps.value is None:
+		#	gaps.value = all_bins_gaps_pred[:,:comp_bin_sz]
+		#	rmtpp_loss = opt_loss.value
 
 		#import ipdb
 		#ipdb.set_trace()
