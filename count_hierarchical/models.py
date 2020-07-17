@@ -556,6 +556,7 @@ class WGAN(tf.keras.Model):
                  d_cell_type='LSTM',
                  d_num_layers=1,
                  d_state_size=64,
+                 use_time_feats=True,
                  name='WGAN',
                  **kwargs):
         super(WGAN, self).__init__(name=name, **kwargs)
@@ -567,6 +568,7 @@ class WGAN(tf.keras.Model):
         '''
 
         self.keep_prob = tf.constant(0.9)
+        self.use_time_feats = use_time_feats
 
         self.enc_rnn_layer = layers.LSTM(g_state_size, return_sequences=True,
                                          return_state=True, stateful=False,
@@ -605,6 +607,7 @@ class WGAN(tf.keras.Model):
     def generator(self,
                   g_inputs, #dims batch_size x num_steps x input_size
                   enc_inputs=None,
+                  enc_feats=None,
                   g_init_state=None):
         '''
         Generates output sequence from on the noise sequence conditioned
@@ -622,6 +625,9 @@ class WGAN(tf.keras.Model):
             assert g_init_state is not None
 
         if enc_inputs is not None:
+            if self.use_time_feats:
+                enc_feats = enc_feats/24.
+                enc_inputs = tf.concat([enc_inputs, enc_feats], axis=-1)
             _, g_init_state = self.run_encoder(enc_inputs)
 
         # rnn_outputs, self.g_h_state, self.g_c_state \

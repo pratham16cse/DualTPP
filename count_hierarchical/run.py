@@ -855,7 +855,8 @@ def run_wgan(args, data, test_data):
 	D_optimizer = keras.optimizers.Adam(args.learning_rate)
 	pre_train_optimizer = keras.optimizers.Adam(args.learning_rate)
 
-	[train_dataset_gaps, dev_data_in_gaps, dev_data_out_gaps, train_norm_gaps] = data
+	[train_dataset_gaps, dev_data_in_gaps, dev_data_in_feats,
+	 dev_data_out_gaps, train_norm_gaps] = data
 	[train_norm_a_gaps, train_norm_d_gaps] = train_norm_gaps
 
 	[test_data_in_gaps_bin, test_data_in_feats_bin,
@@ -871,7 +872,7 @@ def run_wgan(args, data, test_data):
 	# intensityPoisson = IntensityHomogenuosPoisson(lambda0)
 	# fake_sequences = generate_sample(intensityPoisson, T, 20000)
 	train_z_seqs = list()
-	for (gaps_batch, _) in train_dataset_gaps:
+	for (gaps_batch, _, _, _) in train_dataset_gaps:
 		wgan_dec_len = gaps_batch.shape[1] - wgan_enc_len
 		times_batch = tf.cumsum(gaps_batch, axis=1)
 		span_batch = times_batch[:, -1] - times_batch[:, 0]
@@ -884,6 +885,7 @@ def run_wgan(args, data, test_data):
 
 	dev_z_seqs = list()
 	dev_data_gaps = dev_data_in_gaps
+	dev_data_feats = dev_data_in_feats
 	wgan_dec_len = dev_data_gaps.shape[1] - wgan_enc_len
 	dev_data_times = tf.cumsum(dev_data_gaps, axis=1)
 	dev_span = dev_data_times[:, wgan_enc_len-1] - dev_data_times[:, 0]
@@ -935,13 +937,17 @@ def run_wgan(args, data, test_data):
 		step_train_loss = 0.0
 		step_cnt = 0
 		next_initial_state = None
-		for sm_step, (gaps_batch, _) \
+		for sm_step, (gaps_batch, feats_batch, _, _) \
 				in enumerate(train_dataset_gaps):
 			gaps_batch_in = gaps_batch[:, :wgan_enc_len]
+			feats_batch_in = feats_batch[:, :wgan_enc_len]
 			gaps_batch_out = gaps_batch[:, wgan_enc_len:]
+			feats_batch_out = feats_batch[:, wgan_enc_len:]
 			train_z_seqs_batch = train_z_seqs[sm_step*args.batch_size:(sm_step+1)*args.batch_size]
 			with tf.GradientTape() as g_tape, tf.GradientTape() as d_tape:
-				gaps_pred = model.generator(train_z_seqs_batch, gaps_batch_in)
+				gaps_pred = model.generator(train_z_seqs_batch,
+											enc_inputs=gaps_batch_in,
+											enc_feats=feats_batch_in)
 
 				if args.use_wgan_d:
 					D_pred = model.discriminator(gaps_batch_in, gaps_pred)
@@ -982,8 +988,11 @@ def run_wgan(args, data, test_data):
 		
 		# Dev calculations
 		dev_data_in_gaps = dev_data_gaps[:, :wgan_enc_len]
+		dev_data_in_feats = dev_data_feats[:, :wgan_enc_len]
 		dev_data_out_gaps = dev_data_gaps[:, wgan_enc_len:]
-		dev_gaps_pred = model.generator(dev_z_seqs, dev_data_in_gaps)
+		dev_gaps_pred = model.generator(dev_z_seqs,
+										enc_inputs=dev_data_in_gaps,
+										enc_feats=dev_data_in_feats)
 		dev_gaps_pred_unnorm = utils.denormalize_avg(dev_gaps_pred, 
 										train_norm_a_gaps, train_norm_d_gaps)
 		dev_data_out_gaps_unnorm = utils.denormalize_avg(dev_data_out_gaps, 
@@ -1015,8 +1024,11 @@ def run_wgan(args, data, test_data):
 	print("Loading best model from epoch", best_dev_epoch)
 	model.load_weights(checkpoint_path)
 	dev_data_in_gaps = dev_data_gaps[:, :wgan_enc_len]
+	dev_data_in_feats = dev_data_feats[:, :wgan_enc_len]
 	dev_data_out_gaps = dev_data_gaps[:, wgan_enc_len:]
-	dev_gaps_pred = model.generator(dev_z_seqs, dev_data_in_gaps)
+	dev_gaps_pred = model.generator(dev_z_seqs,
+									enc_inputs=dev_data_in_gaps,
+									enc_feats=dev_data_in_feats)
 	dev_gaps_pred_unnorm = utils.denormalize_avg(dev_gaps_pred, 
 									train_norm_a_gaps, train_norm_d_gaps)
 	
@@ -1046,6 +1058,7 @@ def run_wgan(args, data, test_data):
 		all_gaps_pred, all_times_pred, next_hidden_state = simulate_wgan(model, 
 												test_data_init_time, 
 												test_data_input_gaps_bin,
+												test_data_in_feats_bin,
 												test_end_hr_bins[:,dec_idx], 
 												(test_gap_in_bin_norm_a, 
 												test_gap_in_bin_norm_d),
@@ -1177,7 +1190,7 @@ def simulate_v2(model, times_in, gaps_in, bins_end_hrs, normalizers,
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 # Simulate model until t_b_plus
 def simulate(model, times_in, gaps_in, feats_in,
-			 t_b_plus, normalizers, prev_hidden_state = None):
+			 t_b_plus, normalizers, prev_hidden_state=None):
 	#TODO: Check for this modification in functions which calls this def
 	gaps_pred = list()
 	times_pred = list()
@@ -1505,7 +1518,8 @@ def simulate_with_counter(model, times_in, gaps_in, feats_in, out_gaps_count, no
 
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 # Simulate WGAN model till t_b_plus
-def simulate_wgan(model, times_in, gaps_in, t_b_plus, normalizers, prev_hidden_state=None):
+def simulate_wgan(model, times_in, gaps_in, feats_in,
+				  t_b_plus, normalizers, prev_hidden_state=None):
 	'''
 	Encode the input sequence.
 	Generate output sequence in a loop until T_l^+ is not reached.
@@ -1534,7 +1548,12 @@ def simulate_wgan(model, times_in, gaps_in, t_b_plus, normalizers, prev_hidden_s
 	lambda0 = np.ones_like(span_in) * gaps_in.shape[1] / span_in.numpy()
 	intensityPoisson = IntensityHomogenuosPoisson(lambda0)
 
-	_, g_init_state = model.run_encoder(gaps_in)
+	if model.use_time_feats:
+		feats_in = feats_in/24.
+		enc_inputs = tf.concat([gaps_in, feats_in], axis=-1)
+	else:
+		enc_inputs = gaps_in
+	_, g_init_state = model.run_encoder(enc_inputs)
 
 	while any(times_pred[-1]<t_b_plus):
 
@@ -3775,6 +3794,7 @@ def run_wgan_for_count(args, models, data, test_data, query_data=None, simul_end
 	_, all_times_pred, _ = simulate_wgan(model_wgan,
 										test_data_init_time,
 										test_data_input_gaps_bin,
+										test_data_in_feats_bin,
 										t_e_plus,
 										(test_gap_in_bin_norm_a,
 										test_gap_in_bin_norm_d),
