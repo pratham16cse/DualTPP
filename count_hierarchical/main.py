@@ -120,6 +120,21 @@ parser.add_argument('--no_count_model_feats', action='store_true', default=False
 parser.add_argument('--no_rmtpp_model_feats', action='store_true', default=False,
                     help='Do not use time-features for rmtpp model')
 
+
+# Trainsformer Paramerters
+parser.add_argument('-d_model', type=int, default=64)
+parser.add_argument('-d_rnn', type=int, default=256)
+parser.add_argument('-d_inner_hid', type=int, default=128)
+parser.add_argument('-d_k', type=int, default=16)
+parser.add_argument('-d_v', type=int, default=16)
+
+parser.add_argument('-n_head', type=int, default=4)
+parser.add_argument('-n_layers', type=int, default=4)
+
+parser.add_argument('-dropout', type=float, default=0.1)
+parser.add_argument('-lr', type=float, default=1e-4)
+parser.add_argument('-smooth', type=float, default=0.1)
+
 args = parser.parse_args()
 
 dataset_names = list()
@@ -152,14 +167,15 @@ model_names = list()
 if args.model_name == 'all':
     #model_names.append('hawkes_model')
     #model_names.append('wgan')
-    model_names.append('count_model')
+    model_names.append('transformer')
+    #model_names.append('count_model')
     # model_names.append('hierarchical')
     #model_names.append('rmtpp_nll')
-    model_names.append('rmtpp_mse')
-    model_names.append('rmtpp_mse_var')
+    #model_names.append('rmtpp_mse')
+    #model_names.append('rmtpp_mse_var')
     #model_names.append('rmtpp_nll_comp')
-    model_names.append('rmtpp_mse_comp')
-    model_names.append('rmtpp_mse_var_comp')
+    #model_names.append('rmtpp_mse_comp')
+    #model_names.append('rmtpp_mse_var_comp')
     #model_names.append('pure_hierarchical_nll')
     #model_names.append('pure_hierarchical_mse')
     model_names.append('rmtpp_count')
@@ -173,7 +189,7 @@ run_model_flags = {
     'run_rmtpp_count_with_optimization': False,
     'run_rmtpp_with_optimization_fixed_cnt': False,
 
-    'count_only': True,
+    #'count_only': True,
 }
 if 'rmtpp_nll' in model_names:
     run_model_flags['rmtpp_nll_opt'] = True
@@ -208,6 +224,8 @@ if 'pure_hierarchical_mse' in model_names:
     run_model_flags['run_pure_hierarchical_infer_mse'] = True
 if 'wgan' in model_names:
     run_model_flags['wgan_simu'] = True
+if 'transformer' in model_names:
+    run_model_flags['transformer_simu'] = True
 if 'hawkes_model' in model_names:
     run_model_flags['hawkes_simu'] = True
 
@@ -260,6 +278,7 @@ for dataset_name in dataset_names:
     per_model_count = dict()
     per_model_save = {
         'wgan': None,
+        'transformer': None,
         'count_model': None,
         'hierarchical': None,
         'rmtpp_mse': None,

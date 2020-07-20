@@ -195,6 +195,7 @@ def generate_plots(args, dataset_name, dataset, per_model_count, test_sample_idx
 	hierarchical_pred = true_pred
 	count_model_pred = true_pred
 	wgan_pred = true_pred
+	transformer_pred = true_pred
 	hawkes_pred = true_pred
 	if 'rmtpp_mse' in per_model_count:
 		rmtpp_mse_pred = per_model_count['rmtpp_mse']
@@ -216,6 +217,10 @@ def generate_plots(args, dataset_name, dataset, per_model_count, test_sample_idx
 		wgan_pred = per_model_count['wgan']
 		event_count_preds_wgan = wgan_pred
 		wgan_pred = event_count_preds_wgan[test_sample_idx].astype(np.float32)
+	if 'transformer' in per_model_count:
+		transformer_pred = per_model_count['transformer']
+		event_count_preds_transformer = transformer_pred
+		transformer_pred = event_count_preds_transformer[test_sample_idx].astype(np.float32)
 	if 'hawkes_model' in per_model_count:
 		hawkes_pred = per_model_count['hawkes_model']
 		event_count_preds_hawkes = hawkes_pred
@@ -245,6 +250,8 @@ def generate_plots(args, dataset_name, dataset, per_model_count, test_sample_idx
 		plt.plot(x, true_inp_bins.tolist()+count_model_pred.tolist(), label='count_model_pred')
 	if 'wgan' in per_model_count:
 		plt.plot(x, true_inp_bins.tolist()+wgan_pred.tolist(), label='wgan_pred')
+	if 'transformer' in per_model_count:
+		plt.plot(x, true_inp_bins.tolist()+transformer_pred.tolist(), label='transformer_pred')
 	if 'rmtpp_mse' in per_model_count:
 		plt.plot(x, true_inp_bins.tolist()+rmtpp_mse_pred.tolist(), label='rmtpp_mse_pred')
 	if 'rmtpp_nll' in per_model_count:
