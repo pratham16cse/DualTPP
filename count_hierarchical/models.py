@@ -863,8 +863,11 @@ class Transformer(tf.keras.Model):
             self,
             num_types, d_model=256, d_rnn=128, d_inner=1024,
             n_layers=4, n_head=4, d_k=64, d_v=64, dropout=0.1,
+            use_marks=False,
             name='Transformer', **kwargs):
         super(Transformer, self).__init__(name=name, **kwargs)
+
+        self.use_marks = use_marks
 
         self.encoder = Encoder(
             num_types=num_types, d_model=d_model, d_inner=d_inner,

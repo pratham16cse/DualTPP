@@ -1142,8 +1142,6 @@ def run_transformer(args, data, test_data):
 		for sm_step, (gaps_batch_in, feats_batch_in,
 					  gaps_batch_out, feats_batch_out) \
 						in enumerate(train_dataset_gaps):
-			if sm_step>=10:
-				break
 			with tf.GradientTape() as tape:
 				# TODO: Make sure to pass correct next_stat
 				enc_out, (gaps_pred, types_pred) = model(
