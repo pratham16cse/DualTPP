@@ -869,6 +869,7 @@ def run_wgan(args, data, test_data):
 	[test_data_in_gaps_bin, test_data_in_feats_bin,
 	 test_end_hr_bins, test_data_in_time_end_bin, 
 	 test_gap_in_bin_norm_a, test_gap_in_bin_norm_d] = test_data	
+	enc_len = args.enc_len
 	wgan_enc_len = args.wgan_enc_len
 	dec_len = args.out_bin_sz
 	bin_size = args.bin_size
@@ -1087,7 +1088,7 @@ def run_wgan(args, data, test_data):
 												test_gap_in_bin_norm_a,
 												test_gap_in_bin_norm_d)
 		all_prev_gaps_pred = tf.concat([test_data_input_gaps_bin, all_gaps_pred_norm], axis=1)
-		test_data_input_gaps_bin = all_prev_gaps_pred[:,-wgan_enc_len:].numpy()
+		test_data_input_gaps_bin = all_prev_gaps_pred[:,-enc_len:].numpy()
 
 	event_count_preds = np.array(all_event_count_preds).T
 	return model, event_count_preds
