@@ -17,6 +17,7 @@ import models
 import utils
 import os
 import sys
+import time
 
 from utils import IntensityHomogenuosPoisson, generate_sample
 from utils import get_time_features
@@ -276,6 +277,7 @@ def run_rmtpp(args, model, optimizer, data, var_data, NLL_loss,
 		step_train_loss = 0.0
 		step_cnt = 0
 		next_initial_state = None
+		st = time.time()
 		for sm_step, (gaps_batch_in, feats_batch_in,
 					  gaps_batch_out, feats_batch_out) \
 						in enumerate(train_dataset_gaps):
@@ -319,6 +321,8 @@ def run_rmtpp(args, model, optimizer, data, var_data, NLL_loss,
 			# print(float(train_gap_mae), float(train_gap_mse))
 			print('Training loss (for one batch) at step %s: %s' %(sm_step, float(loss)))
 			step_cnt += 1
+		et = time.time()
+		print(model_name, 'time_reqd:', et-st)
 		
 		# Dev calculations
 		dev_gaps_pred, _, _, _, _ = model(dev_data_in_gaps, dev_data_in_feats)
@@ -1139,6 +1143,7 @@ def run_transformer(args, data, test_data):
 		step_train_loss = 0.0
 		step_cnt = 0
 		next_initial_state = None
+		st = time.time()
 		for sm_step, (gaps_batch_in, feats_batch_in,
 					  gaps_batch_out, feats_batch_out) \
 						in enumerate(train_dataset_gaps):
@@ -1164,8 +1169,9 @@ def run_transformer(args, data, test_data):
 				se = transformer_utils.time_loss(gaps_pred, gaps_batch_out)
 				scale_se_loss = 100 # SE is usually large, scale it to stabilize training
 				gap_loss = -tf.reduce_sum(event_ll - non_event_ll) + se / scale_se_loss
-				
-				loss = gap_loss
+				type_loss, _ = transformer_utils.type_loss(types_pred, types_batch_out, type_loss_func)
+
+				loss = gap_loss + type_loss
 				step_train_loss+=loss.numpy()
 
 			grads = tape.gradient(loss, model.trainable_weights)
@@ -1181,6 +1187,8 @@ def run_transformer(args, data, test_data):
 			# print(float(train_gap_mae), float(train_gap_mse))
 			print('Training loss (for one batch) at step %s: %s' %(sm_step, float(loss)))
 			step_cnt += 1
+		et = time.time()
+		print(model_name, 'time_reqd:', et-st)
 		
 		# Dev calculations
 		enc_out, (dev_gaps_pred, dev_types_pred) = model(dev_data_in_gaps, dev_data_in_feats)

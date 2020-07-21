@@ -753,6 +753,7 @@ class Encoder(tf.keras.Model):
         # event type embedding
         #self.event_emb = nn.Embedding(num_types + 1, d_model, padding_idx=Constants.PAD)
         self.event_emb = layers.Embedding(num_types+1, d_model, mask_zero=True)
+        self.feature_enc_layer = layers.Dense(d_model)
 
         #TODO: What to do with nn.ModuleList?
         #self.layer_stack = nn.ModuleList([
@@ -776,7 +777,7 @@ class Encoder(tf.keras.Model):
         non_pad_mask = tf.cast(tf.expand_dims(non_pad_mask, axis=-1), tf.float32)
         return result * non_pad_mask
 
-    def call(self, event_type, event_time, non_pad_mask):
+    def call(self, event_type, event_time, event_feats, non_pad_mask):
         """ Encode event sequences via masked self-attention. """
 
         # prepare attention masks
@@ -788,12 +789,14 @@ class Encoder(tf.keras.Model):
         slf_attn_mask = (slf_attn_mask_keypad + slf_attn_mask_subseq)>(0)
 
         tem_enc = self.temporal_enc(event_time, non_pad_mask)
+        feats_enc = self.feature_enc_layer(event_feats)
         enc_output = self.event_emb(event_type)
 
         for enc_layer in self.layer_stack:
-            enc_output += tem_enc
+            enc_output += (tem_enc + feats_enc)
             enc_output, _ = enc_layer(
                 enc_output,
+                event_feats,
                 non_pad_mask=non_pad_mask,
                 slf_attn_mask=slf_attn_mask)
         return enc_output
@@ -863,10 +866,12 @@ class Transformer(tf.keras.Model):
             self,
             num_types, d_model=256, d_rnn=128, d_inner=1024,
             n_layers=4, n_head=4, d_k=64, d_v=64, dropout=0.1,
+            use_time_feats=True,
             use_marks=False,
             name='Transformer', **kwargs):
         super(Transformer, self).__init__(name=name, **kwargs)
 
+        self.use_time_feats = use_time_feats
         self.use_marks = use_marks
 
         self.encoder = Encoder(
@@ -901,6 +906,7 @@ class Transformer(tf.keras.Model):
                 type_prediction: batch*seq_len*num_classes (not normalized);
                 time_prediction: batch*seq_len.
         """
+        event_feats = event_feats/24.
 
         if event_type is None:
             event_type = tf.squeeze(
@@ -908,7 +914,7 @@ class Transformer(tf.keras.Model):
 
         non_pad_mask = get_non_pad_mask(event_type)
 
-        enc_output = self.encoder(event_type, event_time, non_pad_mask)
+        enc_output = self.encoder(event_type, event_time, event_feats, non_pad_mask)
         enc_output = self.rnn(enc_output, non_pad_mask)
 
         time_prediction = self.time_predictor(enc_output, non_pad_mask)

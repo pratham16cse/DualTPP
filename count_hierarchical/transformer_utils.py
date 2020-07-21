@@ -104,9 +104,9 @@ def type_loss(prediction, types, loss_func):
     prediction = prediction[:, :-1, :]
 
     #pred_type = torch.max(prediction, dim=-1)[1]
-    pred_type = tf.max(prediction, axis=-1)[1]
+    pred_type = tf.cast(tf.argmax(prediction, axis=-1), tf.float32)
     #correct_num = torch.sum(pred_type == truth)
-    correct_num = tf.reduce_sum(pred_type == truth)
+    correct_num = tf.reduce_sum(tf.cast(pred_type == truth, tf.float32))
 
     # compute cross entropy loss
     if isinstance(loss_func, LabelSmoothingLoss):
@@ -161,12 +161,13 @@ class LabelSmoothingLoss(tf.keras.losses.Loss):
         target (LongTensor): batch_size
         """
 
-        non_pad_mask = (target != tf.cast((self.ignore_index), tf.float32))
+        non_pad_mask = tf.cast((target != tf.cast((self.ignore_index), tf.float32)), tf.float32)
 
         #target[target.eq(self.ignore_index)] = 0
-        target[target == (self.ignore_index)] = 0
+        #target[target == (self.ignore_index)] = 0
+        target = tf.where(target==self.ignore_index, 0, target)
         #one_hot = F.one_hot(target, num_classes=self.num_classes).float()
-        one_hot = tf.cast(tf.one_hot(target, depth=self.num_classes), tf.float32)
+        one_hot = tf.cast(tf.one_hot(tf.cast(target, tf.int64), depth=self.num_classes), tf.float32)
         one_hot = one_hot * (1 - self.eps) + (1 - one_hot) * self.eps / self.num_classes
 
         #log_prb = F.log_softmax(output, dim=-1)

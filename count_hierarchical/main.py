@@ -9,6 +9,7 @@ import datetime
 from collections import OrderedDict
 from generator import generate_dataset, generate_twitter_dataset
 import json
+import time
 
 import run
 import utils
@@ -126,13 +127,13 @@ parser.add_argument('--no_rmtpp_model_feats', action='store_true', default=False
 
 # Trainsformer Paramerters
 parser.add_argument('-d_model', type=int, default=32) #64
-parser.add_argument('-d_rnn', type=int, default=32) #256
+parser.add_argument('-d_rnn', type=int, default=8) #256
 parser.add_argument('-d_inner_hid', type=int, default=32) #128
 parser.add_argument('-d_k', type=int, default=8) #16
 parser.add_argument('-d_v', type=int, default=8) #16
 
 parser.add_argument('-n_head', type=int, default=2) #4
-parser.add_argument('-n_layers', type=int, default=2) #4
+parser.add_argument('-n_layers', type=int, default=1) #4
 
 parser.add_argument('-dropout', type=float, default=0.1)
 parser.add_argument('-lr', type=float, default=1e-4)
