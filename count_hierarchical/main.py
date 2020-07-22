@@ -171,6 +171,7 @@ model_names = list()
 if args.model_name == 'all':
     #model_names.append('hawkes_model')
     model_names.append('wgan')
+    model_names.append('seq2seq')
     model_names.append('transformer')
     model_names.append('count_model')
     # model_names.append('hierarchical')
@@ -228,6 +229,8 @@ if 'pure_hierarchical_mse' in model_names:
     run_model_flags['run_pure_hierarchical_infer_mse'] = True
 if 'wgan' in model_names:
     run_model_flags['wgan_simu'] = True
+if 'seq2seq' in model_names:
+    run_model_flags['seq2seq_simu'] = True
 if 'transformer' in model_names:
     run_model_flags['transformer_simu'] = True
 if 'hawkes_model' in model_names:
@@ -282,6 +285,7 @@ for dataset_name in dataset_names:
     per_model_count = dict()
     per_model_save = {
         'wgan': None,
+        'seq2seq': None,
         'transformer': None,
         'count_model': None,
         'hierarchical': None,

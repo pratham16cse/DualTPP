@@ -1094,6 +1094,237 @@ def run_wgan(args, data, test_data):
 	return model, event_count_preds
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 
+
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
+# WGAN Model
+def run_seq2seq(args, data, test_data):
+	'''
+		Return a trained seq2seq model
+			Divide training data into input and output
+			Write expressions for D_loss and G_loss
+			Write training loops for the model
+			Add # WGAN Lipschitz constraint
+	'''
+	LAMBDA_LP = 0.1 # Penality for Lipschtiz divergence
+
+	model = models.Seq2Seq(g_state_size=args.hidden_layer_size,
+						   d_state_size=args.hidden_layer_size)
+
+	G_optimizer = keras.optimizers.Adam(args.learning_rate)
+	D_optimizer = keras.optimizers.Adam(args.learning_rate)
+	pre_train_optimizer = keras.optimizers.Adam(args.learning_rate)
+
+	[train_dataset_gaps, dev_data_in_gaps, dev_data_in_feats,
+	 dev_data_out_gaps, train_norm_gaps] = data
+	[train_norm_a_gaps, train_norm_d_gaps] = train_norm_gaps
+
+	[test_data_in_gaps_bin, test_data_in_feats_bin,
+	 test_end_hr_bins, test_data_in_time_end_bin, 
+	 test_gap_in_bin_norm_a, test_gap_in_bin_norm_d] = test_data	
+
+	model_name = args.current_model
+	enc_len = args.enc_len
+	wgan_enc_len = args.wgan_enc_len
+	dec_len = args.out_bin_sz
+	bin_size = args.bin_size
+
+
+
+	dev_data_gaps = dev_data_in_gaps
+	dev_data_feats = dev_data_in_feats
+	wgan_dec_len = dev_data_gaps.shape[1] - wgan_enc_len
+	dev_data_times = tf.cumsum(dev_data_gaps, axis=1)
+
+	os.makedirs('saved_models/training_'+model_name+'_'+args.current_dataset+'/', exist_ok=True)
+	checkpoint_path = "saved_models/training_"+model_name+"_"+args.current_dataset+"/cp_"+args.current_dataset+".ckpt"
+	best_dev_gap_mse = np.inf
+	best_dev_gap_mae = np.inf
+	best_dev_epoch = 0
+
+	# pre-train wgan model
+	pre_train_losses = list()
+	print('pre-training started')
+	bch_cnt = 0
+	#for sm_step, (gaps_batch, _) in enumerate(train_dataset_gaps):
+	#	gaps_batch_in = gaps_batch[:, :wgan_enc_len]
+	#	gaps_batch_out = gaps_batch[:, wgan_enc_len:]
+	#	train_z_seqs_batch = train_z_seqs[sm_step*args.batch_size:(sm_step+1)*args.batch_size]
+	#	with tf.GradientTape() as pre_train_tape:
+	#		gaps_pred = model.generator(train_z_seqs_batch, gaps_batch_in)
+
+	#		bch_pre_train_loss = tf.reduce_mean(tf.abs(gaps_pred - gaps_batch_out))
+	#                    
+	#		pre_train_losses.append(bch_pre_train_loss.numpy())
+	#		
+	#	pre_train_grads = pre_train_tape.gradient(bch_pre_train_loss, model.trainable_weights)
+	#	pre_train_optimizer.apply_gradients(zip(pre_train_grads, model.trainable_weights))
+
+	#	bch_cnt += 1
+	#print('pre-training done, losses=', pre_train_losses)
+	## pre-train done
+
+
+	if args.use_wgan_d:
+		print(' Training with discriminator')
+	else:
+		print(' Training without discriminator')
+
+	train_losses = list()
+	for epoch in range(args.epochs):
+		print('Starting epoch', epoch)
+		step_train_loss = 0.0
+		step_cnt = 0
+		next_initial_state = None
+		for sm_step, (gaps_batch, feats_batch, _, _) \
+				in enumerate(train_dataset_gaps):
+			gaps_batch_in = gaps_batch[:, :wgan_enc_len]
+			feats_batch_in = feats_batch[:, :wgan_enc_len]
+			gaps_batch_out = gaps_batch[:, wgan_enc_len:]
+			feats_batch_out = feats_batch[:, wgan_enc_len:]
+			with tf.GradientTape() as g_tape, tf.GradientTape() as d_tape:
+				gaps_pred = model.generator(gaps_batch_out,
+											enc_inputs=gaps_batch_in,
+											enc_feats=feats_batch_in)
+
+				if args.use_wgan_d:
+					D_pred = model.discriminator(gaps_batch_in, gaps_pred)
+					D_true = model.discriminator(gaps_batch_in, gaps_batch_out)
+
+					D_loss = tf.reduce_mean(D_pred) - tf.reduce_mean(D_true)
+					G_loss = -tf.reduce_mean(D_pred)
+	
+					# Adding Lipschitz Constraint
+					length_ = tf.minimum(tf.shape(gaps_batch_out)[1],tf.shape(gaps_pred)[1])
+					lipschtiz_divergence = tf.abs(D_true-D_pred)/tf.sqrt(tf.reduce_sum(tf.square(gaps_batch_out[:,:length_,:]-gaps_pred[:,:length_,:]), axis=[1,2])+0.00001)
+					lipschtiz_divergence = tf.reduce_mean((lipschtiz_divergence-1)**2)
+					D_loss += LAMBDA_LP*lipschtiz_divergence
+				else:
+					length_ = tf.minimum(tf.shape(gaps_batch_out)[1],tf.shape(gaps_pred)[1])
+					gaps_pred_cumsum = tf.cumsum(gaps_pred, axis=1)
+					gaps_batch_out_cumsum = tf.cumsum(gaps_batch_out, axis=1)
+					G_loss = tf.reduce_mean(tf.sqrt(tf.reduce_sum(tf.square(gaps_batch_out_cumsum[:,:length_,:]-gaps_pred_cumsum[:,:length_,:]), axis=[1,2])+0.00001))
+
+				step_train_loss += G_loss.numpy()
+				
+			G_grads = g_tape.gradient(G_loss, model.trainable_weights)
+			G_optimizer.apply_gradients(zip(G_grads, model.trainable_weights))
+			if args.use_wgan_d:
+				D_grads = d_tape.gradient(D_loss, model.trainable_weights)
+				D_optimizer.apply_gradients(zip(D_grads, model.trainable_weights))
+
+			train_gap_metric_mae(gaps_batch_out, gaps_pred)
+			train_gap_metric_mse(gaps_batch_out, gaps_pred)
+			train_gap_mae = train_gap_metric_mae.result()
+			train_gap_mse = train_gap_metric_mse.result()
+			train_gap_metric_mae.reset_states()
+			train_gap_metric_mse.reset_states()
+
+			# print(float(train_gap_mae), float(train_gap_mse))
+			# print('Training loss (for one batch) at step %s: %s' %(sm_step, float(loss)))
+			step_cnt += 1
+		
+		# Dev calculations
+		dev_data_in_gaps = dev_data_gaps[:, :wgan_enc_len]
+		dev_data_in_feats = dev_data_feats[:, :wgan_enc_len]
+		dev_data_out_gaps = dev_data_gaps[:, wgan_enc_len:]
+		dev_gaps_pred = model.generator(dev_data_out_gaps,
+										enc_inputs=dev_data_in_gaps,
+										enc_feats=dev_data_in_feats)
+		dev_gaps_pred_unnorm = utils.denormalize_avg(dev_gaps_pred, 
+										train_norm_a_gaps, train_norm_d_gaps)
+		dev_data_out_gaps_unnorm = utils.denormalize_avg(dev_data_out_gaps, 
+										train_norm_a_gaps, train_norm_d_gaps)
+		
+		dev_gap_metric_mae(dev_data_out_gaps_unnorm, dev_gaps_pred_unnorm)
+		dev_gap_metric_mse(dev_data_out_gaps_unnorm, dev_gaps_pred_unnorm)
+		dev_gap_mae = dev_gap_metric_mae.result()
+		dev_gap_mse = dev_gap_metric_mse.result()
+		dev_gap_metric_mae.reset_states()
+		dev_gap_metric_mse.reset_states()
+		#if best_dev_gap_mse > dev_gap_mse:
+		if best_dev_gap_mae > dev_gap_mae:
+			best_dev_gap_mae = dev_gap_mae
+			best_dev_epoch = epoch
+			print('Saving model at epoch', epoch)
+			model.save_weights(checkpoint_path)
+
+		step_train_loss /= step_cnt
+		print('Training loss after epoch %s: %s' %(epoch, float(step_train_loss)))
+		print('MAE and MSE of Dev data %s: %s' \
+			%(float(dev_gap_mae), float(dev_gap_mse)))
+		train_losses.append(step_train_loss)
+
+	plt.plot(range(len(train_losses)), train_losses)
+	plt.savefig('Outputs/train_wgan_'+args.current_dataset+'_loss.png')
+	plt.close()
+
+	print("Loading best model from epoch", best_dev_epoch)
+	model.load_weights(checkpoint_path)
+	dev_data_in_gaps = dev_data_gaps[:, :wgan_enc_len]
+	dev_data_in_feats = dev_data_feats[:, :wgan_enc_len]
+	dev_data_out_gaps = dev_data_gaps[:, wgan_enc_len:]
+	dev_gaps_pred = model.generator(dev_data_out_gaps,
+									enc_inputs=dev_data_in_gaps,
+									enc_feats=dev_data_in_feats)
+	dev_gaps_pred_unnorm = utils.denormalize_avg(dev_gaps_pred, 
+									train_norm_a_gaps, train_norm_d_gaps)
+	
+	dev_data_out_gaps_unnorm = utils.denormalize_avg(dev_data_out_gaps, 
+									train_norm_a_gaps, train_norm_d_gaps)
+
+	dev_gap_metric_mae(dev_data_out_gaps_unnorm, dev_gaps_pred_unnorm)
+	dev_gap_metric_mse(dev_data_out_gaps_unnorm, dev_gaps_pred_unnorm)
+	dev_gap_mae = dev_gap_metric_mae.result()
+	dev_gap_mse = dev_gap_metric_mse.result()
+	dev_gap_metric_mae.reset_states()
+	dev_gap_metric_mse.reset_states()
+	print('Best MAE and MSE of Dev data %s: %s' \
+		%(float(dev_gap_mae), float(dev_gap_mse)))
+
+	# Test Data results
+	event_count_preds = None
+	next_hidden_state = None
+	#event_count_preds of size [Test_example_numbers, bin_out_sz]
+
+	test_data_init_time = test_data_in_time_end_bin.astype(np.float32)
+	test_data_input_gaps_bin = test_data_in_gaps_bin.astype(np.float32)
+	all_event_count_preds = list()
+	all_times_pred_from_beg = None
+	for dec_idx in range(dec_len):
+		print('Simulating dec_idx', dec_idx)
+		all_gaps_pred, all_times_pred, next_hidden_state = simulate_seq2seq(
+			model, 
+			test_data_init_time, 
+			test_data_input_gaps_bin,
+			test_data_in_feats_bin,
+			test_end_hr_bins[:,dec_idx], 
+			(test_gap_in_bin_norm_a, 
+			test_gap_in_bin_norm_d),
+			prev_hidden_state=next_hidden_state)
+		
+		if all_times_pred_from_beg is not None:
+			all_times_pred_from_beg = tf.concat([all_times_pred_from_beg, all_times_pred], axis=1)
+		else:
+			all_times_pred_from_beg = all_times_pred
+
+		event_count_preds = count_events(all_times_pred_from_beg, 
+											 test_end_hr_bins[:,dec_idx]-bin_size, 
+											 test_end_hr_bins[:,dec_idx])
+		all_event_count_preds.append(event_count_preds)
+		
+		test_data_init_time = all_times_pred[:,-1:].numpy()
+		
+		all_gaps_pred_norm = utils.normalize_avg_given_param(all_gaps_pred,
+												test_gap_in_bin_norm_a,
+												test_gap_in_bin_norm_d)
+		all_prev_gaps_pred = tf.concat([test_data_input_gaps_bin, all_gaps_pred_norm], axis=1)
+		test_data_input_gaps_bin = all_prev_gaps_pred[:,-enc_len:].numpy()
+
+	event_count_preds = np.array(all_event_count_preds).T
+	return model, event_count_preds
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
+
+
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 # Transformer Model
 def run_transformer(args, data, test_data):
@@ -1761,6 +1992,68 @@ def simulate_wgan(model, times_in, gaps_in, feats_in,
 				= model.generator(z_seqs_in, g_init_state=g_init_state)
 
 		# step_gaps_pred = step_gaps_pred[:,-1:]
+		step_gaps_pred = tf.squeeze(step_gaps_pred, axis=-1)
+		last_gaps_pred_unnorm = utils.denormalize_avg(step_gaps_pred, data_norm_a, data_norm_d)
+		last_times_pred = times_pred[-1] + last_gaps_pred_unnorm
+		gaps_pred.append(last_gaps_pred_unnorm)
+		times_pred.append(last_times_pred)
+
+		g_init_state = model.g_state
+
+		simul_step += 1
+
+	gaps_pred = tf.stack(gaps_pred, axis=1)
+	all_gaps_pred = gaps_pred
+
+	times_pred = tf.squeeze(tf.stack(times_pred, axis=1), axis=2)
+	all_times_pred = times_pred
+
+	return all_gaps_pred, all_times_pred, prev_hidden_state
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
+
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
+# Simulate WGAN model till t_b_plus
+def simulate_seq2seq(model, times_in, gaps_in, feats_in,
+				  	 t_b_plus, normalizers, prev_hidden_state=None):
+	'''
+	Encode the input sequence.
+	Generate output sequence in a loop until T_l^+ is not reached.
+	Generate z_seqs on the fly until T_l^+ is reached.
+		- That means, generator will process a step 
+			at a time instead of entire sequence.
+	TODO:
+
+	'''
+	gaps_pred = list()
+	data_norm_a, data_norm_d = normalizers
+	
+	step_gaps_pred = gaps_in[:, -1]
+
+	times_pred = list()
+	last_gaps_pred_unnorm = utils.denormalize_avg(step_gaps_pred, data_norm_a, data_norm_d)
+	
+	last_times_pred = times_in + last_gaps_pred_unnorm
+	times_pred.append(last_times_pred)
+	
+	simul_step = 0
+
+	times_in = tf.cumsum(gaps_in, axis=1)
+	span_in = times_in[:, -1] - times_in[:, 0]
+
+	if model.use_time_feats:
+		feats_in = feats_in/24.
+		enc_inputs = tf.concat([gaps_in, feats_in], axis=-1)
+	else:
+		enc_inputs = gaps_in
+	step_gaps_pred ,_, g_init_state = model.run_encoder(enc_inputs)
+	gaps_in = step_gaps_pred[:, -1:]
+
+	while any(times_pred[-1]<t_b_plus):
+
+		step_gaps_pred \
+				= model.generator(gaps_in, dec_init_state=g_init_state)
+
+		gaps_in = step_gaps_pred.numpy()
 		step_gaps_pred = tf.squeeze(step_gaps_pred, axis=-1)
 		last_gaps_pred_unnorm = utils.denormalize_avg(step_gaps_pred, data_norm_a, data_norm_d)
 		last_times_pred = times_pred[-1] + last_gaps_pred_unnorm
@@ -3033,6 +3326,7 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(
 		gaps.value = all_bins_gaps_pred
 
 		D, WT = model_rmtpp_params[0], model_rmtpp_params[1]
+		#print(all_bins_gaps_pred.shape, D.shape, WT.shape)
 
 		if rmtpp_type=='nll':
 			opt_loss = -cp.sum(rmtpp_loglikelihood_loss(gaps, D, WT, events_count_per_batch))/all_bins_gaps_pred.shape[1]
@@ -3165,17 +3459,17 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(
 	#full_cnt_event_all_bins_pred += num_counts
 	#full_cnt_event_all_bins_pred += event_count_preds_stddev
 
-	all_gaps_pred_simu, all_times_pred_simu, _, D_pred, WT_pred \
-		= simulate_with_counter(
-			model_rmtpp, 
-			test_data_init_time, 
-			test_data_input_gaps_bin,
-			test_data_in_feats_bin,
-			full_cnt_event_all_bins_pred,
-			(test_gap_in_bin_norm_a, 
-			test_gap_in_bin_norm_d),
-			prev_hidden_state=next_hidden_state
-		)
+	#all_gaps_pred_simu, all_times_pred_simu, _, D_pred, WT_pred \
+	#	= simulate_with_counter(
+	#		model_rmtpp, 
+	#		test_data_init_time, 
+	#		test_data_input_gaps_bin,
+	#		test_data_in_feats_bin,
+	#		full_cnt_event_all_bins_pred,
+	#		(test_gap_in_bin_norm_a, 
+	#		test_gap_in_bin_norm_d),
+	#		prev_hidden_state=next_hidden_state
+	#	)
 
 
 	def get_optimized_gaps(
@@ -3325,9 +3619,6 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(
 		batch_bin_curr_cnt_D_pred = D[:, best_past_cnt:event_cnt, 0].numpy()
 		batch_bin_curr_cnt_WT_pred = WT[:, best_past_cnt:event_cnt, 0].numpy()
 
-		#import ipdb
-		#ipdb.set_trace()
-
 		model_rmtpp_params = [batch_bin_curr_cnt_D_pred, batch_bin_curr_cnt_WT_pred]
 		model_count_params = [model_cnt_distribution_params[0][batch_idx, dec_idx],
 							  model_cnt_distribution_params[1][batch_idx, dec_idx]]
@@ -3400,27 +3691,134 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(
 			nc_count_loss,
 		)
 
-	count_sigma = args.opt_num_counts
-	all_times_pred = []
-	all_best_opt_nc_losses = []
-	all_best_cont_nc_losses = []
-	all_best_nc_count_losses = []
-	for batch_idx in range(len(all_times_pred_simu)):
-		batch_times_pred = []
-		batch_best_opt_nc_losses = []
-		batch_best_cont_nc_losses = []
-		batch_best_nc_count_losses = []
-		event_cnt=0
-		best_past_cnt=0
+	# TODO:
+	#	1. Concatenate optimized gaps of previous bins to input gaps (Done)
+	# 	2. set t_e depending on dec_idx
+	#	3. Only simulate (mu_j + sigma_j) events
+	#	4. Adjust the indexing in following functions since simulation is per-example (Done)
 
-		for dec_idx in range(dec_len):
-			nc_lst = []
-			nc_loss_lst = []
-			batch_bin_cnt_times_pred = []
+
+	def resimulate(
+		model_rmtpp, test_data_init_time, test_data_input_gaps_bin,
+		all_times_pred, normalizers, all_best_cnt, dec_idx,
+	):
+		(test_gap_in_bin_norm_a, test_gap_in_bin_norm_d) = normalizers
+		input_gaps = []
+		input_feats = []
+		init_time = []
+		for idx in range(len(test_data_input_gaps_bin)): 
+			times_pred = np.concatenate(all_times_pred[idx], axis=-1)
+			batch_gaps_pred = times_pred - np.concatenate([test_data_init_time[idx], times_pred[:-1]])
+			batch_gaps_pred = np.expand_dims(batch_gaps_pred, axis=-1)
+			batch_gaps_pred = utils.normalize_avg_given_param(
+				batch_gaps_pred,
+				test_gap_in_bin_norm_a,
+				test_gap_in_bin_norm_d)
+			input_gaps.append(np.concatenate([test_data_input_gaps_bin[idx], batch_gaps_pred], axis=0))
+			init_time.append([times_pred[-1]])
+			input_feats.append(
+				np.concatenate(
+					[test_data_in_feats_bin[idx],
+					 get_time_features(np.expand_dims(times_pred, axis=-1))],
+					axis=0))
+
+		init_time = np.array(init_time)
+		input_gaps = tf.cast(tf.sparse.to_dense(tf.ragged.constant(input_gaps).to_sparse()), tf.float32)
+		input_feats = tf.cast(tf.sparse.to_dense(tf.ragged.constant(input_feats).to_sparse()), tf.float32)
+		#input_gaps = tf.ragged.constant(input_gaps).to_sparse()
+		#input_feats = tf.ragged.constant(input_feats).to_sparse()
+
+		output_event_count_pred_cumm = event_count_preds_cnt[:, dec_idx] + event_count_preds_stddev[:, dec_idx]
+
+		full_cnt_event_all_bins_pred = max(output_event_count_pred_cumm) * np.ones_like(output_event_count_pred_cumm)
+		full_cnt_event_all_bins_pred = np.expand_dims(full_cnt_event_all_bins_pred, axis=-1)
+
+		all_gaps_pred_simu, all_times_pred_simu, _, D_pred, WT_pred \
+			= simulate_with_counter(
+				model_rmtpp, 
+				init_time, 
+				input_gaps,
+				input_feats,
+				full_cnt_event_all_bins_pred,
+				(test_gap_in_bin_norm_a,
+				test_gap_in_bin_norm_d),
+				prev_hidden_state=next_hidden_state
+			)
+
+		all_tps_adjst_lst, D_pred_adjst_lst, WT_pred_adjst_lst = [], [], []
+		for idx, (tps_seq, D_seq, WT_seq) in enumerate(zip(all_times_pred_simu, D_pred, WT_pred)):
+			tps_seq_adjst = np.concatenate([np.zeros((all_best_cnt[idx])), tps_seq])
+			D_seq_adjst = np.concatenate([np.zeros((all_best_cnt[idx], 1)), D_seq], axis=0)
+			WT_seq_adjst = np.concatenate([np.zeros((all_best_cnt[idx], 1)), WT_seq], axis=0)
+			all_tps_adjst_lst.append(tps_seq_adjst)
+			D_pred_adjst_lst.append(D_seq_adjst)
+			WT_pred_adjst_lst.append(WT_seq_adjst)
+
+		maxlen = max([len(seq) for seq in all_tps_adjst_lst])
+		all_tps_adjst, D_pred_adjst, WT_pred_adjst = [], [], []
+		for idx, (tps_seq, D_seq, WT_seq) in enumerate(zip(all_tps_adjst_lst, D_pred_adjst_lst, WT_pred_adjst_lst)):
+			tps_seq_adjst = np.concatenate([tps_seq, np.zeros((maxlen+1-len(tps_seq)))])
+			D_seq_adjst = np.concatenate([D_seq, np.zeros((maxlen+1-len(D_seq), 1))], axis=0)
+			WT_seq_adjst = np.concatenate([WT_seq, np.zeros((maxlen+1-len(WT_seq), 1))], axis=0)
+			all_tps_adjst.append(tps_seq_adjst)
+			D_pred_adjst.append(D_seq_adjst)
+			WT_pred_adjst.append(WT_seq_adjst)
+
+		all_tps_adjst = tf.constant(all_tps_adjst)
+		D_pred_adjst = tf.constant(D_pred_adjst)
+		WT_pred_adjst = tf.constant(WT_pred_adjst)
+
+		#import ipdb
+		#ipdb.set_trace()
+
+		return all_tps_adjst, D_pred_adjst, WT_pred_adjst
+
+
+	count_sigma = args.opt_num_counts
+	all_times_pred = [[] for _ in range(len(test_data_input_gaps_bin))]
+	all_best_opt_nc_losses = [[] for _ in range(len(test_data_input_gaps_bin))]
+	all_best_cont_nc_losses = [[] for _ in range(len(test_data_input_gaps_bin))]
+	all_best_nc_count_losses = [[] for _ in range(len(test_data_input_gaps_bin))]
+	all_best_cnt = [0 for _ in range(len(test_data_input_gaps_bin))]
+	for dec_idx in range(dec_len):
+		#event_cnt=0
+		#best_past_cnt=0
+
+		if dec_idx == 0:
+			all_gaps_pred_simu, all_times_pred_simu, _, D_pred, WT_pred \
+				= simulate_with_counter(
+					model_rmtpp, 
+					test_data_init_time, 
+					test_data_input_gaps_bin,
+					test_data_in_feats_bin,
+					full_cnt_event_all_bins_pred,
+					(test_gap_in_bin_norm_a,
+					test_gap_in_bin_norm_d),
+					prev_hidden_state=next_hidden_state
+				)
+		else:
+			all_times_pred_simu, D_pred, WT_pred = resimulate(
+				model_rmtpp, test_data_init_time, test_data_input_gaps_bin,
+				all_times_pred, (test_gap_in_bin_norm_a, test_gap_in_bin_norm_d),
+				all_best_cnt, dec_idx,
+			)
+
+		for batch_idx in range(len(all_times_pred_simu)):
+
+			print(batch_idx, dec_idx)
+
+			best_past_cnt = all_best_cnt[batch_idx]
+
+			batch_times_pred = all_times_pred[batch_idx]
+			batch_best_opt_nc_losses = all_best_opt_nc_losses[batch_idx]
+			batch_best_cont_nc_losses = all_best_cont_nc_losses[batch_idx]
+			batch_best_nc_count_losses = all_best_nc_count_losses[batch_idx]
+
 			clipped_stddev = np.clip(event_count_preds_stddev[batch_idx, dec_idx], 1.0, count_sigma)
 			min_cnt = event_count_preds_cnt[batch_idx, dec_idx] - clipped_stddev
 			min_cnt = int(np.maximum(1., min_cnt))
 			max_cnt = int(event_count_preds_cnt[batch_idx, dec_idx] + clipped_stddev)
+
 
 			if dec_idx == 0:
 				gaps_before_bin = all_times_pred_simu[batch_idx,:1] - test_data_init_time[batch_idx]
@@ -3556,20 +3954,26 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(
 				best_nc_count_loss,
 			) = binary_search(nc_range, 0, len(nc_range)-1)
 
-			batch_times_pred.append(batch_bin_times_pred)
-			batch_best_opt_nc_losses.append(best_nc_loss_opt)
-			batch_best_cont_nc_losses.append(best_nc_loss_cont)
-			batch_best_nc_count_losses.append(best_nc_count_loss)
-			best_past_cnt += best_count
+			#batch_times_pred.append(batch_bin_times_pred)
+			#batch_best_opt_nc_losses.append(best_nc_loss_opt)
+			#batch_best_cont_nc_losses.append(best_nc_loss_cont)
+			#batch_best_nc_count_losses.append(best_nc_count_loss)
+			#best_past_cnt += best_count
 
-			print('Example:', batch_idx, 'dec_idx:', dec_idx, 'Best count:', \
-				best_count, 'Mean:', event_count_preds_cnt[batch_idx, dec_idx])
+			all_times_pred[batch_idx].append(batch_bin_times_pred)
+			all_best_opt_nc_losses[batch_idx].append(best_nc_loss_opt)
+			all_best_cont_nc_losses[batch_idx].append(best_nc_loss_cont)
+			all_best_nc_count_losses[batch_idx].append(best_nc_count_loss)
+			all_best_cnt[batch_idx] += best_count
+
+			#print('Example:', batch_idx, 'dec_idx:', dec_idx, 'Best count:', \
+			#	best_count, 'Mean:', event_count_preds_cnt[batch_idx, dec_idx])
 
 		#batch_times_pred = [t for bin_list in batch_times_pred for t in bin_list]
-		all_times_pred.append(batch_times_pred)
-		all_best_opt_nc_losses.append(batch_best_opt_nc_losses)
-		all_best_cont_nc_losses.append(batch_best_cont_nc_losses)
-		all_best_nc_count_losses.append(batch_best_nc_count_losses)
+		#all_times_pred.append(batch_times_pred)
+		#all_best_opt_nc_losses.append(batch_best_opt_nc_losses)
+		#all_best_cont_nc_losses.append(batch_best_cont_nc_losses)
+		#all_best_nc_count_losses.append(batch_best_nc_count_losses)
 
 	all_times_pred = np.array(all_times_pred)
 	all_best_opt_nc_losses = np.array(all_best_opt_nc_losses)
@@ -4058,6 +4462,72 @@ def run_wgan_for_count(args, models, data, test_data, query_data=None, simul_end
 	all_times_pred = np.expand_dims(all_times_pred.numpy(), axis=-1)
 	return test_event_count_pred, all_times_pred
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
+
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
+# Plain wgan model to generate events independent of bin boundary
+def run_seq2seq_for_count(args, models, data, test_data, query_data=None, simul_end_time=None):
+	'''
+	TODO:
+		Call the simulate_seq2seq method with condition:
+			Simulate the seq2seq model until T_l^+ is not reached.
+
+	'''
+	# return test_event_count_pred, all_times_pred
+	# test_event_count_pred shape=[test_example_size, 1]
+	# all_times_pred shape=[test_example_size] 
+	# It will be array/lists of lists where each list contains events in output window
+
+	model_seq2seq = models['seq2seq']
+	model_check = (model_seq2seq is not None)
+	assert model_check, "run_seq2seq_for_count requires Seq2Seq model"
+
+	[test_data_in_bin, test_data_in_bin_feats, test_data_out_bin, test_end_hr_bins,
+	 test_data_in_time_end_bin, test_data_in_gaps_bin, test_data_in_feats_bin,
+	 test_mean_bin, test_std_bin,
+	 test_gap_in_bin_norm_a, test_gap_in_bin_norm_d] = test_data
+
+	dec_len = args.out_bin_sz
+	bin_size = args.bin_size
+
+	next_hidden_state = None
+
+	test_data_init_time = test_data_in_time_end_bin.astype(np.float32)
+	test_data_input_gaps_bin = test_data_in_gaps_bin.astype(np.float32)
+
+	if simul_end_time is None and query_data is None:
+		t_e_plus = test_end_hr_bins[:,-1]
+	elif simul_end_time is None:
+		[t_b_plus, t_e_plus, true_count] = query_data
+		t_b_plus = np.expand_dims(t_b_plus, axis=-1)
+		t_e_plus = np.expand_dims(t_e_plus, axis=-1)
+	else:
+		t_e_plus = np.expand_dims(simul_end_time, axis=-1)
+
+	_, all_times_pred, _ = simulate_seq2seq(model_seq2seq,
+										test_data_init_time,
+										test_data_input_gaps_bin,
+										test_data_in_feats_bin,
+										t_e_plus,
+										(test_gap_in_bin_norm_a,
+										test_gap_in_bin_norm_d),
+										prev_hidden_state=next_hidden_state)
+	test_event_count_pred = None
+	if query_data is not None:
+		[t_b_plus, t_e_plus, true_count] = query_data
+		t_b_plus = np.expand_dims(t_b_plus, axis=-1)
+		t_e_plus = np.expand_dims(t_e_plus, axis=-1)
+		test_event_count_pred = count_events(all_times_pred, t_b_plus, t_e_plus)
+		test_event_count_pred = np.array(test_event_count_pred)
+
+		event_count_mse = tf.keras.losses.MSE(true_count, test_event_count_pred).numpy()
+		event_count_mae = tf.keras.losses.MAE(true_count, test_event_count_pred).numpy()
+		#print("MSE of event count in range:", event_count_mse)
+		#print("MAE of event count in range:", event_count_mae)
+
+	all_times_pred = np.expand_dims(all_times_pred.numpy(), axis=-1)
+	return test_event_count_pred, all_times_pred
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
+
 
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 # Plain transformer model to generate events independent of bin boundary
@@ -4752,7 +5222,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 	if model_name in ['rmtpp_nll', 'rmtpp_mse', 'rmtpp_mse_var', 
 					  'rmtpp_nll_comp', 'rmtpp_mse_comp', 'rmtpp_mse_var_comp',
 					  'pure_hierarchical_nll', 'pure_hierarchical_mse', 
-					  'wgan', 'transformer',
+					  'wgan', 'seq2seq', 'transformer',
 					  'rmtpp_count', 'hawkes_model']:
 					  
 		train_data_in_gaps = dataset['train_data_in_gaps']
@@ -4887,6 +5357,9 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 
 		if model_name == 'wgan':
 			model, result = run_wgan(args, data, test_data)
+
+		if model_name == 'seq2seq':
+			model, result = run_seq2seq(args, data, test_data)
 
 		if model_name == 'transformer':
 			model, result = run_transformer(args, data, test_data)
@@ -6716,6 +7189,75 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					os.path.join(
 						'Outputs',
 						args.current_dataset+'__'+'wgan_simu',
+					),
+					count_mae_fh_pe,
+					deep_mae_fh_pe,
+					wass_dist_fh_pe,
+				)
+				print("____________________________________________________________________")
+				print("")
+
+
+			if 'seq2seq_simu' in run_model_flags and run_model_flags['seq2seq_simu']:
+				print("Prediction for plain_seq2seq_count model")
+				result, all_times_bin_pred = run_seq2seq_for_count(args, models, data, test_data)
+				(
+					deep_mae_rh,
+					count_mae_rh,
+					count_mse_rh,
+					wass_dist_rh,
+					deep_mae_rh_pe,
+					wass_dist_rh_pe,
+				) = compute_hierarchical_mae(
+					all_times_bin_pred,
+					query_1_data,
+					test_out_all_event_true,
+					compute_depth
+				)
+				threshold_mae = compute_threshold_loss(all_times_bin_pred, query_2_data)
+				print("deep_mae", deep_mae_rh)
+				(
+					deep_mae_fh,
+					count_mae_fh,
+					count_mae_fh_per_bin,
+					wass_dist_fh,
+					count_mae_fh_pe,
+					deep_mae_fh_pe,
+					wass_dist_fh_pe,
+					all_times_true,
+					all_times_pred,
+				) = compute_full_model_acc(
+					args,
+					test_data,
+					None,
+					all_times_bin_pred,
+					test_out_times_in_bin,
+					dataset_name,
+					'seq2seq_simu'
+				)
+				results = add_metrics_to_dict(
+					results,
+					'seq2seq_simu',
+					count_mae_fh,
+					count_mae_fh_per_bin,
+					deep_mae_fh,
+					wass_dist_fh,
+					count_mae_rh,
+					deep_mae_rh,
+					wass_dist_rh,
+				)
+				write_arr_to_file(
+					os.path.join(
+						'Outputs',
+						args.current_dataset+'__'+'seq2seq_simu',
+					),
+					all_times_true,
+					all_times_pred,
+				)
+				write_pe_metrics_to_file(
+					os.path.join(
+						'Outputs',
+						args.current_dataset+'__'+'seq2seq_simu',
 					),
 					count_mae_fh_pe,
 					deep_mae_fh_pe,

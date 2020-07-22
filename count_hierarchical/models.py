@@ -694,6 +694,168 @@ class WGAN(tf.keras.Model):
         return self.generator(enc_inputs, rnn_inputs)
 
 
+# ----- Start: Baseline Seq2Seq Model ----- #
+class Seq2Seq(tf.keras.Model):
+    '''
+        Implementation of the paper:
+        Learning Conditional Generative Models for Temporal Point Processes
+        https://www.aaai.org/ocs/index.php/AAAI/AAAI18/paper/view/16163/16203
+    '''
+    def __init__(self,
+                 g_cell_type='LSTM',
+                 g_num_layers=1,
+                 g_state_size=64,
+                 d_cell_type='LSTM',
+                 d_num_layers=1,
+                 d_state_size=64,
+                 use_time_feats=True,
+                 name='Seq2Seq',
+                 **kwargs):
+        super(Seq2Seq, self).__init__(name=name, **kwargs)
+
+        '''
+        TODO:
+        Add multi-layer extension
+
+        '''
+
+        self.keep_prob = tf.constant(0.9)
+        self.use_time_feats = use_time_feats
+
+        self.enc_rnn_layer = layers.LSTM(g_state_size, return_sequences=True,
+                                         return_state=True, stateful=False,
+                                         name='enc_rnn_layer')
+
+        self.dec_rnn_layer = layers.LSTM(g_state_size, return_sequences=True,
+                                         return_state=True, stateful=False,
+                                         name='dec_rnn_layer')
+
+        if g_cell_type=='Basic':
+            pass
+        elif g_cell_type=='LSTM':
+            self.g_rnn_layer = layers.LSTM(g_state_size, return_sequences=True,
+                                         return_state=True, stateful=False,
+                                         name='g_lstm_layer')
+
+        if d_cell_type=='Basic':
+            pass
+        elif d_cell_type=='LSTM':
+            self.d_rnn_layer = layers.LSTM(g_state_size, return_sequences=True,
+                                         return_state=True, stateful=False,
+                                         name='d_lstm_layer')
+
+
+        self.g_full_connect = layers.Dense(1, activation=tf.nn.softplus, name='g_full_connect',
+                                           bias_initializer=tf.keras.initializers.Zeros())
+
+
+        self.softmax_layer = layers.Dense(1, activation=None, name='softmax_layer',
+                                           bias_initializer=tf.keras.initializers.Zeros())
+
+    def run_encoder(self, enc_input):
+        '''
+        Encode the input in a hidden_state
+        '''
+        rnn_outputs, h_state, c_state = self.enc_rnn_layer(enc_input)
+        final_state = [h_state, c_state]
+        logits_t = self.g_full_connect(rnn_outputs)# +1 #abs, exp, or nothing is better
+        return logits_t, rnn_outputs, final_state
+
+    def run_decoder(self, dec_input, init_state):
+        '''
+        Encode the input in a hidden_state
+        '''
+        rnn_outputs, h_state, c_state = self.dec_rnn_layer(dec_input, initial_state=init_state)
+        final_state = [h_state, c_state]
+        logits_t = self.g_full_connect(rnn_outputs)# +1 #abs, exp, or nothing is better
+        return logits_t, rnn_outputs, final_state
+
+    def generator(self,
+                  dec_inputs, #dims batch_size x num_steps x input_size
+                  enc_inputs=None,
+                  enc_feats=None,
+                  dec_init_state=None):
+        '''
+        Generates output sequence from on the noise sequence conditioned
+        on the input.
+        rnn_inputs: Input-conditioned noise sequence
+        generator_initial_state -- needs to be conditioned on the input
+        TODO:
+        Make sure LSTM states are properly handled
+        What is G_DIFF and D_DIFF?
+            - G_DIFF and D_DIFF are true when point process is represented
+                by gaps instead of times
+        '''
+
+        if enc_inputs is None:
+            assert dec_init_state is not None
+
+        if enc_inputs is not None:
+            if self.use_time_feats:
+                enc_feats = enc_feats/24.
+                enc_inputs = tf.concat([enc_inputs, enc_feats], axis=-1)
+            _, _, dec_init_state = self.run_encoder(enc_inputs)
+
+        # rnn_outputs, self.g_h_state, self.g_c_state \
+        #         = self.g_rnn_layer(g_inputs)
+        rnn_outputs, self.g_h_state, self.g_c_state \
+                = self.dec_rnn_layer(dec_inputs,
+                                     initial_state=dec_init_state)
+
+        # Add dropout
+        # rnn_outputs = tf.nn.dropout(rnn_outputs, self.keep_prob)
+
+        # Softmax layer
+        logits_t = self.g_full_connect(rnn_outputs)# +1 #abs, exp, or nothing is better
+        #if not D_DIFF and G_DIFF: # depend on D_DIFF
+        #    logits_t = tf.cumsum(logits_t,axis=1)
+
+        self.g_state = [self.g_h_state, self.g_c_state]
+
+        return logits_t
+
+    def discriminator(self,
+                      enc_inputs, #dims batch_size x num_steps x input_size
+                      rnn_inputs):
+        '''
+        TODO
+        What is COST_ALL?
+            - Ignore COST_ALL for now
+        what is lower_triangular_ones?
+            - lower_triangular_ones is for sequence length masking
+            - Make sure sequence lenght masking is done properly
+        '''
+
+        _, g_init_state = self.run_encoder(enc_inputs)
+
+        rnn_outputs, h_state, c_state \
+                = self.d_rnn_layer(rnn_inputs,
+                                   initial_state=g_init_state)
+
+        # Add dropout
+        rnn_outputs = tf.nn.dropout(rnn_outputs, self.keep_prob)
+
+        # Softmax layer
+        logits = self.softmax_layer(rnn_outputs)
+
+        fval = tf.reduce_mean(logits, axis=1)
+        # TODO Incorporate sequence_length while calculating fval
+
+
+        return fval
+
+    def call(self, enc_inputs, rnn_inputs):
+        '''
+        Seq2Seq forward pass:
+            Encode the input through encoder_rnn
+            Use final state as the initial_state for the generator
+            Generate the output sequence using rnn_inputs
+        '''
+        return self.generator(enc_inputs, rnn_inputs)
+
+# ----- End: Baseline Seq2Seq Model ----- #
+
+
 # ----- Start: Implementation of Transformer ----- #
 
 def get_non_pad_mask(seq):
