@@ -1105,7 +1105,7 @@ def run_seq2seq(args, data, test_data):
 			Write training loops for the model
 			Add # WGAN Lipschitz constraint
 	'''
-	LAMBDA_LP = 0.1 # Penality for Lipschtiz divergence
+	LAMBDA_LP = 10. # Penality for Lipschtiz divergence
 
 	model = models.Seq2Seq(g_state_size=args.hidden_layer_size,
 						   d_state_size=args.hidden_layer_size)
@@ -1145,24 +1145,6 @@ def run_seq2seq(args, data, test_data):
 	pre_train_losses = list()
 	print('pre-training started')
 	bch_cnt = 0
-	#for sm_step, (gaps_batch, _) in enumerate(train_dataset_gaps):
-	#	gaps_batch_in = gaps_batch[:, :wgan_enc_len]
-	#	gaps_batch_out = gaps_batch[:, wgan_enc_len:]
-	#	train_z_seqs_batch = train_z_seqs[sm_step*args.batch_size:(sm_step+1)*args.batch_size]
-	#	with tf.GradientTape() as pre_train_tape:
-	#		gaps_pred = model.generator(train_z_seqs_batch, gaps_batch_in)
-
-	#		bch_pre_train_loss = tf.reduce_mean(tf.abs(gaps_pred - gaps_batch_out))
-	#                    
-	#		pre_train_losses.append(bch_pre_train_loss.numpy())
-	#		
-	#	pre_train_grads = pre_train_tape.gradient(bch_pre_train_loss, model.trainable_weights)
-	#	pre_train_optimizer.apply_gradients(zip(pre_train_grads, model.trainable_weights))
-
-	#	bch_cnt += 1
-	#print('pre-training done, losses=', pre_train_losses)
-	## pre-train done
-
 
 	if args.use_wgan_d:
 		print(' Training with discriminator')
@@ -1186,23 +1168,34 @@ def run_seq2seq(args, data, test_data):
 											enc_inputs=gaps_batch_in,
 											enc_feats=feats_batch_in)
 
+				length_ = tf.minimum(tf.shape(gaps_batch_out)[1],tf.shape(gaps_pred)[1])
+				G_mse_loss = tf.reduce_sum(
+					tf.square(
+						gaps_batch_out[:,:length_,:]-gaps_pred[:,:length_,:]
+					)
+				)
 				if args.use_wgan_d:
 					D_pred = model.discriminator(gaps_batch_in, gaps_pred)
 					D_true = model.discriminator(gaps_batch_in, gaps_batch_out)
 
-					D_loss = tf.reduce_mean(D_pred) - tf.reduce_mean(D_true)
-					G_loss = -tf.reduce_mean(D_pred)
+					D_loss = tf.reduce_sum(D_pred) - tf.reduce_sum(D_true)
+					G_loss = 0.01 * G_mse_loss + (-tf.reduce_sum(D_pred))
 	
 					# Adding Lipschitz Constraint
 					length_ = tf.minimum(tf.shape(gaps_batch_out)[1],tf.shape(gaps_pred)[1])
-					lipschtiz_divergence = tf.abs(D_true-D_pred)/tf.sqrt(tf.reduce_sum(tf.square(gaps_batch_out[:,:length_,:]-gaps_pred[:,:length_,:]), axis=[1,2])+0.00001)
-					lipschtiz_divergence = tf.reduce_mean((lipschtiz_divergence-1)**2)
+					#lipschtiz_divergence = tf.abs(D_true-D_pred)/tf.sqrt(tf.reduce_sum(tf.square(gaps_batch_out[:,:length_,:]-gaps_pred[:,:length_,:]), axis=[1,2])+0.00001)
+					#lipschtiz_divergence = tf.reduce_mean((lipschtiz_divergence-1)**2)
+					z = tf.random.uniform([1])
+					with tf.GradientTape(watch_accessed_variables=False) as lipsch_tape:
+						x_hat_out = z * gaps_batch_out[:,:length_,:] - (1.-z) * gaps_pred[:,:length_,:]
+						lipsch_tape.watch(gaps_batch_in)
+						lipsch_tape.watch(x_hat_out)
+						D_x_hat = model.discriminator(gaps_batch_in, x_hat_out)
+					D_x_grads = lipsch_tape.gradient(D_x_hat, model.rcnn_input)
+					#lipschtiz_divergence = tf.abs(D_x_hat-1)
+					lipschtiz_divergence = tf.abs(tf.reduce_sum(D_x_grads)-1)
+
 					D_loss += LAMBDA_LP*lipschtiz_divergence
-				else:
-					length_ = tf.minimum(tf.shape(gaps_batch_out)[1],tf.shape(gaps_pred)[1])
-					gaps_pred_cumsum = tf.cumsum(gaps_pred, axis=1)
-					gaps_batch_out_cumsum = tf.cumsum(gaps_batch_out, axis=1)
-					G_loss = tf.reduce_mean(tf.sqrt(tf.reduce_sum(tf.square(gaps_batch_out_cumsum[:,:length_,:]-gaps_pred_cumsum[:,:length_,:]), axis=[1,2])+0.00001))
 
 				step_train_loss += G_loss.numpy()
 				
@@ -1220,7 +1213,7 @@ def run_seq2seq(args, data, test_data):
 			train_gap_metric_mse.reset_states()
 
 			# print(float(train_gap_mae), float(train_gap_mse))
-			# print('Training loss (for one batch) at step %s: %s' %(sm_step, float(loss)))
+			print('Training loss (for one batch) at step %s: %s %s %s' %(sm_step, float(G_mse_loss), float(G_loss), float(D_loss)))
 			step_cnt += 1
 		
 		# Dev calculations

@@ -737,12 +737,9 @@ class Seq2Seq(tf.keras.Model):
                                          return_state=True, stateful=False,
                                          name='g_lstm_layer')
 
-        if d_cell_type=='Basic':
-            pass
-        elif d_cell_type=='LSTM':
-            self.d_rnn_layer = layers.LSTM(g_state_size, return_sequences=True,
-                                         return_state=True, stateful=False,
-                                         name='d_lstm_layer')
+        self.d_layer_1 = tf.keras.layers.Conv1D(3, 3, activation='relu')
+        self.d_layer_2 = tf.keras.layers.Conv1D(5, 3, activation='relu')
+        #TODO How to add skip-connection?
 
 
         self.g_full_connect = layers.Dense(1, activation=tf.nn.softplus, name='g_full_connect',
@@ -814,35 +811,28 @@ class Seq2Seq(tf.keras.Model):
 
         return logits_t
 
-    def discriminator(self,
-                      enc_inputs, #dims batch_size x num_steps x input_size
-                      rnn_inputs):
+    def discriminator(self, zeta, rho):
         '''
-        TODO
-        What is COST_ALL?
-            - Ignore COST_ALL for now
-        what is lower_triangular_ones?
-            - lower_triangular_ones is for sequence length masking
-            - Make sure sequence lenght masking is done properly
+        Inputs:
+            zeta: Input sequence, (batch_size x num_steps x input_size=1)
+            rho: Output sequence (batch_size x _ x input_size=1)
+        TODO:
+            - Add RCNN as given in the paper
+            - 
         '''
 
-        _, g_init_state = self.run_encoder(enc_inputs)
+        self.rcnn_input = tf.concat([zeta, rho], axis=1)
 
-        rnn_outputs, h_state, c_state \
-                = self.d_rnn_layer(rnn_inputs,
-                                   initial_state=g_init_state)
+        layer_1_out = self.d_layer_1(self.rcnn_input)
+        layer_2_out = self.d_layer_2(layer_1_out)
 
-        # Add dropout
-        rnn_outputs = tf.nn.dropout(rnn_outputs, self.keep_prob)
 
         # Softmax layer
-        logits = self.softmax_layer(rnn_outputs)
+        logits = self.softmax_layer(layer_2_out)
 
-        fval = tf.reduce_mean(logits, axis=1)
-        # TODO Incorporate sequence_length while calculating fval
+        #fval = tf.reduce_mean(logits, axis=1)
 
-
-        return fval
+        return logits
 
     def call(self, enc_inputs, rnn_inputs):
         '''
