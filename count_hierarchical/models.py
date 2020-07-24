@@ -134,6 +134,7 @@ class RMTPP(tf.keras.Model):
 
         self.hidden_states, self.final_state \
                 = self.rnn_layer(rnn_inputs,
+                                 mask=gaps>0.,
                                  initial_state=self.initial_state)
 
         # Generate D, WT, and gaps_pred
