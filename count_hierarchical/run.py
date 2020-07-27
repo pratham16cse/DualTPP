@@ -2593,8 +2593,10 @@ def run_count_only_model(args, models, data, test_data):
 	event_count_preds_true = test_data_out_bin
 
 	all_times_pred_lst = list()
+	all_types_pred_lst = list()
 	for batch_idx in range(event_count_preds_cnt.shape[0]):
 		times_pred_per_bin_lst=list()
+		batch_types_pred = list()
 		old_last_gap = np.random.uniform(low=0.0, high=1.0)*np.random.uniform(low=0.0, high=1.0)
 		for dec_idx in range(event_count_preds_cnt.shape[1]):
 			actual_bin_start = test_end_hr_bins[batch_idx,dec_idx]-bin_size
@@ -2614,9 +2616,16 @@ def run_count_only_model(args, models, data, test_data):
 							 (rand_uniform_gaps - bin_start)) + actual_bin_start
 			
 			times_pred_per_bin_lst.append(times_pred_for_bin_scaled[:-1])
+			batch_types_pred.append(np.ones_like(times_pred_for_bin_scaled[:-1]))
 		all_times_pred_lst.append(times_pred_per_bin_lst)
+		all_types_pred_lst.append(batch_types_pred)
 	all_times_pred = np.array(all_times_pred_lst)
-	return event_count_preds_cnt, all_times_pred
+	all_types_pred_flatten = []
+	for seq in all_types_pred_lst:
+		seq = [s.tolist() for s in seq]
+		all_types_pred_flatten.append(np.array(flatten(seq)))
+	all_types_pred = np.array(all_types_pred_flatten)
+	return event_count_preds_cnt, all_times_pred, all_types_pred
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
@@ -6290,12 +6299,18 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					wass_dist_fh_pe,
 					all_times_true,
 					all_times_pred,
+					bleu_score_fh,
+					bleu_score_fh_pe,
+					all_types_true,
+					all_types_pred,
 				) = compute_full_model_acc(
 					args,
 					test_data,
 					None,
 					all_times_bin_pred_opt,
 					test_out_times_in_bin,
+					all_types_pred,
+					test_data_out_types,
 					dataset_name,
 					'rmtpp_nll_opt'
 				)
@@ -6309,6 +6324,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					count_mae_rh,
 					deep_mae_rh,
 					wass_dist_rh,
+					bleu_score_fh,
 					np.mean(all_best_opt_nc_losses),
 					np.mean(all_best_cont_nc_losses),
 					np.mean(all_best_nc_count_losses),
@@ -6320,6 +6336,8 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					),
 					all_times_true,
 					all_times_pred,
+					all_types_true,
+					all_types_pred,
 				)
 				write_pe_metrics_to_file(
 					os.path.join(
@@ -6329,6 +6347,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					count_mae_fh_pe,
 					deep_mae_fh_pe,
 					wass_dist_fh_pe,
+					bleu_score_fh_pe,
 				)
 				write_opt_losses_to_file(
 					os.path.join(
@@ -6386,12 +6405,18 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					wass_dist_fh_pe,
 					all_times_true,
 					all_times_pred,
+					bleu_score_fh,
+					bleu_score_fh_pe,
+					all_types_true,
+					all_types_pred,
 				) = compute_full_model_acc(
 					args,
 					test_data,
 					None,
 					all_times_bin_pred_opt,
 					test_out_times_in_bin,
+					all_types_pred,
+					test_data_out_types,
 					dataset_name,
 					'rmtpp_mse_opt'
 				)
@@ -6405,6 +6430,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					count_mae_rh,
 					deep_mae_rh,
 					wass_dist_rh,
+					bleu_score_fh,
 					np.mean(all_best_opt_nc_losses),
 					np.mean(all_best_cont_nc_losses),
 					np.mean(all_best_nc_count_losses),
@@ -6416,6 +6442,8 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					),
 					all_times_true,
 					all_times_pred,
+					all_types_true,
+					all_types_pred,
 				)
 				write_pe_metrics_to_file(
 					os.path.join(
@@ -6425,6 +6453,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					count_mae_fh_pe,
 					deep_mae_fh_pe,
 					wass_dist_fh_pe,
+					bleu_score_fh_pe,
 				)
 				write_opt_losses_to_file(
 					os.path.join(
@@ -6577,12 +6606,18 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					wass_dist_fh_pe,
 					all_times_true,
 					all_times_pred,
+					bleu_score_fh,
+					bleu_score_fh_pe,
+					all_types_true,
+					all_types_pred,
 				) = compute_full_model_acc(
 					args,
 					test_data,
-					all_bins_count_pred,
+					None,
 					all_times_bin_pred,
 					test_out_times_in_bin,
+					all_types_pred,
+					test_data_out_types,
 					dataset_name,
 					'rmtpp_nll_cont'
 				)
@@ -6596,6 +6631,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					count_mae_rh,
 					deep_mae_rh,
 					wass_dist_rh,
+					bleu_score_fh,
 				)
 				write_arr_to_file(
 					os.path.join(
@@ -6604,6 +6640,8 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					),
 					all_times_true,
 					all_times_pred,
+					all_types_true,
+					all_types_pred,
 				)
 				write_pe_metrics_to_file(
 					os.path.join(
@@ -6613,6 +6651,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					count_mae_fh_pe,
 					deep_mae_fh_pe,
 					wass_dist_fh_pe,
+					bleu_score_fh_pe,
 				)
 				print("____________________________________________________________________")
 				print("")
@@ -6647,12 +6686,18 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					wass_dist_fh_pe,
 					all_times_true,
 					all_times_pred,
+					bleu_score_fh,
+					bleu_score_fh_pe,
+					all_types_true,
+					all_types_pred,
 				) = compute_full_model_acc(
 					args,
 					test_data,
-					all_bins_count_pred,
+					None,
 					all_times_bin_pred,
 					test_out_times_in_bin,
+					all_types_pred,
+					test_data_out_types,
 					dataset_name,
 					'rmtpp_mse_cont'
 				)
@@ -6666,6 +6711,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					count_mae_rh,
 					deep_mae_rh,
 					wass_dist_rh,
+					bleu_score_fh,
 				)
 				write_arr_to_file(
 					os.path.join(
@@ -6674,6 +6720,8 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					),
 					all_times_true,
 					all_times_pred,
+					all_types_true,
+					all_types_pred,
 				)
 				write_pe_metrics_to_file(
 					os.path.join(
@@ -6683,6 +6731,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					count_mae_fh_pe,
 					deep_mae_fh_pe,
 					wass_dist_fh_pe,
+					bleu_score_fh_pe,
 				)
 				print("____________________________________________________________________")
 				print("")
@@ -7044,7 +7093,9 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 
 			if 'count_only' in run_model_flags and run_model_flags['count_only']:
 				print("Prediction for count_only model with rmtpp_mse")
-				all_bins_count_pred, all_times_bin_pred = run_count_only_model(args, models, data, test_data)
+				(
+					all_bins_count_pred, all_times_bin_pred, all_types_pred,
+				) = run_count_only_model(args, models, data, test_data)
 				(
 					deep_mae_rh,
 					count_mae_rh,
@@ -7224,12 +7275,18 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					wass_dist_fh_pe,
 					all_times_true,
 					all_times_pred,
+					bleu_score_fh,
+					bleu_score_fh_pe,
+					all_types_true,
+					all_types_pred,
 				) = compute_full_model_acc(
 					args,
 					test_data,
 					None,
 					all_times_bin_pred,
 					test_out_times_in_bin,
+					all_types_pred,
+					test_data_out_types,
 					dataset_name,
 					'rmtpp_mse_simu'
 				)
@@ -7243,6 +7300,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					count_mae_rh,
 					deep_mae_rh,
 					wass_dist_rh,
+					bleu_score_fh,
 				)
 				write_arr_to_file(
 					os.path.join(
@@ -7251,6 +7309,8 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					),
 					all_times_true,
 					all_times_pred,
+					all_types_true,
+					all_types_pred,
 				)
 				write_pe_metrics_to_file(
 					os.path.join(
@@ -7260,6 +7320,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					count_mae_fh_pe,
 					deep_mae_fh_pe,
 					wass_dist_fh_pe,
+					bleu_score_fh_pe,
 				)
 				print("____________________________________________________________________")
 				print("")
