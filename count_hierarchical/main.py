@@ -21,8 +21,9 @@ parser = argparse.ArgumentParser()
 parser.add_argument('dataset_name', type=str, help='dataset_name')
 parser.add_argument('model_name', type=str, help='model_name')
 
-parser.add_argument('--use_marks', action='store_true',
-                    help='Consider markers in the data for training and testing')
+parser.add_argument('--num_types', type=int, default=0,
+                    help='Number of marker types. If markers not required, \
+                          num_types=0')
 
 parser.add_argument('--epochs', type=int, default=0,
                     help='number of training epochs')
@@ -214,15 +215,15 @@ if 'rmtpp_mse_var' in model_names:
 if 'rmtpp_nll_comp' in model_names:
     #run_model_flags['run_rmtpp_with_joint_optimization_fixed_cnt_solver_nll_comp'] = True
     run_model_flags['rmtpp_nll_opt_comp'] = True
-    run_model_flags['rmtpp_nll_cont_comp'] = True
+    #run_model_flags['rmtpp_nll_cont_comp'] = True
 if 'rmtpp_mse_comp' in model_names:
     #run_model_flags['run_rmtpp_with_joint_optimization_fixed_cnt_solver_mse_comp'] = True
     run_model_flags['rmtpp_mse_opt_comp'] = True
-    run_model_flags['rmtpp_mse_cont_comp'] = True
+    #run_model_flags['rmtpp_mse_cont_comp'] = True
 if 'rmtpp_mse_var_comp' in model_names:
     #run_model_flags['run_rmtpp_with_joint_optimization_fixed_cnt_solver_mse_var_comp'] = True
     run_model_flags['rmtpp_mse_var_opt_comp'] = True
-    run_model_flags['rmtpp_mse_var_cont_comp'] = True
+    #run_model_flags['rmtpp_mse_var_cont_comp'] = True
 if 'pure_hierarchical_nll' in model_names:
     run_model_flags['run_pure_hierarchical_infer_nll'] = True
 if 'pure_hierarchical_mse' in model_names:
@@ -340,7 +341,37 @@ for dataset_name in dataset_names:
 
 with open('Outputs/results_'+dataset_name+'.txt', 'w') as fp:
 
-    fp.write('\n\nCount MAE and Deep MAE in random interval:')
+    fp.write('\n\nResults in random interval:')
+    fp.write('\nModel Name & Count MAE & Deep MAE & Wass dist & opt_loss & cont_loss & count_loss')
+    for model_name, metrics_dict in results.items():
+        fp.write(
+            '\n & {} & {:.3f} & {:.3f} \\\\'.format(
+                model_name,
+                metrics_dict['count_mae_rh'],
+                #metrics_dict['deep_mae_rh'],
+                metrics_dict['wass_dist_rh'],
+                #metrics_dict['bleu_score_rh'],
+                #metrics_dict['opt_loss'],
+                #metrics_dict['cont_loss'],
+                #metrics_dict['count_loss'],
+            )
+        )
+
+    fp.write('\n\nResults in Forecast Horizon:')
+    fp.write('\nModel Name & Count MAE & Wass Dist & bleu_score')
+    for model_name, metrics_dict in results.items():
+        fp.write(
+            '\n & {} & {:.3f} & {:.3f} & {:.3f} \\\\'.format(
+                model_name,
+                metrics_dict['count_mae_fh'],
+                #metrics_dict['deep_mae_fh'],
+                metrics_dict['wass_dist_fh'],
+                metrics_dict['bleu_score_fh'],
+            )
+        )
+
+
+    fp.write('\n\nAll metrics in random interval:')
     fp.write('\nModel Name & Count MAE & Deep MAE & Wass dist & opt_loss & cont_loss & count_loss')
     for model_name, metrics_dict in results.items():
         fp.write(
@@ -355,15 +386,16 @@ with open('Outputs/results_'+dataset_name+'.txt', 'w') as fp:
             )
         )
 
-    fp.write('\n\nCount MAE and Deep MAE in Forecast Horizon:')
-    fp.write('\nModel Name & Count MAE & Deep MAE')
+    fp.write('\n\nAll metrics in Forecast Horizon:')
+    fp.write('\nModel Name & Count MAE & Deep MAE & Wass Dist & bleu score')
     for model_name, metrics_dict in results.items():
         fp.write(
-            '\n & {} & {:.3f} & {:.3f} & {:.3f} \\\\'.format(
+            '\n & {} & {:.3f} & {:.3f} & {:.3f} & {:.3f} \\\\'.format(
                 model_name,
                 metrics_dict['count_mae_fh'],
                 metrics_dict['deep_mae_fh'],
                 metrics_dict['wass_dist_fh'],
+                metrics_dict['bleu_score_fh'],
             )
         )
 

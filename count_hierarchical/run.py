@@ -19,6 +19,8 @@ import os
 import sys
 import time
 
+from nltk.translate.bleu_score import sentence_bleu, corpus_bleu
+
 from utils import IntensityHomogenuosPoisson, generate_sample
 from utils import get_time_features
 from utils import add_metrics_to_dict
@@ -36,8 +38,14 @@ dev_gap_metric_mse = tf.keras.metrics.MeanSquaredError()
 test_gap_metric_mae = tf.keras.metrics.MeanAbsoluteError()
 test_gap_metric_mse = tf.keras.metrics.MeanSquaredError()
 
+
+types_metric = tf.keras.metrics.SparseCategoricalAccuracy()
+#dev_types_metric = tf.keras.metrics.SparseCategoricalAccuracy()
+#test_types_metric = tf.keras.metrics.SparseCategoricalAccuracy()
+
 ETH = 10.0
 one_by = tf.math.reciprocal_no_nan
+flatten = lambda l: [item for sublist in l for item in sublist]
 
 
 #####################################################
@@ -220,8 +228,10 @@ def run_rmtpp_var(args, data, test_data, trained_rmtpp_model):
 def run_rmtpp(args, model, optimizer, data, var_data, NLL_loss,
 			  rmtpp_epochs=10, use_var_model=False, comp_model=False,
 			  rmtpp_type=None):
-	[train_dataset_gaps, dev_data_in_gaps, dev_data_in_feats,
-	 dev_data_out_gaps, train_norm_gaps] = data
+	[train_dataset_gaps,
+	 dev_data_in_gaps, dev_data_in_feats, dev_data_in_types,
+	 dev_data_out_gaps, dev_data_out_types,
+	 train_norm_gaps] = data
 	[train_norm_a_gaps, train_norm_d_gaps] = train_norm_gaps
 	[var_dataset_gaps, train_end_hr_bins_relative,
 	 train_data_in_time_end_bin,
@@ -278,21 +288,23 @@ def run_rmtpp(args, model, optimizer, data, var_data, NLL_loss,
 		step_cnt = 0
 		next_initial_state = None
 		st = time.time()
-		for sm_step, (gaps_batch_in, feats_batch_in,
-					  gaps_batch_out, feats_batch_out) \
+		for sm_step, (gaps_batch_in, feats_batch_in, types_batch_in,
+					  gaps_batch_out, feats_batch_out, types_batch_out) \
 						in enumerate(train_dataset_gaps):
 			with tf.GradientTape() as tape:
 				# TODO: Make sure to pass correct next_stat
 				if stride_move > 0:
-					gaps_pred, D, WT, next_initial_state, _ = model(
+					gaps_pred, types_logits_pred, D, WT, next_initial_state, _ = model(
 						gaps_batch_in, 
 						feats_batch_in,
+						types_batch_in,
 						initial_state=next_initial_state, 
 						next_state_sno=stride_move)
 				else:
-					gaps_pred, D, WT, next_initial_state, _ = model(
+					gaps_pred, types_logits_pred, D, WT, next_initial_state, _ = model(
 						gaps_batch_in,
 						feats_batch_in,
+						types_batch_in,
 						initial_state=None, 
 						next_state_sno=1)
 
@@ -303,9 +315,12 @@ def run_rmtpp(args, model, optimizer, data, var_data, NLL_loss,
 					gap_loss_fn = NegativeLogLikelihood(D, WT)
 				else:
 					gap_loss_fn = MeanSquareLoss()
+
+				type_loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
 				
 				gap_loss = gap_loss_fn(gaps_batch_out, gaps_pred)
-				loss = gap_loss
+				type_loss = type_loss_fn(types_batch_out, types_logits_pred)
+				loss = gap_loss + type_loss
 				step_train_loss+=loss.numpy()
 
 			grads = tape.gradient(loss, model.trainable_weights)
@@ -325,7 +340,7 @@ def run_rmtpp(args, model, optimizer, data, var_data, NLL_loss,
 		print(model_name, 'time_reqd:', et-st)
 		
 		# Dev calculations
-		dev_gaps_pred, _, _, _, _ = model(dev_data_in_gaps, dev_data_in_feats)
+		dev_gaps_pred, dev_logits_pred, _, _, _, _ = model(dev_data_in_gaps, dev_data_in_feats, dev_data_in_types)
 		dev_gaps_pred_unnorm = utils.denormalize_avg(dev_gaps_pred, 
 													 train_norm_a_gaps,
 													 train_norm_d_gaps)
@@ -336,6 +351,9 @@ def run_rmtpp(args, model, optimizer, data, var_data, NLL_loss,
 		dev_gap_mse = dev_gap_metric_mse.result()
 		dev_gap_metric_mae.reset_states()
 		dev_gap_metric_mse.reset_states()
+
+		dev_types_acc = types_metric(dev_data_out_types, dev_logits_pred)
+		types_metric.reset_states()
 
 		if best_dev_gap_mse > dev_gap_mse:
 			best_dev_gap_mse = dev_gap_mse
@@ -403,7 +421,7 @@ def run_rmtpp(args, model, optimizer, data, var_data, NLL_loss,
 
 	print("Loading best model from epoch", best_dev_epoch)
 	model.load_weights(checkpoint_path)
-	dev_gaps_pred, _, _, _, _ = model(dev_data_in_gaps, dev_data_in_feats)
+	dev_gaps_pred, dev_logits_pred, _, _, _, _ = model(dev_data_in_gaps, dev_data_in_feats, dev_data_in_types)
 	dev_gaps_pred_unnorm = utils.denormalize_avg(dev_gaps_pred, 
 												 train_norm_a_gaps,
 												 train_norm_d_gaps)
@@ -414,8 +432,10 @@ def run_rmtpp(args, model, optimizer, data, var_data, NLL_loss,
 	dev_gap_mse = dev_gap_metric_mse.result()
 	dev_gap_metric_mae.reset_states()
 	dev_gap_metric_mse.reset_states()
-	print('Best MAE and MSE of Dev data %s: %s' \
-		%(float(dev_gap_mae), float(dev_gap_mse)))
+	dev_types_acc = types_metric(dev_data_out_types, dev_logits_pred)
+	types_metric.reset_states()
+	print('Best MAE, MSE, type_acc of Dev data: %s, %s, %s' \
+		%(float(dev_gap_mae), float(dev_gap_mse), float(dev_types_acc)))
 
 	if args.extra_var_model and rmtpp_type=='mse':	
 		print("Loading best rmtpp_var_model from epoch", best_var_epoch)
@@ -428,9 +448,9 @@ def run_rmtpp(args, model, optimizer, data, var_data, NLL_loss,
 # RMTPP run initialize with loss function for run_rmtpp
 def run_rmtpp_init(args, data, test_data, var_data,
 				   NLL_loss=False, use_var_model=False, rmtpp_type='mse'):
-	[test_data_in_gaps_bin, test_data_in_feats_bin,
+	[test_data_in_gaps_bin, test_data_in_feats_bin, test_data_in_types,
 	 test_end_hr_bins, test_data_in_time_end_bin, 
-	 test_gap_in_bin_norm_a, test_gap_in_bin_norm_d] =  test_data	
+	 test_gap_in_bin_norm_a, test_gap_in_bin_norm_d] = test_data
 	rmtpp_epochs = args.epochs
 	enc_len = args.enc_len
 	dec_len = args.out_bin_sz
@@ -462,11 +482,12 @@ def run_rmtpp_init(args, data, test_data, var_data,
 	#TODO: Should we pass more event than 80 for better prediction
 	for dec_idx in range(dec_len):
 		print('Simulating dec_idx', dec_idx)
-		all_gaps_pred, all_times_pred, next_hidden_state = simulate(
+		all_gaps_pred, all_times_pred, all_types_pred, next_hidden_state = simulate(
 			model, 
 			test_data_init_time, 
 			test_data_input_gaps_bin,
 			test_data_in_feats_bin,
+			test_data_in_types,
 			test_end_hr_bins[:,dec_idx], 
 			(test_gap_in_bin_norm_a, 
 			test_gap_in_bin_norm_d),
@@ -489,7 +510,9 @@ def run_rmtpp_init(args, data, test_data, var_data,
 												test_gap_in_bin_norm_a,
 												test_gap_in_bin_norm_d)
 		all_prev_gaps_pred = tf.concat([test_data_input_gaps_bin, all_gaps_pred_norm], axis=1)
+		all_prev_types_pred = tf.concat([test_data_in_types, all_types_pred], axis=1)
 		test_data_input_gaps_bin = all_prev_gaps_pred[:,-enc_len:].numpy()
+		test_data_in_types = all_prev_types_pred[:,-enc_len:].numpy()
 
 	event_count_preds = np.array(all_event_count_preds).T
 	return model, event_count_preds, rmtpp_var_model
@@ -862,11 +885,13 @@ def run_wgan(args, data, test_data):
 	D_optimizer = keras.optimizers.Adam(args.learning_rate)
 	pre_train_optimizer = keras.optimizers.Adam(args.learning_rate)
 
-	[train_dataset_gaps, dev_data_in_gaps, dev_data_in_feats,
-	 dev_data_out_gaps, train_norm_gaps] = data
+	[train_dataset_gaps,
+	 dev_data_in_gaps, dev_data_in_feats, dev_data_in_types,
+	 dev_data_out_gaps, dev_data_out_types,
+	 train_norm_gaps] = data
 	[train_norm_a_gaps, train_norm_d_gaps] = train_norm_gaps
 
-	[test_data_in_gaps_bin, test_data_in_feats_bin,
+	[test_data_in_gaps_bin, test_data_in_feats_bin, test_data_in_types,
 	 test_end_hr_bins, test_data_in_time_end_bin, 
 	 test_gap_in_bin_norm_a, test_gap_in_bin_norm_d] = test_data	
 	enc_len = args.enc_len
@@ -1114,13 +1139,15 @@ def run_seq2seq(args, data, test_data):
 	D_optimizer = keras.optimizers.Adam(args.learning_rate)
 	pre_train_optimizer = keras.optimizers.Adam(args.learning_rate)
 
-	[train_dataset_gaps, dev_data_in_gaps, dev_data_in_feats,
-	 dev_data_out_gaps, train_norm_gaps] = data
+	[train_dataset_gaps,
+	 dev_data_in_gaps, dev_data_in_feats, dev_data_in_types,
+	 dev_data_out_gaps,dev_data_out_types,
+	 train_norm_gaps] = data
 	[train_norm_a_gaps, train_norm_d_gaps] = train_norm_gaps
 
-	[test_data_in_gaps_bin, test_data_in_feats_bin,
+	[test_data_in_gaps_bin, test_data_in_feats_bin, test_data_in_types,
 	 test_end_hr_bins, test_data_in_time_end_bin, 
-	 test_gap_in_bin_norm_a, test_gap_in_bin_norm_d] = test_data	
+	 test_gap_in_bin_norm_a, test_gap_in_bin_norm_d] = test_data
 
 	model_name = args.current_model
 	enc_len = args.enc_len
@@ -1338,11 +1365,13 @@ def run_transformer(args, data, test_data):
 
 	optimizer = keras.optimizers.Adam(args.learning_rate)
 
-	[train_dataset_gaps, dev_data_in_gaps, dev_data_in_feats,
-	 dev_data_out_gaps, train_norm_gaps] = data
+	[train_dataset_gaps,
+	 dev_data_in_gaps, dev_data_in_feats, dev_data_in_types,
+	 dev_data_out_gaps, dev_data_out_types,
+	 train_norm_gaps] = data
 	[train_norm_a_gaps, train_norm_d_gaps] = train_norm_gaps
 
-	[test_data_in_gaps_bin, test_data_in_feats_bin,
+	[test_data_in_gaps_bin, test_data_in_feats_bin, test_data_in_types,
 	 test_end_hr_bins, test_data_in_time_end_bin, 
 	 test_gap_in_bin_norm_a, test_gap_in_bin_norm_d] = test_data
 
@@ -1369,8 +1398,8 @@ def run_transformer(args, data, test_data):
 		step_cnt = 0
 		next_initial_state = None
 		st = time.time()
-		for sm_step, (gaps_batch_in, feats_batch_in,
-					  gaps_batch_out, feats_batch_out) \
+		for sm_step, (gaps_batch_in, feats_batch_in, types_batch_in,
+					  gaps_batch_out, feats_batch_out, types_batch_out) \
 						in enumerate(train_dataset_gaps):
 			with tf.GradientTape() as tape:
 				# TODO: Make sure to pass correct next_stat
@@ -1607,52 +1636,64 @@ def simulate_v2(model, times_in, gaps_in, bins_end_hrs, normalizers,
 
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 # Simulate model until t_b_plus
-def simulate(model, times_in, gaps_in, feats_in,
+def simulate(model, times_in, gaps_in, feats_in, types_in,
 			 t_b_plus, normalizers, prev_hidden_state=None):
 	#TODO: Check for this modification in functions which calls this def
 	gaps_pred = list()
+	types_pred = list()
 	times_pred = list()
 	data_norm_a, data_norm_d = normalizers
 	
 	# step_gaps_pred = gaps_in[:, -1]
-	step_gaps_pred, _, _, prev_hidden_state, _ \
-			= model(gaps_in, feats_in, initial_state=prev_hidden_state)
+	step_gaps_pred, step_types_logits, _, _, prev_hidden_state, _ \
+			= model(gaps_in, feats_in, types_in, initial_state=prev_hidden_state)
+
+	step_types_pred = tf.argmax(step_types_logits, axis=-1)
 
 	step_gaps_pred = step_gaps_pred[:,-1:]
+	step_types_pred = step_types_pred[:,-1:]
 	gaps_in = tf.concat([gaps_in[:,1:], step_gaps_pred], axis=1)
+	types_in = tf.concat([types_in[:,1:], step_types_pred], axis=1)
 	step_gaps_pred = tf.squeeze(step_gaps_pred, axis=-1)
 	last_gaps_pred_unnorm = utils.denormalize_avg(step_gaps_pred, data_norm_a, data_norm_d)
 	last_times_pred = times_in + last_gaps_pred_unnorm
 	step_feats_pred = get_time_features(tf.expand_dims(last_times_pred, axis=-1))
 	feats_in = tf.concat([feats_in[:, 1:], step_feats_pred], axis=1)
 	gaps_pred.append(last_gaps_pred_unnorm)
+	types_pred.append(step_types_pred)
 	times_pred.append(last_times_pred)
 
 	simul_step = 0
 
 	while any(times_pred[-1]<t_b_plus):
-		step_gaps_pred, _, _, prev_hidden_state, _ \
-				= model(gaps_in, feats_in, initial_state=prev_hidden_state)
+		step_gaps_pred, step_types_logits, _, _, prev_hidden_state, _ \
+				= model(gaps_in, feats_in, types_in, initial_state=prev_hidden_state)
+
+		step_types_pred = tf.argmax(step_types_logits, axis=-1)
 
 		step_gaps_pred = step_gaps_pred[:,-1:]
+		step_types_pred = step_types_pred[:,-1:]
 		gaps_in = tf.concat([gaps_in[:,1:], step_gaps_pred], axis=1)
+		types_in = tf.concat([types_in[:,1:], step_types_pred], axis=1)
 		step_gaps_pred = tf.squeeze(step_gaps_pred, axis=-1)
 		last_gaps_pred_unnorm = utils.denormalize_avg(step_gaps_pred, data_norm_a, data_norm_d)
 		last_times_pred = times_pred[-1] + last_gaps_pred_unnorm
 		step_feats_pred = get_time_features(tf.expand_dims(last_times_pred, axis=-1))
 		feats_in = tf.concat([feats_in[:, 1:], step_feats_pred], axis=1)
 		gaps_pred.append(last_gaps_pred_unnorm)
+		types_pred.append(step_types_pred)
 		times_pred.append(last_times_pred)
 		
 		simul_step += 1
 
 	gaps_pred = tf.stack(gaps_pred, axis=1)
+	types_pred = tf.squeeze(tf.stack(types_pred, axis=1), axis=2)
 	all_gaps_pred = gaps_pred
 
 	times_pred = tf.squeeze(tf.stack(times_pred, axis=1), axis=2)
 	all_times_pred = times_pred
 
-	return all_gaps_pred, all_times_pred, prev_hidden_state
+	return all_gaps_pred, all_times_pred, types_pred, prev_hidden_state
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
@@ -1872,46 +1913,58 @@ def simulate_count_for_D_WT(model, times_in, gaps_in, out_gaps_count, normalizer
 
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 # Simulate model out_gaps_count times
-def simulate_with_counter(model, times_in, gaps_in, feats_in, out_gaps_count, normalizers, prev_hidden_state = None):
+def simulate_with_counter(model, times_in, gaps_in, feats_in, types_in,
+						  out_gaps_count, normalizers, prev_hidden_state=None):
 	gaps_pred = list()
 	D_pred = list()
 	WT_pred = list()
+	types_pred = list()
 	times_pred = list()
 	data_norm_a, data_norm_d = normalizers
 	
 	# step_gaps_pred = gaps_in[:, -1]
-	step_gaps_pred, D, WT, prev_hidden_state, _ \
-			= model(gaps_in, feats_in, initial_state=prev_hidden_state)
+	step_gaps_pred, step_types_logits, D, WT, prev_hidden_state, _ \
+			= model(gaps_in, feats_in, types_in, initial_state=prev_hidden_state)
+
+	step_types_pred = tf.argmax(step_types_logits, axis=-1)
 
 	step_gaps_pred = step_gaps_pred[:,-1:]
+	step_types_pred = step_types_pred[:,-1:]
 	D_pred.append(D[:, -1:])
 	WT_pred.append(WT[:, -1:])
 	gaps_in = tf.concat([gaps_in[:,1:], step_gaps_pred], axis=1)
+	types_in = tf.concat([types_in[:,1:], step_types_pred], axis=1)
 	step_gaps_pred = tf.squeeze(step_gaps_pred, axis=-1)
 	last_gaps_pred_unnorm = utils.denormalize_avg(step_gaps_pred, data_norm_a, data_norm_d)
 	last_times_pred = times_in + last_gaps_pred_unnorm
 	step_feats_pred = get_time_features(tf.expand_dims(last_times_pred, axis=-1))
 	feats_in = tf.concat([feats_in[:, 1:], step_feats_pred], axis=1)
 	gaps_pred.append(last_gaps_pred_unnorm)
+	types_pred.append(step_types_pred)
 	times_pred.append(last_times_pred)
 
 	simul_step = 0
 	old_hidden_state = None
 
 	while any(simul_step < out_gaps_count):
-		step_gaps_pred, D, WT, prev_hidden_state, _ \
-				= model(gaps_in, feats_in, initial_state=prev_hidden_state)
+		step_gaps_pred, step_types_logits, D, WT, prev_hidden_state, _ \
+				= model(gaps_in, feats_in, types_in, initial_state=prev_hidden_state)
+
+		step_types_pred = tf.argmax(step_types_logits, axis=-1)
 		
 		if old_hidden_state is not None:
 			prev_hidden_state = (simul_step < out_gaps_count) * prev_hidden_state + \
 								(simul_step >= out_gaps_count) * old_hidden_state
 			step_gaps_pred = np.expand_dims((simul_step < out_gaps_count), axis=-1) * step_gaps_pred
+			step_types_pred = (simul_step < out_gaps_count) * step_types_pred
 			
 		old_hidden_state = prev_hidden_state
 		step_gaps_pred = step_gaps_pred[:,-1:]
+		step_types_pred = step_types_pred[:,-1:]
 		D_pred.append(D[:, -1:])
 		WT_pred.append(WT[:, -1:])
 		gaps_in = tf.concat([gaps_in[:,1:], step_gaps_pred], axis=1)
+		types_in = tf.concat([types_in[:,1:], step_types_pred], axis=1)
 		step_gaps_pred = tf.squeeze(step_gaps_pred, axis=-1)
 		last_gaps_pred_unnorm = utils.denormalize_avg(step_gaps_pred, data_norm_a, data_norm_d)
 		last_times_pred = times_pred[-1] + last_gaps_pred_unnorm
@@ -1919,11 +1972,13 @@ def simulate_with_counter(model, times_in, gaps_in, feats_in, out_gaps_count, no
 		step_feats_pred = get_time_features(tf.expand_dims(last_times_pred, axis=-1))
 		feats_in = tf.concat([feats_in[:, 1:], step_feats_pred], axis=1)
 		gaps_pred.append(last_gaps_pred_unnorm)
+		types_pred.append(step_types_pred)
 		times_pred.append(last_times_pred)
 		
 		simul_step += 1
 
 	gaps_pred = tf.stack(gaps_pred, axis=1)
+	types_pred = tf.squeeze(tf.stack(types_pred, axis=1), axis=2)
 	all_gaps_pred = gaps_pred
 	D_pred = tf.concat(D_pred, axis=1)
 	WT_pred = tf.concat(WT_pred, axis=1)
@@ -1931,7 +1986,7 @@ def simulate_with_counter(model, times_in, gaps_in, feats_in, out_gaps_count, no
 	times_pred = tf.squeeze(tf.stack(times_pred, axis=1), axis=2)
 	all_times_pred = times_pred
 
-	return all_gaps_pred, all_times_pred, prev_hidden_state, D_pred, WT_pred
+	return all_gaps_pred, all_times_pred, types_pred, prev_hidden_state, D_pred, WT_pred
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
@@ -2132,8 +2187,9 @@ def run_rmtpp_count_reinit(args, models, data, test_data, rmtpp_type):
 	model_check = (model_cnt is not None) and (model_rmtpp is not None)
 	assert model_check, "run_rmtpp_count_reinit requires count and RMTPP model"
 
-	[test_data_in_bin, test_data_in_bin_feats, test_data_out_bin, test_end_hr_bins,
-	 test_data_in_time_end_bin, test_data_in_gaps_bin, test_data_in_feats_bin,
+	[test_data_in_bin, test_data_in_bin_feats,
+	 test_data_out_bin, test_end_hr_bins, test_data_in_time_end_bin,
+	 test_data_in_gaps_bin, test_data_in_feats_bin, test_data_in_types,
 	 test_mean_bin, test_std_bin,
 	 test_gap_in_bin_norm_a, test_gap_in_bin_norm_d] = test_data
 
@@ -2244,8 +2300,9 @@ def run_rmtpp_count_cont_rmtpp(args, models, data, test_data, rmtpp_type):
 	model_check = (model_cnt is not None) and (model_rmtpp is not None)
 	assert model_check, "run_rmtpp_count_cont_rmtpp requires count and RMTPP model"
 
-	[test_data_in_bin, test_data_in_bin_feats, test_data_out_bin, test_end_hr_bins,
-	 test_data_in_time_end_bin, test_data_in_gaps_bin, test_data_in_feats_bin,
+	[test_data_in_bin, test_data_in_bin_feats,
+	 test_data_out_bin, test_end_hr_bins, test_data_in_time_end_bin,
+	 test_data_in_gaps_bin, test_data_in_feats_bin, test_data_in_types,
 	 test_mean_bin, test_std_bin,
 	 test_gap_in_bin_norm_a, test_gap_in_bin_norm_d] = test_data
 
@@ -2276,19 +2333,26 @@ def run_rmtpp_count_cont_rmtpp(args, models, data, test_data, rmtpp_type):
 	full_cnt_event_all_bins_pred = max(output_event_count_pred_cumm) * np.ones_like(output_event_count_pred_cumm)
 	full_cnt_event_all_bins_pred = np.expand_dims(full_cnt_event_all_bins_pred, axis=-1)
 
-	all_gaps_pred, all_times_pred, _, _, _ = simulate_with_counter(model_rmtpp, 
-											test_data_init_time, 
-											test_data_input_gaps_bin,
-											test_data_in_feats_bin,
-											full_cnt_event_all_bins_pred,
-											(test_gap_in_bin_norm_a, 
-											test_gap_in_bin_norm_d),
-											prev_hidden_state=next_hidden_state)
+	(
+		all_gaps_pred, all_times_pred, all_types_pred, _, _, _,
+	) = simulate_with_counter(
+		model_rmtpp, 
+		test_data_init_time, 
+		test_data_input_gaps_bin,
+		test_data_in_feats_bin,
+		test_data_in_types,
+		full_cnt_event_all_bins_pred,
+		(test_gap_in_bin_norm_a, 
+		test_gap_in_bin_norm_d),
+		prev_hidden_state=next_hidden_state
+	)
 	
 	all_times_pred_lst = list()
+	all_types_pred_lst = list()
 	for batch_idx in range(len(all_gaps_pred)):
 		event_past_cnt=0
-		times_pred_all_bin_lst=list()
+		times_pred_all_bin_lst = list()
+		batch_types_pred_lst = list()
 
 		gaps_before_bin = all_times_pred[batch_idx,:1] - test_data_init_time[batch_idx]
 		gaps_before_bin = gaps_before_bin * np.random.uniform(size=gaps_before_bin.shape)
@@ -2318,10 +2382,21 @@ def run_rmtpp_count_cont_rmtpp(args, models, data, test_data, rmtpp_type):
 							 (times_pred_for_bin - bin_start)) + actual_bin_start
 			
 			times_pred_all_bin_lst.append(times_pred_for_bin_scaled.numpy())
-		
+
+			batch_bin_types_pred = all_types_pred[batch_idx, event_past_cnt:event_past_cnt+int(output_event_count_pred[batch_idx,dec_idx,0])]
+			batch_types_pred_lst.append(batch_bin_types_pred)
+
+
 		all_times_pred_lst.append(times_pred_all_bin_lst)
+		all_types_pred_lst.append(batch_types_pred_lst)
 	all_times_pred = np.array(all_times_pred_lst)
-	return event_count_preds_cnt, all_times_pred
+	#all_types_pred = np.array(all_types_pred_lst)
+	all_types_pred_flatten = []
+	for seq in all_types_pred:
+		seq = [s.numpy().tolist() for s in seq]
+		all_types_pred_flatten.append(seq)
+	all_types_pred = np.array(all_types_pred_flatten)
+	return event_count_preds_cnt, all_times_pred, all_types_pred
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 
 
@@ -2351,8 +2426,9 @@ def run_rmtpp_count_cont_rmtpp_comp(args, models, data, test_data, test_data_com
 	model_check = (model_rmtpp is not None) and (model_rmtpp_comp is not None)
 	assert model_check, "run_rmtpp_count_cont_rmtpp_comp requires RMTPP and RMTPP_comp model"
 
-	[test_data_in_bin, test_data_in_bin_feats, test_data_out_bin, test_end_hr_bins,
-	 test_data_in_time_end_bin, test_data_in_gaps_bin, test_data_in_feats_bin,
+	[test_data_in_bin, test_data_in_bin_feats,
+	 test_data_out_bin, test_end_hr_bins, test_data_in_time_end_bin,
+	 test_data_in_gaps_bin, test_data_in_feats_bin, test_data_in_types,
 	 test_mean_bin, test_std_bin,
 	 test_gap_in_bin_norm_a, test_gap_in_bin_norm_d] = test_data
 
@@ -2489,8 +2565,9 @@ def run_count_only_model(args, models, data, test_data):
 	model_check = (model_cnt is not None)
 	assert model_check, "run_count_only_model requires count model"
 
-	[test_data_in_bin, test_data_in_bin_feats, test_data_out_bin, test_end_hr_bins,
-	 test_data_in_time_end_bin, test_data_in_gaps_bin, test_data_in_feats_bin,
+	[test_data_in_bin, test_data_in_bin_feats,
+	 test_data_out_bin, test_end_hr_bins, test_data_in_time_end_bin,
+	 test_data_in_gaps_bin, test_data_in_feats_bin, test_data_in_types,
 	 test_mean_bin, test_std_bin,
 	 test_gap_in_bin_norm_a, test_gap_in_bin_norm_d] = test_data
 
@@ -3258,8 +3335,9 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(
 	rmtpp_type='nll'
 ):
 
-	[test_data_in_bin, test_data_in_bin_feats, test_data_out_bin, test_end_hr_bins,
-	 test_data_in_time_end_bin, test_data_in_gaps_bin, test_data_in_feats_bin,
+	[test_data_in_bin, test_data_in_bin_feats,
+	 test_data_out_bin, test_end_hr_bins, test_data_in_time_end_bin,
+	 test_data_in_gaps_bin, test_data_in_feats_bin, test_data_in_types,
 	 test_mean_bin, test_std_bin,
 	 test_gap_in_bin_norm_a, test_gap_in_bin_norm_d] = test_data
 
@@ -3473,6 +3551,7 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(
 		best_past_cnt,
 		bin_start,
 		batch_times_pred,
+		batch_types_pred,
 		unconstrained=False,
 		gaps_uc=None
 	):
@@ -3481,6 +3560,8 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(
 		output_event_count_curr = np.zeros_like(output_event_count_pred) + max_cnt+1
 
 		batch_bin_curr_cnt_times_pred = all_times_pred_simu[batch_idx,best_past_cnt:event_cnt]
+		batch_bin_curr_cnt_types_pred = all_types_pred_simu[batch_idx,best_past_cnt:event_cnt]
+		#batch_bin_curr_cnt_types_pred = np.squeeze(batch_bin_curr_cnt_types_pred, axis=-1)
 
 		gaps_after_bin = (all_times_pred_simu[batch_idx, best_past_cnt+curr_cnt]
 						  - all_times_pred_simu[batch_idx, best_past_cnt+curr_cnt-1])
@@ -3504,14 +3585,18 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(
 
 		if dec_idx == 0:
 			batch_temp_times_pred = [batch_bin_curr_cnt_times_pred_scaled]
+			batch_temp_types_pred = [batch_bin_curr_cnt_types_pred]
 		else:
 			batch_temp_times_pred = batch_times_pred[:dec_idx]
+			batch_temp_types_pred = batch_types_pred[:dec_idx]
 			batch_temp_times_pred.append(batch_bin_curr_cnt_times_pred_scaled)
+			batch_temp_types_pred.append(batch_bin_curr_cnt_types_pred)
 
-		_, _, _, _, input_final_state \
+		_, _, _, _, _, input_final_state \
 			= model_rmtpp(
 				test_data_input_gaps_bin[batch_idx:batch_idx+1, :-1, :],
 				test_data_in_feats_bin[batch_idx:batch_idx+1, :-1, :],
+				test_data_in_types[batch_idx:batch_idx+1, :-1],
 				initial_state=None)
 
 
@@ -3541,6 +3626,10 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(
 		merged_lst = list()
 		for each in lst:
 			merged_lst += each.tolist()
+		batch_temp_types_pred_merged = []
+		for seq in batch_temp_types_pred:
+			batch_temp_types_pred_merged += seq.numpy().tolist()
+		batch_temp_types_pred = batch_temp_types_pred_merged
 
 		batch_temp_gaps_pred_unnorm = np.array(merged_lst[:-1])
 		batch_temp_gaps_pred_unnorm = np.expand_dims(
@@ -3662,7 +3751,8 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(
 		batch_bin_curr_cnt_opt_gaps_pred = utils.denormalize_avg(batch_bin_curr_cnt_opt_gaps_pred,
 												test_gap_in_bin_norm_a,
 												test_gap_in_bin_norm_d)
-	
+		batch_bin_curr_cnt_opt_types_pred = batch_bin_curr_cnt_types_pred[:int(curr_cnt)]
+
 		#import ipdb
 		#ipdb.set_trace()
 
@@ -3678,6 +3768,7 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(
 		return (
 			batch_bin_curr_cnt_opt_times_pred,
 			batch_bin_curr_cnt_opt_gaps_pred,
+			batch_bin_curr_cnt_opt_types_pred,
 			nc_loss,
 			nc_loss_opt,
 			nc_loss_cont,
@@ -3693,14 +3784,16 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(
 
 	def resimulate(
 		model_rmtpp, test_data_init_time, test_data_input_gaps_bin,
-		all_times_pred, normalizers, all_best_cnt, dec_idx,
+		all_times_pred, all_types_pred, normalizers, all_best_cnt, dec_idx,
 	):
 		(test_gap_in_bin_norm_a, test_gap_in_bin_norm_d) = normalizers
 		input_gaps = []
 		input_feats = []
+		input_types = []
 		init_time = []
 		for idx in range(len(test_data_input_gaps_bin)): 
 			times_pred = np.concatenate(all_times_pred[idx], axis=-1)
+			types_pred = np.concatenate(all_types_pred[idx], axis=-1)
 			batch_gaps_pred = times_pred - np.concatenate([test_data_init_time[idx], times_pred[:-1]])
 			batch_gaps_pred = np.expand_dims(batch_gaps_pred, axis=-1)
 			batch_gaps_pred = utils.normalize_avg_given_param(
@@ -3714,10 +3807,12 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(
 					[test_data_in_feats_bin[idx],
 					 get_time_features(np.expand_dims(times_pred, axis=-1))],
 					axis=0))
+			input_types.append(np.concatenate([test_data_in_types[idx], types_pred], axis=0))
 
 		init_time = np.array(init_time)
 		input_gaps = tf.cast(tf.sparse.to_dense(tf.ragged.constant(input_gaps).to_sparse()), tf.float32)
 		input_feats = tf.cast(tf.sparse.to_dense(tf.ragged.constant(input_feats).to_sparse()), tf.float32)
+		input_types = tf.cast(tf.sparse.to_dense(tf.ragged.constant(input_types).to_sparse()), tf.int64)
 		#input_gaps = tf.ragged.constant(input_gaps).to_sparse()
 		#input_feats = tf.ragged.constant(input_feats).to_sparse()
 
@@ -3726,49 +3821,63 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(
 		full_cnt_event_all_bins_pred = max(output_event_count_pred_cumm) * np.ones_like(output_event_count_pred_cumm)
 		full_cnt_event_all_bins_pred = np.expand_dims(full_cnt_event_all_bins_pred, axis=-1)
 
-		all_gaps_pred_simu, all_times_pred_simu, _, D_pred, WT_pred \
-			= simulate_with_counter(
-				model_rmtpp, 
-				init_time, 
-				input_gaps,
-				input_feats,
-				full_cnt_event_all_bins_pred,
-				(test_gap_in_bin_norm_a,
-				test_gap_in_bin_norm_d),
-				prev_hidden_state=next_hidden_state
-			)
+		(
+			all_gaps_pred_simu, all_times_pred_simu, all_types_pred_simu,
+			_, D_pred, WT_pred
+		) = simulate_with_counter(
+			model_rmtpp, 
+			init_time, 
+			input_gaps,
+			input_feats,
+			input_types,
+			full_cnt_event_all_bins_pred,
+			(test_gap_in_bin_norm_a,
+			test_gap_in_bin_norm_d),
+			prev_hidden_state=next_hidden_state
+		)
+		#all_types_pred_simu = [np.squeeze(seq, axis=-1) for seq in all_types_pred_simu]
 
-		all_tps_adjst_lst, D_pred_adjst_lst, WT_pred_adjst_lst = [], [], []
-		for idx, (tps_seq, D_seq, WT_seq) in enumerate(zip(all_times_pred_simu, D_pred, WT_pred)):
+
+		all_tps_adjst_lst, all_typs_adjst_lst, D_pred_adjst_lst, WT_pred_adjst_lst = [], [], [], []
+		for idx, (tps_seq, typs_seq, D_seq, WT_seq) \
+			in enumerate(zip(all_times_pred_simu, all_types_pred_simu, D_pred, WT_pred)):
 			tps_seq_adjst = np.concatenate([np.zeros((all_best_cnt[idx])), tps_seq])
+			typs_seq_adjst = np.concatenate([np.zeros((all_best_cnt[idx]), dtype=int), typs_seq])
 			D_seq_adjst = np.concatenate([np.zeros((all_best_cnt[idx], 1)), D_seq], axis=0)
 			WT_seq_adjst = np.concatenate([np.zeros((all_best_cnt[idx], 1)), WT_seq], axis=0)
 			all_tps_adjst_lst.append(tps_seq_adjst)
+			all_typs_adjst_lst.append(typs_seq_adjst)
 			D_pred_adjst_lst.append(D_seq_adjst)
 			WT_pred_adjst_lst.append(WT_seq_adjst)
 
+
 		maxlen = max([len(seq) for seq in all_tps_adjst_lst])
-		all_tps_adjst, D_pred_adjst, WT_pred_adjst = [], [], []
-		for idx, (tps_seq, D_seq, WT_seq) in enumerate(zip(all_tps_adjst_lst, D_pred_adjst_lst, WT_pred_adjst_lst)):
+		all_tps_adjst, all_typs_adjst, D_pred_adjst, WT_pred_adjst = [], [], [], []
+		for idx, (tps_seq, typs_seq, D_seq, WT_seq) \
+			in enumerate(zip(all_tps_adjst_lst, all_typs_adjst_lst, D_pred_adjst_lst, WT_pred_adjst_lst)):
 			tps_seq_adjst = np.concatenate([tps_seq, np.zeros((maxlen+1-len(tps_seq)))])
+			typs_seq_adjst = np.concatenate([typs_seq, np.zeros((maxlen+1-len(typs_seq)), dtype=int)])
 			D_seq_adjst = np.concatenate([D_seq, np.zeros((maxlen+1-len(D_seq), 1))], axis=0)
 			WT_seq_adjst = np.concatenate([WT_seq, np.zeros((maxlen+1-len(WT_seq), 1))], axis=0)
 			all_tps_adjst.append(tps_seq_adjst)
+			all_typs_adjst.append(typs_seq_adjst)
 			D_pred_adjst.append(D_seq_adjst)
 			WT_pred_adjst.append(WT_seq_adjst)
 
 		all_tps_adjst = tf.constant(all_tps_adjst)
+		all_typs_adjst = tf.constant(all_typs_adjst)
 		D_pred_adjst = tf.constant(D_pred_adjst)
 		WT_pred_adjst = tf.constant(WT_pred_adjst)
 
 		#import ipdb
 		#ipdb.set_trace()
 
-		return all_tps_adjst, D_pred_adjst, WT_pred_adjst
+		return all_tps_adjst, all_typs_adjst, D_pred_adjst, WT_pred_adjst
 
 
 	count_sigma = args.opt_num_counts
 	all_times_pred = [[] for _ in range(len(test_data_input_gaps_bin))]
+	all_types_pred = [[] for _ in range(len(test_data_input_gaps_bin))]
 	all_best_opt_nc_losses = [[] for _ in range(len(test_data_input_gaps_bin))]
 	all_best_cont_nc_losses = [[] for _ in range(len(test_data_input_gaps_bin))]
 	all_best_nc_count_losses = [[] for _ in range(len(test_data_input_gaps_bin))]
@@ -3778,21 +3887,27 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(
 		#best_past_cnt=0
 
 		if dec_idx == 0:
-			all_gaps_pred_simu, all_times_pred_simu, _, D_pred, WT_pred \
-				= simulate_with_counter(
-					model_rmtpp, 
-					test_data_init_time, 
-					test_data_input_gaps_bin,
-					test_data_in_feats_bin,
-					full_cnt_event_all_bins_pred,
-					(test_gap_in_bin_norm_a,
-					test_gap_in_bin_norm_d),
-					prev_hidden_state=next_hidden_state
-				)
+			(
+				all_gaps_pred_simu, all_times_pred_simu, all_types_pred_simu,
+				_, D_pred, WT_pred
+			) = simulate_with_counter(
+				model_rmtpp, 
+				test_data_init_time, 
+				test_data_input_gaps_bin,
+				test_data_in_feats_bin,
+				test_data_in_types,
+				full_cnt_event_all_bins_pred,
+				(test_gap_in_bin_norm_a,
+				test_gap_in_bin_norm_d),
+				prev_hidden_state=next_hidden_state
+			)
+			#all_types_pred_simu = tf.constant([tf.squeeze(seq, axis=-1) for seq in all_types_pred_simu])
+			#all_types_pred_simu = tf.constant([tf.squeeze(seq, axis=-1) for seq in all_types_pred_simu])
 		else:
-			all_times_pred_simu, D_pred, WT_pred = resimulate(
+			all_times_pred_simu, all_types_pred_simu, D_pred, WT_pred = resimulate(
 				model_rmtpp, test_data_init_time, test_data_input_gaps_bin,
-				all_times_pred, (test_gap_in_bin_norm_a, test_gap_in_bin_norm_d),
+				all_times_pred, all_types_pred,
+				(test_gap_in_bin_norm_a, test_gap_in_bin_norm_d),
 				all_best_cnt, dec_idx,
 			)
 
@@ -3803,6 +3918,7 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(
 			best_past_cnt = all_best_cnt[batch_idx]
 
 			batch_times_pred = all_times_pred[batch_idx]
+			batch_types_pred = all_types_pred[batch_idx]
 			batch_best_opt_nc_losses = all_best_opt_nc_losses[batch_idx]
 			batch_best_cont_nc_losses = all_best_cont_nc_losses[batch_idx]
 			batch_best_nc_count_losses = all_best_nc_count_losses[batch_idx]
@@ -3832,6 +3948,7 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(
 				(
 					batch_bin_cnrr_cnt_opt_times_pred_uc, 
 					batch_bin_curr_cnt_opt_gaps_pred_uc,
+					batch_bin_curr_cnt_opt_types_pred,
 					nc_loss,
 					nc_loss_opt,
 					nc_loss_cont,
@@ -3844,6 +3961,7 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(
 					best_past_cnt,
 					bin_start,
 					batch_times_pred,
+					batch_types_pred,
 					unconstrained=True,
 				)
 				bs = test_end_hr_bins[batch_idx, dec_idx] - args.bin_size
@@ -3883,6 +4001,7 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(
 				(
 					batch_bin_curr_cnt_opt_times_pred_mid_1,
 					batch_bin_curr_cnt_opt_gaps_pred_mid_1,
+					batch_bin_curr_cnt_opt_types_pred_mid_1,
 					nc_loss_mid_1,
 					nc_loss_mid_1_opt,
 					nc_loss_mid_1_cont,
@@ -3895,6 +4014,7 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(
 					best_past_cnt,
 					bin_start,
 					batch_times_pred,
+					batch_types_pred,
 					gaps_uc=gaps_uc,
 				)
 
@@ -3902,6 +4022,7 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(
 					(
 						batch_bin_curr_cnt_opt_times_pred_mid_2,
 						batch_bin_curr_cnt_opt_gaps_pred_mid_2,
+						batch_bin_curr_cnt_opt_types_pred_mid_2,
 						nc_loss_mid_2,
 						nc_loss_mid2_opt,
 						nc_loss_mid2_cont,
@@ -3914,6 +4035,7 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(
 						best_past_cnt,
 						bin_start,
 						batch_times_pred,
+						batch_types_pred,
 						gaps_uc=gaps_uc,
 					)
 
@@ -3930,6 +4052,7 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(
 						nc_loss_mid_1,
 						batch_bin_curr_cnt_opt_times_pred_mid_1,
 						batch_bin_curr_cnt_opt_gaps_pred_mid_1,
+						batch_bin_curr_cnt_opt_types_pred_mid_1,
 						counts_range[mid_1],
 						nc_loss_mid_1_opt,
 						nc_loss_mid_1_cont,
@@ -3941,6 +4064,7 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(
 				best_nc_loss,
 				batch_bin_times_pred,
 				batch_bin_gaps_pred,
+				batch_bin_types_pred,
 				best_count,
 				best_nc_loss_opt,
 				best_nc_loss_cont,
@@ -3954,6 +4078,7 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(
 			#best_past_cnt += best_count
 
 			all_times_pred[batch_idx].append(batch_bin_times_pred)
+			all_types_pred[batch_idx].append(batch_bin_types_pred)
 			all_best_opt_nc_losses[batch_idx].append(best_nc_loss_opt)
 			all_best_cont_nc_losses[batch_idx].append(best_nc_loss_cont)
 			all_best_nc_count_losses[batch_idx].append(best_nc_count_loss)
@@ -3969,12 +4094,17 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(
 		#all_best_nc_count_losses.append(batch_best_nc_count_losses)
 
 	all_times_pred = np.array(all_times_pred)
+	all_types_pred = np.array(all_types_pred)
 	all_best_opt_nc_losses = np.array(all_best_opt_nc_losses)
 	all_best_cont_nc_losses = np.array(all_best_cont_nc_losses)
 	all_best_nc_count_losses = np.array(all_best_nc_count_losses)
-	# [99, dec_len, ...]
+	all_types_pred_flatten = []
+	for seq in all_types_pred:
+		seq = [s.numpy().tolist() for s in seq]
+		all_types_pred_flatten.append(np.array(flatten(seq)))
+	all_types_pred = np.array(all_types_pred_flatten)
 
-	return None, all_times_pred, all_best_opt_nc_losses, all_best_cont_nc_losses, all_best_nc_count_losses
+	return None, all_times_pred, all_types_pred, all_best_opt_nc_losses, all_best_cont_nc_losses, all_best_nc_count_losses
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 
 
@@ -4159,11 +4289,15 @@ def run_rmtpp_with_optimization_fixed_cnt_solver_comp(
 	all_bins_end_time = tf.squeeze(test_end_hr_bins, axis=-1)
 
 
-	all_gaps_pred_simu, all_times_pred_simu, _, D_pred, WT_pred = simulate_with_counter(
+	(
+		all_gaps_pred_simu, all_times_pred_simu, all_types_pred_simu,
+		_, D_pred, WT_pred
+	) = simulate_with_counter(
 		model_rmtpp, 
 		test_data_init_time, 
 		test_data_input_gaps_bin,
 		test_data_in_feats_bin,
+		test_data_in_types,
 		event_count_preds_cnt,
 		(test_gap_in_bin_norm_a, 
 		test_gap_in_bin_norm_d),
@@ -4340,8 +4474,9 @@ def run_rmtpp_for_count(args, models, data, test_data, query_data=None, simul_en
 	model_check = (model_rmtpp is not None)
 	assert model_check, "run_rmtpp_for_count requires RMTPP model"
 
-	[test_data_in_bin, test_data_in_bin_feats, test_data_out_bin, test_end_hr_bins,
-	 test_data_in_time_end_bin, test_data_in_gaps_bin, test_data_in_feats_bin,
+	[test_data_in_bin, test_data_in_bin_feats,
+	 test_data_out_bin, test_end_hr_bins, test_data_in_time_end_bin,
+	 test_data_in_gaps_bin, test_data_in_feats_bin, test_data_in_types,
 	 test_mean_bin, test_std_bin,
 	 test_gap_in_bin_norm_a, test_gap_in_bin_norm_d] = test_data
 
@@ -4364,11 +4499,12 @@ def run_rmtpp_for_count(args, models, data, test_data, query_data=None, simul_en
 	else:
 		t_e_plus = np.expand_dims(simul_end_time, axis=-1)
 
-	_, all_times_pred, _ = simulate(
+	_, all_times_pred, all_types_pred, _ = simulate(
 		model_rmtpp,
 		test_data_init_time,
 		test_data_input_gaps_bin,
 		test_data_in_feats_bin,
+		test_data_in_types,
 		t_e_plus,
 		(test_gap_in_bin_norm_a,
 		test_gap_in_bin_norm_d),
@@ -4388,7 +4524,8 @@ def run_rmtpp_for_count(args, models, data, test_data, query_data=None, simul_en
 		#print("MAE of event count in range:", event_count_mae)
 
 	all_times_pred = np.expand_dims(all_times_pred.numpy(), axis=-1)
-	return test_event_count_pred, all_times_pred
+	all_types_pred = all_types_pred.numpy()
+	return test_event_count_pred, all_times_pred, all_types_pred
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
@@ -4409,8 +4546,9 @@ def run_wgan_for_count(args, models, data, test_data, query_data=None, simul_end
 	model_check = (model_wgan is not None)
 	assert model_check, "run_wgan_for_count requires WGAN model"
 
-	[test_data_in_bin, test_data_in_bin_feats, test_data_out_bin, test_end_hr_bins,
-	 test_data_in_time_end_bin, test_data_in_gaps_bin, test_data_in_feats_bin,
+	[test_data_in_bin, test_data_in_bin_feats,
+	 test_data_out_bin, test_end_hr_bins, test_data_in_time_end_bin,
+	 test_data_in_gaps_bin, test_data_in_feats_bin, test_data_in_types,
 	 test_mean_bin, test_std_bin,
 	 test_gap_in_bin_norm_a, test_gap_in_bin_norm_d] = test_data
 
@@ -4474,8 +4612,9 @@ def run_seq2seq_for_count(args, models, data, test_data, query_data=None, simul_
 	model_check = (model_seq2seq is not None)
 	assert model_check, "run_seq2seq_for_count requires Seq2Seq model"
 
-	[test_data_in_bin, test_data_in_bin_feats, test_data_out_bin, test_end_hr_bins,
-	 test_data_in_time_end_bin, test_data_in_gaps_bin, test_data_in_feats_bin,
+	[test_data_in_bin, test_data_in_bin_feats,
+	 test_data_out_bin, test_end_hr_bins, test_data_in_time_end_bin,
+	 test_data_in_gaps_bin, test_data_in_feats_bin, test_data_in_types,
 	 test_mean_bin, test_std_bin,
 	 test_gap_in_bin_norm_a, test_gap_in_bin_norm_d] = test_data
 
@@ -4529,8 +4668,9 @@ def run_transformer_for_count(args, models, data, test_data, query_data=None, si
 	model_check = (model_transformer is not None)
 	assert model_check, "run_transformer_for_count requires transformer^ model"
 
-	[test_data_in_bin, test_data_in_bin_feats, test_data_out_bin, test_end_hr_bins,
-	 test_data_in_time_end_bin, test_data_in_gaps_bin, test_data_in_feats_bin,
+	[test_data_in_bin, test_data_in_bin_feats,
+	 test_data_out_bin, test_end_hr_bins, test_data_in_time_end_bin,
+	 test_data_in_gaps_bin, test_data_in_feats_bin, test_data_in_types,
 	 test_mean_bin, test_std_bin,
 	 test_gap_in_bin_norm_a, test_gap_in_bin_norm_d] = test_data
 
@@ -4686,11 +4826,14 @@ def compute_full_model_acc(
 	all_bins_count_pred,
 	all_times_bin_pred,
 	test_out_times_in_bin,
+	all_types_pred,
+	test_data_out_types,
 	dataset_name,
 	model_name=None
 ):
-	[test_data_in_bin, test_data_in_bin_feats, test_data_out_bin, test_end_hr_bins,
-	 test_data_in_time_end_bin, test_data_in_gaps_bin, test_data_in_feats_bin,
+	[test_data_in_bin, test_data_in_bin_feats,
+	 test_data_out_bin, test_end_hr_bins, test_data_in_time_end_bin,
+	 test_data_in_gaps_bin, test_data_in_feats_bin, test_data_in_types,
 	 test_mean_bin, test_std_bin,
 	 test_gap_in_bin_norm_a, test_gap_in_bin_norm_d] = test_data
 
@@ -4753,6 +4896,16 @@ def compute_full_model_acc(
 		t_e_plus,
 	)
 
+	true_types = test_data_out_types
+	pred_types = [[seq] for seq in all_types_pred]
+	bleu_score_fh = corpus_bleu(pred_types, true_types)
+	bleu_score_fh_pe = []
+	for true_seqs, pred_seqs in zip(test_data_out_types, all_types_pred):
+		pred_seqs_ = [pred_seqs]
+		true_seqs_ = true_seqs
+		bleu_pe = sentence_bleu(pred_seqs_, true_seqs_)
+		bleu_score_fh_pe.append(bleu_pe)
+
 	return (
 		deep_mae_fh,
 		count_mae_fh,
@@ -4763,6 +4916,10 @@ def compute_full_model_acc(
 		wass_dist_fh_pe,
 		test_out_times_in_bin,
 		all_times_pred,
+		bleu_score_fh,
+		bleu_score_fh_pe,
+		test_data_out_types,
+		all_types_pred,
 	)
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 
@@ -4947,8 +5104,9 @@ def compute_time_range_pdf(all_run_fun_pdf, model_data, query_data, dataset_name
 	[interval_range_count_less, interval_range_count_more, less_threshold,
 	more_threshold, interval_size, test_out_times_in_bin] = query_data
 
-	[test_data_in_bin, test_data_in_bin_feats, test_data_out_bin, test_end_hr_bins,
-	 test_data_in_time_end_bin, test_data_in_gaps_bin, test_data_in_feats_bin,
+	[test_data_in_bin, test_data_in_bin_feats,
+	 test_data_out_bin, test_end_hr_bins, test_data_in_time_end_bin,
+	 test_data_in_gaps_bin, test_data_in_feats_bin, test_data_in_types,
 	 test_mean_bin, test_std_bin,
 	 test_gap_in_bin_norm_a, test_gap_in_bin_norm_d] = test_data
 
@@ -5220,36 +5378,40 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					  
 		train_data_in_gaps = dataset['train_data_in_gaps']
 		train_data_in_feats = dataset['train_data_in_feats'].astype(np.float32)
+		train_data_in_types = dataset['train_data_in_types']
 		train_data_out_gaps = dataset['train_data_out_gaps']
 		train_data_out_feats = dataset['train_data_out_feats'].astype(np.float32)
+		train_data_out_types = dataset['train_data_out_types']
 		train_dataset_gaps = tf.data.Dataset.from_tensor_slices(
-			(train_data_in_gaps,
-			 train_data_in_feats,
-			 train_data_out_gaps,
-			 train_data_out_feats)
+			(train_data_in_gaps, train_data_in_feats, train_data_in_types,
+			 train_data_out_gaps, train_data_out_feats, train_data_out_types)
 		).batch(
 			batch_size,
 			drop_remainder=True
 		)
 		dev_data_in_gaps = dataset['dev_data_in_gaps']
 		dev_data_in_feats = dataset['dev_data_in_feats'].astype(np.float32)
+		dev_data_in_types = dataset['dev_data_in_types']
 		dev_data_out_gaps = dataset['dev_data_out_gaps']
+		dev_data_out_types = dataset['dev_data_out_types']
 		train_norm_a_gaps = dataset['train_norm_a_gaps']
 		train_norm_d_gaps = dataset['train_norm_d_gaps']
 
 		test_data_in_gaps_bin = dataset['test_data_in_gaps_bin']
 		test_data_in_feats_bin = dataset['test_data_in_feats_bin'].astype(np.float32)
+		test_data_in_types = dataset['test_data_in_types']
 		test_end_hr_bins = dataset['test_end_hr_bins'] 
 		test_data_in_time_end_bin = dataset['test_data_in_time_end_bin']
 		test_gap_in_bin_norm_a = dataset['test_gap_in_bin_norm_a'] 
 		test_gap_in_bin_norm_d = dataset['test_gap_in_bin_norm_d']
 
-		test_data = [test_data_in_gaps_bin, test_data_in_feats_bin,
+		test_data = [test_data_in_gaps_bin, test_data_in_feats_bin, test_data_in_types,
 					 test_end_hr_bins, test_data_in_time_end_bin,
 					 test_gap_in_bin_norm_a, test_gap_in_bin_norm_d]
 		train_norm_gaps = [train_norm_a_gaps ,train_norm_d_gaps]
 		data = [train_dataset_gaps,
-				dev_data_in_gaps, dev_data_in_feats, dev_data_out_gaps,
+				dev_data_in_gaps, dev_data_in_feats, dev_data_in_types,
+				dev_data_out_gaps, dev_data_out_types,
 				train_norm_gaps]
 
 
@@ -5452,6 +5614,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 			more_threshold = dataset['more_threshold']
 			interval_size = dataset['interval_size']
 			test_out_times_in_bin = dataset['test_out_times_in_bin']
+			test_data_out_types = dataset['test_data_out_types']
 
 			#model_cnt, model_rmtpp, model_wgan = prev_models['count_model'], prev_models['rmtpp_mse'], prev_models['wgan']
 			models = prev_models
@@ -5460,7 +5623,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 			test_data = [test_data_in_bin, test_data_in_bin_feats,
 						 test_data_out_bin, test_end_hr_bins,
 						 test_data_in_time_end_bin,
-						 test_data_in_gaps_bin, test_data_in_feats_bin,
+						 test_data_in_gaps_bin, test_data_in_feats_bin, test_data_in_types,
 						 test_mean_bin, test_std_bin,
 						 test_gap_in_bin_norm_a, test_gap_in_bin_norm_d]
 			test_out_times_in_bin = np.array(test_out_times_in_bin)
@@ -6089,6 +6252,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 				(
 					_,
 					all_times_bin_pred_opt,
+					all_types_pred,
 					all_best_opt_nc_losses,
 					all_best_cont_nc_losses,
 					all_best_nc_count_losses,
@@ -6184,6 +6348,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 				(
 					_,
 					all_times_bin_pred_opt,
+					all_types_pred,
 					all_best_opt_nc_losses,
 					all_best_cont_nc_losses,
 					all_best_nc_count_losses,
@@ -6279,6 +6444,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 				(
 					_,
 					all_times_bin_pred_opt,
+					all_types_pred,
 					all_best_opt_nc_losses,
 					all_best_cont_nc_losses,
 					all_best_nc_count_losses,
@@ -6316,12 +6482,18 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					wass_dist_fh_pe,
 					all_times_true,
 					all_times_pred,
+					bleu_score_fh,
+					bleu_score_fh_pe,
+					all_types_true,
+					all_types_pred,
 				) = compute_full_model_acc(
 					args,
 					test_data,
 					None,
 					all_times_bin_pred_opt,
 					test_out_times_in_bin,
+					all_types_pred,
+					test_data_out_types,
 					dataset_name,
 					'rmtpp_mse_var_opt'
 				)
@@ -6335,6 +6507,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					count_mae_rh,
 					deep_mae_rh,
 					wass_dist_rh,
+					bleu_score_fh,
 					np.mean(all_best_opt_nc_losses),
 					np.mean(all_best_cont_nc_losses),
 					np.mean(all_best_nc_count_losses),
@@ -6346,6 +6519,8 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					),
 					all_times_true,
 					all_times_pred,
+					all_types_true,
+					all_types_pred,
 				)
 				write_pe_metrics_to_file(
 					os.path.join(
@@ -6355,6 +6530,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					count_mae_fh_pe,
 					deep_mae_fh_pe,
 					wass_dist_fh_pe,
+					bleu_score_fh_pe,
 				)
 				write_opt_losses_to_file(
 					os.path.join(
@@ -6373,7 +6549,9 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 
 			if 'rmtpp_nll_cont' in run_model_flags and run_model_flags['rmtpp_nll_cont']:
 				print("Prediction for run_rmtpp_count_cont_rmtpp model with rmtpp_nll")
-				all_bins_count_pred, all_times_bin_pred = run_rmtpp_count_cont_rmtpp(args, models, data, test_data, rmtpp_type='nll')
+				(
+					all_bins_count_pred, all_times_bin_pred, all_types_pred,
+				) = run_rmtpp_count_cont_rmtpp(args, models, data, test_data, rmtpp_type='nll')
 				(
 					deep_mae_rh,
 					count_mae_rh,
@@ -6441,7 +6619,9 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 
 			if 'rmtpp_mse_cont' in run_model_flags and run_model_flags['rmtpp_mse_cont']:
 				print("Prediction for run_rmtpp_count_cont_rmtpp model with rmtpp_mse")
-				all_bins_count_pred, all_times_bin_pred = run_rmtpp_count_cont_rmtpp(args, models, data, test_data, rmtpp_type='mse')
+				(
+					all_bins_count_pred, all_times_bin_pred, all_types_pred,
+				) = run_rmtpp_count_cont_rmtpp(args, models, data, test_data, rmtpp_type='mse')
 				(
 					deep_mae_rh,
 					count_mae_rh,
@@ -6509,7 +6689,9 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 
 			if 'rmtpp_mse_var_cont' in run_model_flags and run_model_flags['rmtpp_mse_var_cont']:
 				print("Prediction for run_rmtpp_count_cont_rmtpp model with rmtpp_mse_var")
-				all_bins_count_pred, all_times_bin_pred = run_rmtpp_count_cont_rmtpp(args, models, data, test_data, rmtpp_type='mse_var')
+				(
+					all_bins_count_pred, all_times_bin_pred, all_types_pred,
+				) = run_rmtpp_count_cont_rmtpp(args, models, data, test_data, rmtpp_type='mse_var')
 				(
 					deep_mae_rh,
 					count_mae_rh,
@@ -6535,12 +6717,18 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					wass_dist_fh_pe,
 					all_times_true,
 					all_times_pred,
+					bleu_score_fh,
+					bleu_score_fh_pe,
+					all_types_true,
+					all_types_pred,
 				) = compute_full_model_acc(
 					args,
 					test_data,
-					all_bins_count_pred,
+					None,
 					all_times_bin_pred,
 					test_out_times_in_bin,
+					all_types_pred,
+					test_data_out_types,
 					dataset_name,
 					'rmtpp_mse_var_cont'
 				)
@@ -6554,6 +6742,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					count_mae_rh,
 					deep_mae_rh,
 					wass_dist_rh,
+					bleu_score_fh,
 				)
 				write_arr_to_file(
 					os.path.join(
@@ -6562,6 +6751,8 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					),
 					all_times_true,
 					all_times_pred,
+					all_types_true,
+					all_types_pred,
 				)
 				write_pe_metrics_to_file(
 					os.path.join(
@@ -6571,6 +6762,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					count_mae_fh_pe,
 					deep_mae_fh_pe,
 					wass_dist_fh_pe,
+					bleu_score_fh_pe,
 				)
 				print("____________________________________________________________________")
 				print("")
@@ -6878,12 +7070,18 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					wass_dist_fh_pe,
 					all_times_true,
 					all_times_pred,
+					bleu_score_fh,
+					bleu_score_fh_pe,
+					all_types_true,
+					all_types_pred,
 				) = compute_full_model_acc(
 					args,
 					test_data,
-					all_bins_count_pred,
+					None,
 					all_times_bin_pred,
 					test_out_times_in_bin,
+					all_types_pred,
+					test_data_out_types,
 					dataset_name,
 					'count_only'
 				)
@@ -6897,6 +7095,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					count_mae_rh,
 					deep_mae_rh,
 					wass_dist_rh,
+					bleu_score_fh,
 				)
 				write_arr_to_file(
 					os.path.join(
@@ -6905,6 +7104,8 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					),
 					all_times_true,
 					all_times_pred,
+					all_types_true,
+					all_types_pred,
 				)
 				write_pe_metrics_to_file(
 					os.path.join(
@@ -6914,13 +7115,18 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					count_mae_fh_pe,
 					deep_mae_fh_pe,
 					wass_dist_fh_pe,
+					bleu_score_fh_pe,
 				)
 				print("____________________________________________________________________")
 				print("")
 
 			if 'rmtpp_nll_simu' in run_model_flags and run_model_flags['rmtpp_nll_simu']:
 				print("Prediction for plain_rmtpp_count model with rmtpp_nll")
-				result, all_times_bin_pred = run_rmtpp_for_count(args, models, data, test_data, rmtpp_type='nll')
+				(
+					result,
+					all_times_bin_pred,
+					all_types_pred
+				) = run_rmtpp_for_count(args, models, data, test_data, rmtpp_type='nll')
 				(
 					deep_mae_rh,
 					count_mae_rh,
@@ -6988,7 +7194,11 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 
 			if 'rmtpp_mse_simu' in run_model_flags and run_model_flags['rmtpp_mse_simu']:
 				print("Prediction for plain_rmtpp_count model with rmtpp_mse")
-				result, all_times_bin_pred = run_rmtpp_for_count(args, models, data, test_data, rmtpp_type='mse')
+				(
+					result,
+					all_times_bin_pred,
+					all_types_pred
+				) = run_rmtpp_for_count(args, models, data, test_data, rmtpp_type='mse')
 				(
 					deep_mae_rh,
 					count_mae_rh,
@@ -7056,7 +7266,11 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 
 			if 'rmtpp_mse_var_simu' in run_model_flags and run_model_flags['rmtpp_mse_var_simu']:
 				print("Prediction for plain_rmtpp_count model with rmtpp_mse_var")
-				result, all_times_bin_pred = run_rmtpp_for_count(args, models, data, test_data, rmtpp_type='mse_var')
+				(
+					result,
+					all_times_bin_pred,
+					all_types_pred
+				) = run_rmtpp_for_count(args, models, data, test_data, rmtpp_type='mse_var')
 				(
 					deep_mae_rh,
 					count_mae_rh,
@@ -7082,12 +7296,18 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					wass_dist_fh_pe,
 					all_times_true,
 					all_times_pred,
+					bleu_score_fh,
+					bleu_score_fh_pe,
+					all_types_true,
+					all_types_pred,
 				) = compute_full_model_acc(
 					args,
 					test_data,
 					None,
 					all_times_bin_pred,
 					test_out_times_in_bin,
+					all_types_pred,
+					test_data_out_types,
 					dataset_name,
 					'rmtpp_mse_var_simu'
 				)
@@ -7101,6 +7321,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					count_mae_rh,
 					deep_mae_rh,
 					wass_dist_rh,
+					bleu_score_fh,
 				)
 				write_arr_to_file(
 					os.path.join(
@@ -7109,6 +7330,8 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					),
 					all_times_true,
 					all_times_pred,
+					all_types_true,
+					all_types_pred,
 				)
 				write_pe_metrics_to_file(
 					os.path.join(
@@ -7118,6 +7341,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					count_mae_fh_pe,
 					deep_mae_fh_pe,
 					wass_dist_fh_pe,
+					bleu_score_fh_pe,
 				)
 				print("____________________________________________________________________")
 				print("")

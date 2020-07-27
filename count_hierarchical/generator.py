@@ -44,14 +44,29 @@ def create_sin_data():
 	points = 10000
 	num_marks = 7
 	x = np.linspace(0, points, 3*points)
-	y = 10*np.sin(omega*x)+11
+	y_ = 10*np.sin(omega*x)
+	y = y_ + 11
 	gaps=y
-	timestamp = np.cumsum(gaps)-1
+	timestamp = np.cumsum(gaps)
+	types = []
+	if y_[0]<y_[1]:
+		types.append(1)
+	for i in range(len(y_[1:])):
+		if y_[i]>=0. and y_[i]>y_[i-1]:
+			types.append(0)
+		if y_[i]>=0. and y_[i]<y_[i-1]:
+			types.append(1)
+		if y_[i]<0. and y_[i]<y_[i-1]:
+			types.append(2)
+		if y_[i]<0. and y_[i]>y_[i-1]:
+			types.append(3)
+
+	types = np.array(types)
 	
 	plt.plot(x[:25], y[:25], 'o', color='black');
 	plt.savefig('sin.png')
 	plt.close()
-	return gaps, timestamp
+	return gaps, timestamp, types
 
 def create_hawkes_data():
 	hawkes_demo()
@@ -151,8 +166,9 @@ def generate_dataset():
 	os.chdir('./data')
 	if not os.path.isfile("sin.txt"):
 		print('Generating sin data')
-		gaps, timestamps = create_sin_data()
+		gaps, timestamps, types = create_sin_data()
 		np.savetxt('sin.txt', timestamps)
+		np.savetxt('sin_types.txt', types)
 	if not os.path.isfile("hawkes.txt"):
 		print('Generating hawkes data')
 		gaps, timestamps = create_hawkes_data()

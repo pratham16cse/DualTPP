@@ -90,6 +90,7 @@ class RMTPP(tf.keras.Model):
     def __init__(self,
                  hidden_layer_size,
                  name='RMTPP',
+                 num_types=False,
                  use_intensity=True,
                  use_count_model=False,
                  use_var_model=False,
@@ -100,10 +101,17 @@ class RMTPP(tf.keras.Model):
         self.use_count_model = use_count_model
         self.use_var_model = use_var_model
         self.use_time_feats = use_time_feats
+        self.num_types = num_types
+        embed_size = hidden_layer_size # TODO: Use separate parameter for embed_size
         
         self.rnn_layer = layers.GRU(hidden_layer_size, return_sequences=True,
                                     return_state=True, stateful=False,
                                     name='GRU_Layer')
+
+        if self.num_types>1:
+            self.embedding_layer = layers.Embedding(num_types+1, embed_size,
+                                                    mask_zero=False,
+                                                    name='marks_embedding')
         if not self.use_intensity:
             self.D_layer = layers.Dense(1, activation=tf.nn.softplus, name='D_layer')
         else:
@@ -118,17 +126,26 @@ class RMTPP(tf.keras.Model):
         if self.use_intensity:
             self.WT_layer = layers.Dense(1, activation=tf.nn.softplus, name='WT_layer')
             self.gaps_output_layer = InverseTransformSampling()
+        if self.num_types>1:
+            self.marks_output_layer = layers.Dense(num_types,
+                                                   activation='softmax',
+                                                   name='marks_output_layer')
 
-    def call(self, gaps, feats, initial_state=None, next_state_sno=1):
+    def call(self, gaps, feats, types, initial_state=None, next_state_sno=1):
         ''' Forward pass of the RMTPP model'''
 
         self.gaps = gaps
+        self.types = types
         self.initial_state = initial_state
         
         # Gather input for the rnn
+        if self.num_types>1:
+            self.types_embd = self.embedding_layer(self.types)
         if self.use_time_feats:
             feats = feats/24.
             rnn_inputs = tf.concat([self.gaps, feats], axis=-1)
+        if self.num_types>1:
+            rnn_inputs = tf.concat([rnn_inputs, self.types_embd], axis=-1)
         else:
             rnn_inputs = self.gaps
 
@@ -162,10 +179,15 @@ class RMTPP(tf.keras.Model):
         else:
             self.gaps_pred = self.D
             self.WT = tf.zeros_like(self.D)
+
+        if self.num_types>1:
+            self.types_logits = self.marks_output_layer(self.hidden_states)
+        else:
+            self.types_logits = tf.ones_like(self.gaps_pred)
         
         next_initial_state = self.hidden_states[:,next_state_sno-1]
         final_state = self.hidden_states[:,-1]
-        return self.gaps_pred, self.D, self.WT, next_initial_state, final_state
+        return self.gaps_pred, self.types_logits, self.D, self.WT, next_initial_state, final_state
 
 def build_rmtpp_model(args, use_intensity, use_var_model=False):
     hidden_layer_size = args.hidden_layer_size
@@ -175,6 +197,7 @@ def build_rmtpp_model(args, use_intensity, use_var_model=False):
     model = RMTPP(
         hidden_layer_size,
         use_intensity=use_intensity,
+        num_types=args.num_types,
         use_var_model=use_var_model,
         use_time_feats=(not args.no_rmtpp_model_feats)
     )
