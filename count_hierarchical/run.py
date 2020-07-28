@@ -334,7 +334,7 @@ def run_rmtpp(args, model, optimizer, data, var_data, NLL_loss,
 			train_gap_metric_mse.reset_states()
 
 			# print(float(train_gap_mae), float(train_gap_mse))
-			print('Training loss (for one batch) at step %s: %s' %(sm_step, float(loss)))
+			print('Training loss (for one batch) at step %s: %s, %s, %s' %(sm_step, float(loss), float(gap_loss), float(type_loss)))
 			step_cnt += 1
 		et = time.time()
 		print(model_name, 'time_reqd:', et-st)

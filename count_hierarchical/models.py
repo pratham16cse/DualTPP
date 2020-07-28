@@ -89,6 +89,7 @@ class InverseTransformSampling(layers.Layer):
 class RMTPP(tf.keras.Model):
     def __init__(self,
                  hidden_layer_size,
+                 embed_size,
                  name='RMTPP',
                  num_types=False,
                  use_intensity=True,
@@ -102,7 +103,7 @@ class RMTPP(tf.keras.Model):
         self.use_var_model = use_var_model
         self.use_time_feats = use_time_feats
         self.num_types = num_types
-        embed_size = hidden_layer_size # TODO: Use separate parameter for embed_size
+        self.embed_size = embed_size
         
         self.rnn_layer = layers.GRU(hidden_layer_size, return_sequences=True,
                                     return_state=True, stateful=False,
@@ -196,6 +197,7 @@ def build_rmtpp_model(args, use_intensity, use_var_model=False):
     learning_rate = args.learning_rate
     model = RMTPP(
         hidden_layer_size,
+        args.embed_size,
         use_intensity=use_intensity,
         num_types=args.num_types,
         use_var_model=use_var_model,
