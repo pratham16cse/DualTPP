@@ -1074,7 +1074,7 @@ class Transformer(tf.keras.Model):
         # prediction of next event type
         self.type_predictor = Predictor(d_model, num_types)
 
-    def call(self, event_time, event_feats, event_type=None):
+    def call(self, event_time, event_feats, event_type):
         """
         Return the hidden representations and predictions.
         For a sequence (l_1, l_2, ..., l_N), we predict (l_2, ..., l_N, l_{N+1}).
@@ -1086,9 +1086,7 @@ class Transformer(tf.keras.Model):
         """
         event_feats = event_feats/24.
 
-        if event_type is None:
-            event_type = tf.squeeze(
-                tf.ones_like(event_time, dtype=tf.float32), axis=-1)
+        event_type = tf.cast(event_type, dtype=tf.float32)
 
         non_pad_mask = get_non_pad_mask(event_type)
 

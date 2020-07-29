@@ -1405,7 +1405,10 @@ def run_transformer(args, data, test_data):
 				# TODO: Make sure to pass correct next_stat
 				enc_out, (types_pred, gaps_pred) = model(
 					gaps_batch_in, 
-					feats_batch_in)
+					feats_batch_in,
+					types_batch_in)
+
+				print(tf.squeeze(gaps_pred, axis=-1))
 
 				# Compute the loss for this minibatch.
 				#TODO: type_loss_func not correctly mapped from torch to tf
@@ -1445,13 +1448,13 @@ def run_transformer(args, data, test_data):
 			train_gap_metric_mse.reset_states()
 
 			# print(float(train_gap_mae), float(train_gap_mse))
-			print('Training loss (for one batch) at step %s: %s, %s' %(sm_step, float(loss), float(type_loss)))
+			print('Training loss (for one batch) at step %s: %s, %s, %s' %(sm_step, float(loss), float(gap_loss), float(type_loss)))
 			step_cnt += 1
 		et = time.time()
 		print(model_name, 'time_reqd:', et-st)
 		
 		# Dev calculations
-		enc_out, (dev_gaps_pred, dev_types_pred) = model(dev_data_in_gaps, dev_data_in_feats)
+		enc_out, (dev_gaps_pred, dev_types_pred) = model(dev_data_in_gaps, dev_data_in_feats, dev_data_in_types)
 		dev_gaps_pred_unnorm = utils.denormalize_avg(dev_gaps_pred, 
 													 train_norm_a_gaps,
 													 train_norm_d_gaps)
@@ -1481,7 +1484,7 @@ def run_transformer(args, data, test_data):
 
 	print("Loading best model from epoch", best_dev_epoch)
 	model.load_weights(checkpoint_path)
-	_, (dev_logits_pred, dev_gaps_pred) = model(dev_data_in_gaps, dev_data_in_feats)
+	_, (dev_logits_pred, dev_gaps_pred) = model(dev_data_in_gaps, dev_data_in_feats, dev_data_in_types)
 	dev_gaps_pred_unnorm = utils.denormalize_avg(dev_gaps_pred, 
 												 train_norm_a_gaps,
 												 train_norm_d_gaps)
@@ -1658,7 +1661,7 @@ def simulate(model, times_in, gaps_in, feats_in, types_in,
 	step_gaps_pred, step_types_logits, _, _, prev_hidden_state, _ \
 			= model(gaps_in, feats_in, types_in, initial_state=prev_hidden_state)
 
-	step_types_pred = tf.argmax(step_types_logits, axis=-1)
+	step_types_pred = tf.argmax(step_types_logits, axis=-1) + 1
 
 	step_gaps_pred = step_gaps_pred[:,-1:]
 	step_types_pred = step_types_pred[:,-1:]
@@ -1679,7 +1682,7 @@ def simulate(model, times_in, gaps_in, feats_in, types_in,
 		step_gaps_pred, step_types_logits, _, _, prev_hidden_state, _ \
 				= model(gaps_in, feats_in, types_in, initial_state=prev_hidden_state)
 
-		step_types_pred = tf.argmax(step_types_logits, axis=-1)
+		step_types_pred = tf.argmax(step_types_logits, axis=-1) + 1
 
 		step_gaps_pred = step_gaps_pred[:,-1:]
 		step_types_pred = step_types_pred[:,-1:]
@@ -1936,7 +1939,7 @@ def simulate_with_counter(model, times_in, gaps_in, feats_in, types_in,
 	step_gaps_pred, step_types_logits, D, WT, prev_hidden_state, _ \
 			= model(gaps_in, feats_in, types_in, initial_state=prev_hidden_state)
 
-	step_types_pred = tf.argmax(step_types_logits, axis=-1)
+	step_types_pred = tf.argmax(step_types_logits, axis=-1) + 1
 
 	step_gaps_pred = step_gaps_pred[:,-1:]
 	step_types_pred = step_types_pred[:,-1:]
@@ -1960,7 +1963,7 @@ def simulate_with_counter(model, times_in, gaps_in, feats_in, types_in,
 		step_gaps_pred, step_types_logits, D, WT, prev_hidden_state, _ \
 				= model(gaps_in, feats_in, types_in, initial_state=prev_hidden_state)
 
-		step_types_pred = tf.argmax(step_types_logits, axis=-1)
+		step_types_pred = tf.argmax(step_types_logits, axis=-1) + 1
 		
 		if old_hidden_state is not None:
 			prev_hidden_state = (simul_step < out_gaps_count) * prev_hidden_state + \
@@ -2142,9 +2145,9 @@ def simulate_transformer(model, times_in, gaps_in, feats_in, types_in,
 	data_norm_a, data_norm_d = normalizers
 	
 	# step_gaps_pred = gaps_in[:, -1]
-	enc_out, (step_types_logits, step_gaps_pred) = model(gaps_in, feats_in)
+	enc_out, (step_types_logits, step_gaps_pred) = model(gaps_in, feats_in, types_in)
 
-	step_types_pred = tf.argmax(step_types_logits, axis=-1)
+	step_types_pred = tf.argmax(step_types_logits, axis=-1) + 1
 
 	step_gaps_pred = step_gaps_pred[:,-1:]
 	step_types_pred = step_types_pred[:,-1:]
@@ -2162,10 +2165,9 @@ def simulate_transformer(model, times_in, gaps_in, feats_in, types_in,
 	simul_step = 0
 
 	while any(times_pred[-1]<t_b_plus):
-		print(simul_step)
-		enc_out, (step_types_logits, step_gaps_pred) = model(gaps_in, feats_in)
+		enc_out, (step_types_logits, step_gaps_pred) = model(gaps_in, feats_in, types_in)
 
-		step_types_pred = tf.argmax(step_types_logits, axis=-1)
+		step_types_pred = tf.argmax(step_types_logits, axis=-1) + 1
 
 		step_gaps_pred = step_gaps_pred[:,-1:]
 		step_types_pred = step_types_pred[:,-1:]
