@@ -73,7 +73,7 @@ def log_likelihood(model, data, time, types):
     #for i in range(model.num_types):
     #    #type_mask[:, :, i] = (types == i + 1).bool().to(data.device)
     #    type_mask[:, :, i] = tf.cast((types == i + 1), tf.bool)
-    type_ids = tf.expand_dims(tf.expand_dims(tf.range(1, model.num_types+1, dtype=tf.float32), axis=0), axis=-1)
+    type_ids = tf.expand_dims(tf.expand_dims(tf.range(1, model.num_types+1, dtype=tf.float32), axis=0), axis=1)
     type_mask = tf.cast((tf.expand_dims(types, axis=-1) == type_ids), tf.float32)
 
     all_hid = model.linear(data)
@@ -113,7 +113,7 @@ def type_loss(prediction, types, loss_func):
         loss = loss_func(prediction, truth)
     else:
         #loss = loss_func(prediction.transpose(1, 2), truth)
-        loss = loss_func(tf.transpose(prediction, perm=[0, 1, 2]), truth)
+        loss = loss_func(truth, prediction)
 
     #loss = torch.sum(loss)
     loss = tf.reduce_sum(loss)

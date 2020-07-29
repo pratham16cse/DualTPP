@@ -50,20 +50,20 @@ def create_sin_data():
 	timestamp = np.cumsum(gaps)
 	types = []
 	if y_[0]<y_[1]:
-		types.append(0)
+		types.append(1)
 	for i in range(len(y_[1:])):
 		#if y_[i]>=0.:
 		#	types.append(0)
 		#else:
 		#	types.append(1)
 		if y_[i]>=0. and y_[i]>y_[i-1]:
-			types.append(0)
-		if y_[i]>=0. and y_[i]<y_[i-1]:
 			types.append(1)
-		if y_[i]<0. and y_[i]<y_[i-1]:
+		if y_[i]>=0. and y_[i]<y_[i-1]:
 			types.append(2)
-		if y_[i]<0. and y_[i]>y_[i-1]:
+		if y_[i]<0. and y_[i]<y_[i-1]:
 			types.append(3)
+		if y_[i]<0. and y_[i]>y_[i-1]:
+			types.append(4)
 
 	types = np.array(types)
 	

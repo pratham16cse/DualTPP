@@ -35,6 +35,8 @@ parser.add_argument('--learning_rate', type=float, default=1e-3, nargs='+',
                    help='Learning rate for the training algorithm')
 parser.add_argument('-hls', '--hidden_layer_size', type=int, default=32, nargs='+',
                    help='Number of units in RNN')
+parser.add_argument('-embds', '--embed_size', type=int, default=8, nargs='+',
+                   help='Embedding dimension of marks/types')
 
 parser.add_argument('--output_dir', type=str,
                     help='Path to store all raw outputs, checkpoints, \

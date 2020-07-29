@@ -111,7 +111,7 @@ class RMTPP(tf.keras.Model):
 
         if self.num_types>1:
             self.embedding_layer = layers.Embedding(num_types+1, embed_size,
-                                                    mask_zero=False,
+                                                    mask_zero=True,
                                                     name='marks_embedding')
         if not self.use_intensity:
             self.D_layer = layers.Dense(1, activation=tf.nn.softplus, name='D_layer')

@@ -319,7 +319,7 @@ def run_rmtpp(args, model, optimizer, data, var_data, NLL_loss,
 				type_loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
 				
 				gap_loss = gap_loss_fn(gaps_batch_out, gaps_pred)
-				type_loss = type_loss_fn(types_batch_out, types_logits_pred)
+				type_loss = type_loss_fn(types_batch_out-1, types_logits_pred)
 				loss = gap_loss + type_loss
 				step_train_loss+=loss.numpy()
 
@@ -352,7 +352,7 @@ def run_rmtpp(args, model, optimizer, data, var_data, NLL_loss,
 		dev_gap_metric_mae.reset_states()
 		dev_gap_metric_mse.reset_states()
 
-		dev_types_acc = types_metric(dev_data_out_types, dev_logits_pred)
+		dev_types_acc = types_metric(dev_data_out_types-1, dev_logits_pred)
 		types_metric.reset_states()
 
 		if best_dev_gap_mse > dev_gap_mse:
@@ -432,7 +432,7 @@ def run_rmtpp(args, model, optimizer, data, var_data, NLL_loss,
 	dev_gap_mse = dev_gap_metric_mse.result()
 	dev_gap_metric_mae.reset_states()
 	dev_gap_metric_mse.reset_states()
-	dev_types_acc = types_metric(dev_data_out_types, dev_logits_pred)
+	dev_types_acc = types_metric(dev_data_out_types-1, dev_logits_pred)
 	types_metric.reset_states()
 	print('Best MAE, MSE, type_acc of Dev data: %s, %s, %s' \
 		%(float(dev_gap_mae), float(dev_gap_mse), float(dev_types_acc)))
@@ -1349,10 +1349,8 @@ def run_seq2seq(args, data, test_data):
 # Transformer Model
 def run_transformer(args, data, test_data):
 
-	num_types = 1 # TODO: Remove this hard-code
-
 	model = models.Transformer(
-		num_types=num_types,
+		num_types=args.num_types,
 		d_model=args.d_model,
 		d_rnn=args.d_rnn,
 		d_inner=args.d_inner_hid,
@@ -1401,20 +1399,26 @@ def run_transformer(args, data, test_data):
 		for sm_step, (gaps_batch_in, feats_batch_in, types_batch_in,
 					  gaps_batch_out, feats_batch_out, types_batch_out) \
 						in enumerate(train_dataset_gaps):
+			#if sm_step>50:
+			#	break
 			with tf.GradientTape() as tape:
 				# TODO: Make sure to pass correct next_stat
-				enc_out, (gaps_pred, types_pred) = model(
+				enc_out, (types_pred, gaps_pred) = model(
 					gaps_batch_in, 
 					feats_batch_in)
 
 				# Compute the loss for this minibatch.
 				#TODO: type_loss_func not correctly mapped from torch to tf
 				if args.smooth > 0:
-					type_loss_func = transformer_utils.LabelSmoothingLoss(args.smooth, num_types, ignore_index=-1)
+					type_loss_func = transformer_utils.LabelSmoothingLoss(args.smooth, args.num_types, ignore_index=-1)
 				else:
-					type_loss_func = tf.keras.losses.CategoricalCrossentropy(reduction=None)
+					type_loss_func = tf.keras.losses.CategoricalCrossentropy(reduction=tf.keras.losses.Reduction.NONE)
+					type_loss_func = tf.keras.losses.SparseCategoricalCrossentropy(
+						from_logits=True,
+						reduction=tf.keras.losses.Reduction.NONE
+					)
 
-				types_batch_out = tf.squeeze(tf.ones_like(gaps_batch_out), axis=-1)
+				types_batch_out = tf.cast(types_batch_out, tf.float32)
 				event_ll, non_event_ll = transformer_utils.log_likelihood(
 					model, enc_out,
 					tf.squeeze(gaps_batch_out, axis=-1),
@@ -1424,6 +1428,8 @@ def run_transformer(args, data, test_data):
 				scale_se_loss = 100 # SE is usually large, scale it to stabilize training
 				gap_loss = -tf.reduce_sum(event_ll - non_event_ll) + se / scale_se_loss
 				type_loss, _ = transformer_utils.type_loss(types_pred, types_batch_out, type_loss_func)
+				#import ipdb
+				#ipdb.set_trace()
 
 				loss = gap_loss + type_loss
 				step_train_loss+=loss.numpy()
@@ -1439,7 +1445,7 @@ def run_transformer(args, data, test_data):
 			train_gap_metric_mse.reset_states()
 
 			# print(float(train_gap_mae), float(train_gap_mse))
-			print('Training loss (for one batch) at step %s: %s' %(sm_step, float(loss)))
+			print('Training loss (for one batch) at step %s: %s, %s' %(sm_step, float(loss), float(type_loss)))
 			step_cnt += 1
 		et = time.time()
 		print(model_name, 'time_reqd:', et-st)
@@ -1475,19 +1481,21 @@ def run_transformer(args, data, test_data):
 
 	print("Loading best model from epoch", best_dev_epoch)
 	model.load_weights(checkpoint_path)
-	_, (dev_gaps_pred, dev_types_pred) = model(dev_data_in_gaps, dev_data_in_feats)
+	_, (dev_logits_pred, dev_gaps_pred) = model(dev_data_in_gaps, dev_data_in_feats)
 	dev_gaps_pred_unnorm = utils.denormalize_avg(dev_gaps_pred, 
 												 train_norm_a_gaps,
 												 train_norm_d_gaps)
-	
+
 	dev_gap_metric_mae(dev_data_out_gaps, dev_gaps_pred_unnorm)
 	dev_gap_metric_mse(dev_data_out_gaps, dev_gaps_pred_unnorm)
 	dev_gap_mae = dev_gap_metric_mae.result()
 	dev_gap_mse = dev_gap_metric_mse.result()
 	dev_gap_metric_mae.reset_states()
 	dev_gap_metric_mse.reset_states()
-	print('Best MAE and MSE of Dev data %s: %s' \
-		%(float(dev_gap_mae), float(dev_gap_mse)))
+	dev_types_acc = types_metric(dev_data_out_types-1, dev_logits_pred)
+	types_metric.reset_states()
+	print('Best MAE, MSE, type_acc of Dev data: %s, %s, %s' \
+		%(float(dev_gap_mae), float(dev_gap_mse), float(dev_types_acc)))
 
 	# Test Data results
 	event_count_preds = None
@@ -1500,11 +1508,12 @@ def run_transformer(args, data, test_data):
 	all_times_pred_from_beg = None
 	for dec_idx in range(dec_len):
 		print('Simulating dec_idx', dec_idx)
-		all_gaps_pred, all_times_pred, next_hidden_state = simulate_transformer(
+		all_gaps_pred, all_times_pred, all_types_pred, next_hidden_state = simulate_transformer(
 			model, 
 			test_data_init_time, 
 			test_data_input_gaps_bin,
 			test_data_in_feats_bin,
+			test_data_in_types,
 			test_end_hr_bins[:,dec_idx], 
 			(test_gap_in_bin_norm_a, 
 			test_gap_in_bin_norm_d),
@@ -1526,10 +1535,11 @@ def run_transformer(args, data, test_data):
 												test_gap_in_bin_norm_a,
 												test_gap_in_bin_norm_d)
 		all_prev_gaps_pred = tf.concat([test_data_input_gaps_bin, all_gaps_pred_norm], axis=1)
+		all_prev_types_pred = tf.concat([test_data_in_types, all_types_pred], axis=1)
 		test_data_input_gaps_bin = all_prev_gaps_pred[:, -enc_len:].numpy()
+		test_data_in_types = all_prev_types_pred[:,-enc_len:].numpy()
 
 	event_count_preds = np.array(all_event_count_preds).T
-
 	return model, event_count_preds
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#:
 
@@ -2123,51 +2133,63 @@ def simulate_seq2seq(model, times_in, gaps_in, feats_in,
 
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 # Simulate model until t_b_plus
-def simulate_transformer(model, times_in, gaps_in, feats_in,
+def simulate_transformer(model, times_in, gaps_in, feats_in, types_in,
 			 			 t_b_plus, normalizers, prev_hidden_state=None):
 	#TODO: Check for this modification in functions which calls this def
 	gaps_pred = list()
+	types_pred = list()
 	times_pred = list()
 	data_norm_a, data_norm_d = normalizers
 	
 	# step_gaps_pred = gaps_in[:, -1]
-	enc_out, (step_gaps_pred, step_types_pred) = model(gaps_in, feats_in)
+	enc_out, (step_types_logits, step_gaps_pred) = model(gaps_in, feats_in)
+
+	step_types_pred = tf.argmax(step_types_logits, axis=-1)
 
 	step_gaps_pred = step_gaps_pred[:,-1:]
+	step_types_pred = step_types_pred[:,-1:]
 	gaps_in = tf.concat([gaps_in[:,1:], step_gaps_pred], axis=1)
+	types_in = tf.concat([types_in[:,1:], step_types_pred], axis=1)
 	step_gaps_pred = tf.squeeze(step_gaps_pred, axis=-1)
 	last_gaps_pred_unnorm = utils.denormalize_avg(step_gaps_pred, data_norm_a, data_norm_d)
 	last_times_pred = times_in + last_gaps_pred_unnorm
 	step_feats_pred = get_time_features(tf.expand_dims(last_times_pred, axis=-1))
 	feats_in = tf.concat([feats_in[:, 1:], step_feats_pred], axis=1)
 	gaps_pred.append(last_gaps_pred_unnorm)
+	types_pred.append(step_types_pred)
 	times_pred.append(last_times_pred)
 
 	simul_step = 0
 
 	while any(times_pred[-1]<t_b_plus):
 		print(simul_step)
-		enc_out, (step_gaps_pred, step_types_pred) = model(gaps_in, feats_in)
+		enc_out, (step_types_logits, step_gaps_pred) = model(gaps_in, feats_in)
+
+		step_types_pred = tf.argmax(step_types_logits, axis=-1)
 
 		step_gaps_pred = step_gaps_pred[:,-1:]
+		step_types_pred = step_types_pred[:,-1:]
 		gaps_in = tf.concat([gaps_in[:,1:], step_gaps_pred], axis=1)
+		types_in = tf.concat([types_in[:,1:], step_types_pred], axis=1)
 		step_gaps_pred = tf.squeeze(step_gaps_pred, axis=-1)
 		last_gaps_pred_unnorm = utils.denormalize_avg(step_gaps_pred, data_norm_a, data_norm_d)
 		last_times_pred = times_pred[-1] + last_gaps_pred_unnorm
 		step_feats_pred = get_time_features(tf.expand_dims(last_times_pred, axis=-1))
 		feats_in = tf.concat([feats_in[:, 1:], step_feats_pred], axis=1)
 		gaps_pred.append(last_gaps_pred_unnorm)
+		types_pred.append(step_types_pred)
 		times_pred.append(last_times_pred)
 		
 		simul_step += 1
 
 	gaps_pred = tf.stack(gaps_pred, axis=1)
+	types_pred = tf.squeeze(tf.stack(types_pred, axis=1), axis=2)
 	all_gaps_pred = gaps_pred
 
 	times_pred = tf.squeeze(tf.stack(times_pred, axis=1), axis=2)
 	all_times_pred = times_pred
 
-	return all_gaps_pred, all_times_pred, prev_hidden_state
+	return all_gaps_pred, all_times_pred, types_pred, prev_hidden_state
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
@@ -4701,11 +4723,12 @@ def run_transformer_for_count(args, models, data, test_data, query_data=None, si
 	else:
 		t_e_plus = np.expand_dims(simul_end_time, axis=-1)
 
-	_, all_times_pred, _ = simulate_transformer(
+	_, all_times_pred, all_types_pred, _ = simulate_transformer(
 		model_transformer,
 		test_data_init_time,
 		test_data_input_gaps_bin,
 		test_data_in_feats_bin,
+		test_data_in_types,
 		t_e_plus,
 		(test_gap_in_bin_norm_a,
 		test_gap_in_bin_norm_d),
@@ -4725,9 +4748,8 @@ def run_transformer_for_count(args, models, data, test_data, query_data=None, si
 		#print("MAE of event count in range:", event_count_mae)
 
 	all_times_pred = np.expand_dims(all_times_pred.numpy(), axis=-1)
-	return test_event_count_pred, all_times_pred
-
-	return test_event_count_pred, all_times_pred
+	all_types_pred = all_types_pred.numpy()
+	return test_event_count_pred, all_times_pred, all_types_pred
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#:
 
 
@@ -4907,12 +4929,12 @@ def compute_full_model_acc(
 
 	true_types = test_data_out_types
 	pred_types = [[seq] for seq in all_types_pred]
-	bleu_score_fh = corpus_bleu(pred_types, true_types)
+	bleu_score_fh = corpus_bleu(pred_types, true_types-1)
 	bleu_score_fh_pe = []
 	for true_seqs, pred_seqs in zip(test_data_out_types, all_types_pred):
 		pred_seqs_ = [pred_seqs]
 		true_seqs_ = true_seqs
-		bleu_pe = sentence_bleu(pred_seqs_, true_seqs_)
+		bleu_pe = sentence_bleu(pred_seqs_, true_seqs_-1)
 		bleu_score_fh_pe.append(bleu_pe)
 
 	return (
@@ -7546,7 +7568,11 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 
 			if 'transformer_simu' in run_model_flags and run_model_flags['transformer_simu']:
 				print("Prediction for transformer_simu model")
-				result, all_times_bin_pred = run_transformer_for_count(args, models, data, test_data)
+				(
+					result,
+					all_times_bin_pred,
+					all_types_pred
+				) = run_transformer_for_count(args, models, data, test_data)
 				(
 					deep_mae_rh,
 					count_mae_rh,
@@ -7572,12 +7598,18 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					wass_dist_fh_pe,
 					all_times_true,
 					all_times_pred,
+					bleu_score_fh,
+					bleu_score_fh_pe,
+					all_types_true,
+					all_types_pred,
 				) = compute_full_model_acc(
 					args,
 					test_data,
 					None,
 					all_times_bin_pred,
 					test_out_times_in_bin,
+					all_types_pred,
+					test_data_out_types,
 					dataset_name,
 					'transformer_simu'
 				)
@@ -7591,6 +7623,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					count_mae_rh,
 					deep_mae_rh,
 					wass_dist_rh,
+					bleu_score_fh,
 				)
 				write_arr_to_file(
 					os.path.join(
@@ -7599,6 +7632,8 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					),
 					all_times_true,
 					all_times_pred,
+					all_types_true,
+					all_types_pred,
 				)
 				write_pe_metrics_to_file(
 					os.path.join(
@@ -7608,6 +7643,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					count_mae_fh_pe,
 					deep_mae_fh_pe,
 					wass_dist_fh_pe,
+					bleu_score_fh_pe,
 				)
 				print("____________________________________________________________________")
 				print("")
