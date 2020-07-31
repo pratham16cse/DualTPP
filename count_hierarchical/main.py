@@ -191,45 +191,49 @@ else:
     model_names.append(args.model_name)
 args.model_name = model_names
 
-run_model_flags = {
-    'compute_time_range_pdf': False,
+#run_model_flags = {
+#    #'compute_time_range_pdf': False,
+#
+#    #'run_rmtpp_count_with_optimization': False,
+#    #'run_rmtpp_with_optimization_fixed_cnt': False,
+#
+#    'count_only': True,
+#}
 
-    'run_rmtpp_count_with_optimization': False,
-    'run_rmtpp_with_optimization_fixed_cnt': False,
-
-    'count_only': True,
-}
+run_model_flags = OrderedDict()
 if 'rmtpp_nll' in model_names:
-    run_model_flags['rmtpp_nll_opt'] = True
-    run_model_flags['rmtpp_nll_cont'] = True
+    run_model_flags['rmtpp_nll_opt'] = {'rmtpp_type':'nll'}
+    run_model_flags['rmtpp_nll_cont'] = {'rmtpp_type':'nll'}
     #run_model_flags['rmtpp_nll_reinit'] = True
-    run_model_flags['rmtpp_nll_simu'] = True
+    run_model_flags['rmtpp_nll_simu'] = {'rmtpp_type':'nll'}
 if 'rmtpp_mse' in model_names:
-    run_model_flags['rmtpp_mse_opt'] = True
-    run_model_flags['rmtpp_mse_cont'] = True
+    run_model_flags['rmtpp_mse_opt'] = {'rmtpp_type':'mse'}
+    run_model_flags['rmtpp_mse_cont'] = {'rmtpp_type':'mse'}
     #run_model_flags['rmtpp_mse_reinit'] = True
-    run_model_flags['rmtpp_mse_simu'] = True
+    run_model_flags['rmtpp_mse_simu'] = {'rmtpp_type':'mse'}
 if 'rmtpp_mse_var' in model_names:
-    run_model_flags['rmtpp_mse_var_opt'] = True
-    run_model_flags['rmtpp_mse_var_cont'] = True
+    run_model_flags['rmtpp_mse_var_opt'] = {'rmtpp_type':'mse_var'}
+    run_model_flags['rmtpp_mse_var_cont'] = {'rmtpp_type':'mse_var'}
     #run_model_flags['rmtpp_mse_var_reinit'] = True
-    run_model_flags['rmtpp_mse_var_simu'] = True
+    run_model_flags['rmtpp_mse_var_simu'] = {'rmtpp_type':'mse_var'}
 if 'rmtpp_nll_comp' in model_names:
     #run_model_flags['run_rmtpp_with_joint_optimization_fixed_cnt_solver_nll_comp'] = True
-    run_model_flags['rmtpp_nll_opt_comp'] = True
-    #run_model_flags['rmtpp_nll_cont_comp'] = True
+    run_model_flags['rmtpp_nll_opt_comp'] = {'rmtpp_type':'nll', 'rmtpp_type_comp':'nll'}
+    #run_model_flags['rmtpp_nll_cont_comp'] = {'rmtpp_type':'nll', 'rmtpp_type_comp':'nll'}
 if 'rmtpp_mse_comp' in model_names:
     #run_model_flags['run_rmtpp_with_joint_optimization_fixed_cnt_solver_mse_comp'] = True
-    run_model_flags['rmtpp_mse_opt_comp'] = True
-    #run_model_flags['rmtpp_mse_cont_comp'] = True
+    run_model_flags['rmtpp_mse_opt_comp'] = {'rmtpp_type':'mse', 'rmtpp_type_comp':'mse'}
+    #run_model_flags['rmtpp_mse_cont_comp'] = {'rmtpp_type':'mse', 'rmtpp_type_comp':'mse'}
 if 'rmtpp_mse_var_comp' in model_names:
     #run_model_flags['run_rmtpp_with_joint_optimization_fixed_cnt_solver_mse_var_comp'] = True
-    run_model_flags['rmtpp_mse_var_opt_comp'] = True
-    #run_model_flags['rmtpp_mse_var_cont_comp'] = True
+    run_model_flags['rmtpp_mse_var_opt_comp'] = {'rmtpp_type':'mse_var', 'rmtpp_type_comp':'mse_var'}
+    #run_model_flags['rmtpp_mse_var_cont_comp'] = {'rmtpp_type':'mse_var', 'rmtpp_type_comp':'mse_var'}
 if 'pure_hierarchical_nll' in model_names:
     run_model_flags['run_pure_hierarchical_infer_nll'] = True
 if 'pure_hierarchical_mse' in model_names:
     run_model_flags['run_pure_hierarchical_infer_mse'] = True
+if 'count_model' in model_names:
+    run_model_flags['count_only'] = True
 if 'wgan' in model_names:
     run_model_flags['wgan_simu'] = True
 if 'seq2seq' in model_names:
@@ -345,14 +349,14 @@ for dataset_name in dataset_names:
 with open('Outputs/results_'+dataset_name+'.txt', 'w') as fp:
 
     fp.write('\n\nResults in random interval:')
-    fp.write('\nModel Name & Count MAE & Deep MAE & Wass dist & opt_loss & cont_loss & count_loss')
+    fp.write('\nModel Name & Count MAE & Wass dist & opt_loss & cont_loss & count_loss')
     for model_name, metrics_dict in results.items():
         fp.write(
-            '\n & {} & {:.3f} & {:.3f} \\\\'.format(
+            '\n & {} & {:.3f} & {:.3f} & {:.3f} \\\\'.format(
                 model_name,
                 metrics_dict['count_mae_rh'],
-                #metrics_dict['deep_mae_rh'],
                 metrics_dict['wass_dist_rh'],
+                metrics_dict['bleu_score_rh'],
                 #metrics_dict['bleu_score_rh'],
                 #metrics_dict['opt_loss'],
                 #metrics_dict['cont_loss'],
@@ -367,7 +371,6 @@ with open('Outputs/results_'+dataset_name+'.txt', 'w') as fp:
             '\n & {} & {:.3f} & {:.3f} & {:.3f} \\\\'.format(
                 model_name,
                 metrics_dict['count_mae_fh'],
-                #metrics_dict['deep_mae_fh'],
                 metrics_dict['wass_dist_fh'],
                 metrics_dict['bleu_score_fh'],
             )
@@ -375,14 +378,14 @@ with open('Outputs/results_'+dataset_name+'.txt', 'w') as fp:
 
 
     fp.write('\n\nAll metrics in random interval:')
-    fp.write('\nModel Name & Count MAE & Deep MAE & Wass dist & opt_loss & cont_loss & count_loss')
+    fp.write('\nModel Name & Count MAE & Wass dist & opt_loss & cont_loss & count_loss')
     for model_name, metrics_dict in results.items():
         fp.write(
             '\n & {} & {:.3f} & {:.3f} & {:.3f} & {:.3f} & {:.3f} & {:.3f} \\\\'.format(
                 model_name,
                 metrics_dict['count_mae_rh'],
-                metrics_dict['deep_mae_rh'],
                 metrics_dict['wass_dist_rh'],
+                metrics_dict['bleu_score_rh'],
                 metrics_dict['opt_loss'],
                 metrics_dict['cont_loss'],
                 metrics_dict['count_loss'],
@@ -390,13 +393,12 @@ with open('Outputs/results_'+dataset_name+'.txt', 'w') as fp:
         )
 
     fp.write('\n\nAll metrics in Forecast Horizon:')
-    fp.write('\nModel Name & Count MAE & Deep MAE & Wass Dist & bleu score')
+    fp.write('\nModel Name & Count MAE & Wass Dist & bleu score')
     for model_name, metrics_dict in results.items():
         fp.write(
-            '\n & {} & {:.3f} & {:.3f} & {:.3f} & {:.3f} \\\\'.format(
+            '\n & {} & {:.3f} & {:.3f} & {:.3f} \\\\'.format(
                 model_name,
                 metrics_dict['count_mae_fh'],
-                metrics_dict['deep_mae_fh'],
                 metrics_dict['wass_dist_fh'],
                 metrics_dict['bleu_score_fh'],
             )

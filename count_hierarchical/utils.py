@@ -56,13 +56,12 @@ def add_metrics_to_dict(
 	metrics_dict,
 	model_name,
 	count_mae_fh,
-	count_mae_fh_per_bin,
-	deep_mae_fh,
 	wass_dist_fh,
-	count_mae_rh,
-	deep_mae_rh,
-	wass_dist_rh,
 	bleu_score_fh,
+	count_mae_rh,
+	wass_dist_rh,
+	bleu_score_rh,
+	count_mae_fh_per_bin,
 	opt_loss=0.,
 	cont_loss=0.,
 	count_loss=0.,
@@ -70,15 +69,15 @@ def add_metrics_to_dict(
 	if model_name not in metrics_dict:
 		metrics_dict[model_name] = dict()
 	metrics_dict[model_name]['count_mae_fh'] = count_mae_fh
-	metrics_dict[model_name]['deep_mae_fh'] = deep_mae_fh
 	metrics_dict[model_name]['wass_dist_fh'] = wass_dist_fh
+	metrics_dict[model_name]['bleu_score_fh'] = bleu_score_fh
+
 	metrics_dict[model_name]['count_mae_rh'] = count_mae_rh
-	metrics_dict[model_name]['deep_mae_rh'] = deep_mae_rh
 	metrics_dict[model_name]['wass_dist_rh'] = wass_dist_rh
+	metrics_dict[model_name]['bleu_score_rh'] = bleu_score_rh
+
 	for i in range(len(count_mae_fh_per_bin)):
 		metrics_dict[model_name]['count_mae_fh_bin_'+str(i)] = count_mae_fh_per_bin[i]
-
-	metrics_dict[model_name]['bleu_score_fh'] = bleu_score_fh
 
 	metrics_dict[model_name]['opt_loss'] = opt_loss
 	metrics_dict[model_name]['cont_loss'] = cont_loss
@@ -108,17 +107,12 @@ def write_arr_to_file(output_path, arr_true, arr_pred, types_true, types_pred):
 def write_pe_metrics_to_file(
 	output_path,
 	count_mae_fh_pe,
-	deep_mae_fh_pe,
 	wass_dist_fh_pe,
 	bleu_score_fh_pe,
 ):
 	np.save(
 		output_path + '__' + 'count_mae_fh_pe',
 		count_mae_fh_pe,
-	)
-	np.save(
-		output_path + '__' + 'deep_mae_fh_pe',
-		deep_mae_fh_pe,
 	)
 	np.save(
 		output_path + '__' + 'wass_dist_fh_pe',
@@ -284,7 +278,7 @@ def generate_plots(args, dataset_name, dataset, per_model_count, test_sample_idx
 	plt.savefig('Outputs/'+dataset_name+'_'+str(test_sample_idx)+'.svg', format='svg', dpi=1200)
 	plt.close()
 
-def create_bin(times, bin_size):
+def create_bin(times, types, bin_size):
 	"""
 
 	Args:
@@ -300,27 +294,32 @@ def create_bin(times, bin_size):
 	cnt_bin = []
 	end_hr_bin = []
 	times_in_bin = []
+	types_in_bin = []
 	last_ind= [0]
 	ind=0
 	while ind<len(times):
 		end_hr = end_hr + bin_size
-		times_saver = []
+		times_saver, types_saver = [], []
 		while ind<len(times) and times[ind]<=end_hr:
 			times_saver.append(times[ind])
+			types_saver.append(types[ind])
 			ind+=1
 		if ind<len(times):
 			cnt_bin.append(ind-last_ind[-1])
 			last_ind.append(ind)
 			end_hr_bin.append(end_hr)
 			times_in_bin.append(times_saver)
+			types_in_bin.append(types_saver)
+
 
 	print('Total bins generated', len(cnt_bin))
 	print('Each bin has Average', int(round(np.mean(cnt_bin))), 'timestamps')
-	return cnt_bin, end_hr_bin, times_in_bin
+	return cnt_bin, end_hr_bin, times_in_bin, types_in_bin
 
-def generate_train_test_data(timestamps, gaps, data_bins, end_hr_bins, times_in_bin, types=None):
+def generate_train_test_data(timestamps, gaps, data_bins, end_hr_bins, times_in_bin, types=None, types_in_bin=None):
 	train_per = 0.8
 	data_sz = len(data_bins)
+
 	train_times_bin = data_bins[:int(train_per*data_sz)]
 	test_times_bin = data_bins[int(train_per*data_sz):]
 	train_times_bin_end = end_hr_bins[:int(train_per*data_sz)]
@@ -328,17 +327,22 @@ def generate_train_test_data(timestamps, gaps, data_bins, end_hr_bins, times_in_
 	train_seq_times_in_bin = times_in_bin[:int(train_per*data_sz)]
 	test_seq_times_in_bin = times_in_bin[int(train_per*data_sz):]
 
+	if types is not None:
+		train_types = types[1:int(train_per*data_sz)+1]
+		test_types = types[int(train_per*data_sz)+1:]
+		train_seq_types_in_bin = types_in_bin[:int(train_per*data_sz)]
+		test_seq_types_in_bin = types_in_bin[int(train_per*data_sz):]
+	else:
+		train_types, test_types = None, None
+		train_seq_types_in_bin, test_seq_types_in_bin = None, None
+
+
 	data_sz = len(gaps)
 	train_times_gaps = gaps[:int(train_per*data_sz)]
 	test_times_gaps = gaps[int(train_per*data_sz):]
 	train_times_timestamps = timestamps[1:int(train_per*data_sz)+1]
 	test_times_timestamps = timestamps[int(train_per*data_sz)+1:]
 
-	if types is not None:
-		train_types = types[1:int(train_per*data_sz)+1]
-		test_types = types[int(train_per*data_sz)+1:]
-	else:
-		train_types, test_types = None, None
 
 	print("Length of train and test bins", \
 			len(train_times_bin), len(test_times_bin))
@@ -347,12 +351,14 @@ def generate_train_test_data(timestamps, gaps, data_bins, end_hr_bins, times_in_
 	print("Length of train and test timestamps", \
 			len(train_times_timestamps), len(test_times_timestamps))
 
+
 	return  (train_times_bin, test_times_bin,
 			 train_times_bin_end, test_times_bin_end,
 			 train_seq_times_in_bin, test_seq_times_in_bin,
 			 train_times_gaps, test_times_gaps,
 			 train_times_timestamps, test_times_timestamps,
-			 train_types, test_types)
+			 train_types, test_types,
+			 train_seq_types_in_bin, test_seq_types_in_bin)
 
 def get_data_in_next_n_bins(n, inp, out, bin_size):
 	out_n_bins = []
@@ -365,13 +371,16 @@ def get_data_in_next_n_bins(n, inp, out, bin_size):
 def make_seq_from_data(data, enc_len, in_bin_sz, out_bin_sz, batch_size,
 					   types=None,
 					   is_it_bins=True, is_it_var=False,
-					   times_in_bin=None, end_hr_bins=None,
+					   times_in_bin=None, types_in_bin=None,
+					   end_hr_bins=None,
 					   stride_len=1, count_strid_len=1, dataset_name=None,
 					   bin_size=None):
 	inp_seq_lst = list()
 	out_seq_lst = list()
 	inp_times_in_bin = list()
 	out_times_in_bin = list()
+	inp_types_in_bin = list()
+	out_types_in_bin = list()
 	in_end_hr_bins = list()
 	out_end_hr_bins = list()
 	inp_types_lst = list()
@@ -403,6 +412,11 @@ def make_seq_from_data(data, enc_len, in_bin_sz, out_bin_sz, batch_size,
 				for r_idx in range(in_bin_sz):
 					sm_time_in_bin+=times_in_bin[idx+r_idx]
 				inp_times_in_bin.append(sm_time_in_bin)
+			if types_in_bin is not None:
+				sm_type_in_bin = []
+				for r_idx in range(in_bin_sz):
+					sm_type_in_bin+=types_in_bin[idx+r_idx]
+				inp_types_in_bin.append(sm_type_in_bin)
 			if end_hr_bins is not None:
 				in_end_hr_bins.append(end_hr_bins[idx:idx+in_bin_sz])
 		elif is_it_var:
@@ -419,6 +433,11 @@ def make_seq_from_data(data, enc_len, in_bin_sz, out_bin_sz, batch_size,
 				for dec_idx in range(out_bin_sz):
 					sm_time_in_bin+=times_in_bin[idx+in_bin_sz+dec_idx]
 				out_times_in_bin.append(sm_time_in_bin)
+			if types_in_bin is not None:
+				sm_type_in_bin = []
+				for dec_idx in range(out_bin_sz):
+					sm_type_in_bin+=types_in_bin[idx+in_bin_sz+dec_idx]
+				out_types_in_bin.append(sm_type_in_bin)
 			if end_hr_bins is not None:
 				out_end_hr_bins.append(end_hr_bins[idx+in_bin_sz:idx+in_bin_sz+out_bin_sz])
 		elif is_it_var:
@@ -443,7 +462,8 @@ def make_seq_from_data(data, enc_len, in_bin_sz, out_bin_sz, batch_size,
 	return (inp_seq_lst, out_seq_lst,
 			inp_times_in_bin, out_times_in_bin,
 			in_end_hr_bins, out_end_hr_bins,
-			inp_types_lst, oup_types_lst)
+			inp_types_lst, oup_types_lst,
+			inp_types_in_bin, out_types_in_bin,)
 
 def generate_dev_data(
 	train_data_in_gaps, train_data_out_gaps,
@@ -777,7 +797,7 @@ def get_processed_data(dataset_name, args):
 		types = np.ones_like(timestamps)
 	gaps = timestamps[1:] - timestamps[:-1]
 	gaps = gaps.astype(np.float32)
-	data_bins, end_hr_bins, times_in_bin = create_bin(timestamps, bin_size)
+	data_bins, end_hr_bins, times_in_bin, types_in_bin = create_bin(timestamps, types, bin_size)
 	args.num_types = len(np.unique(types))
 
 	timestamps_comp_full = list()
@@ -817,9 +837,12 @@ def get_processed_data(dataset_name, args):
 	 train_seq_times_in_bin, test_seq_times_in_bin,
 	 train_times_gaps, test_times_gaps,
 	 train_times_timestamps, test_times_timestamps,
-	 train_types, test_types] \
+	 train_types, test_types,
+	 train_seq_types_in_bin, test_seq_types_in_bin] \
 	 	= generate_train_test_data(timestamps, gaps, data_bins,
-	 							   end_hr_bins, times_in_bin, types)
+	 							   end_hr_bins, times_in_bin,
+	 							   types_in_bin=types_in_bin,
+	 							   types=types)
 
 	print("Length of train and test bins", len(train_times_bin), len(test_times_bin))
 	print("Length of train and test gaps", len(train_times_gaps), len(test_times_gaps))
@@ -830,7 +853,7 @@ def get_processed_data(dataset_name, args):
 	 _, _,
 	 train_times_gaps_comp ,test_times_gaps_comp,
 	 train_times_timestamps_comp ,test_times_timestamps_comp,
-	 _, _] \
+	 _, _, _, _] \
 	 	= generate_train_test_data(timestamps_comp, gaps_comp, data_bins,
 	 							   end_hr_bins, times_in_bin)
 
@@ -839,7 +862,7 @@ def get_processed_data(dataset_name, args):
 	 _, _,
 	 train_times_gaps_comp_full ,test_times_gaps_comp_full,
 	 train_times_timestamps_comp_full ,test_times_timestamps_comp_full,
-	 _, _] \
+	 _, _, _, _] \
 		= generate_train_test_data(timestamps_comp_full, gaps_comp_full, data_bins,
 								   end_hr_bins, times_in_bin)
 
@@ -887,25 +910,29 @@ def get_processed_data(dataset_name, args):
 	[train_data_in_bin, train_data_out_bin,
 	 _, _,
 	 train_in_end_hr_bins, train_end_hr_bins,
-	 _, _] \
+	 _, _, _, _] \
 		= make_seq_from_data(train_times_bin, enc_len, in_bin_sz, out_bin_sz,
 							 batch_size,
 							 is_it_bins=True,
 							 stride_len=args.stride_len,
 							 count_strid_len=1,
 	 						 times_in_bin=train_seq_times_in_bin,
+	 						 types_in_bin=train_seq_types_in_bin,
 	 						 end_hr_bins=train_times_bin_end,
 							 dataset_name=dataset_name)
+
 	[test_data_in_bin, test_data_out_bin,
 	 test_inp_times_in_bin, test_out_times_in_bin, 
 	 test_in_end_hr_bins, test_end_hr_bins,
-	 _, _] \
+	 _, _,
+	 test_inp_types_in_bin, test_out_types_in_bin] \
 	 	= make_seq_from_data(test_times_bin, enc_len, in_bin_sz, out_bin_sz,
 	 						 batch_size,
 	 						 is_it_bins=True,
 	 						 stride_len=args.stride_len,
 	 						 count_strid_len=args.out_bin_sz,
 	 						 times_in_bin=test_seq_times_in_bin,
+	 						 types_in_bin=test_seq_types_in_bin,
 	 						 end_hr_bins=test_times_bin_end,
 	 						 dataset_name=dataset_name)
 
@@ -920,7 +947,8 @@ def get_processed_data(dataset_name, args):
 	(train_data_in_gaps, train_data_out_gaps,
 	 _, _,
 	 _, _,
-	 train_data_in_types, train_data_out_types) \
+	 train_data_in_types, train_data_out_types,
+	 _, _) \
 		= make_seq_from_data(train_times_gaps, enc_len, in_bin_sz, out_bin_sz,
 							 batch_size,
 							 types=types,
@@ -930,7 +958,8 @@ def get_processed_data(dataset_name, args):
 	(test_data_in_gaps, test_data_out_gaps,
 	 _, _,
 	 _, _,
-	 test_data_in_types, test_data_out_types) \
+	 test_data_in_types, test_data_out_types,
+	 _, _,) \
 		= make_seq_from_data(test_times_gaps, enc_len, in_bin_sz, out_bin_sz,
 							 batch_size,
 							 types=types,
@@ -938,14 +967,14 @@ def get_processed_data(dataset_name, args):
 							 stride_len=args.stride_len,
 							 dataset_name=dataset_name)
 	(train_data_in_timestamps, train_data_out_timestamps,
-	 _, _, _, _, _, _) \
+	 _, _, _, _, _, _, _, _) \
 		= make_seq_from_data(train_times_timestamps, enc_len, in_bin_sz, out_bin_sz,
 							 batch_size,
 							 is_it_bins=False,
 							 stride_len=args.stride_len,
 							 dataset_name=dataset_name)
 	(test_data_in_timestamps, test_data_out_timestamps,
-	 _, _, _, _, _, _) \
+	 _, _, _, _, _, _, _, _) \
 		= make_seq_from_data(test_times_timestamps, enc_len, in_bin_sz, out_bin_sz,
 							 batch_size,
 					   		 is_it_bins=False,
@@ -955,7 +984,7 @@ def get_processed_data(dataset_name, args):
 	(_, _,
 	 train_inp_times_in_bin, train_out_times_in_bin,
 	 _, train_end_hr_bins_relative,
-	 _, _) \
+	 _, _, _, _) \
 		= make_seq_from_data(train_times_timestamps, enc_len, in_bin_sz, out_bin_sz,
 							 batch_size,
 							 is_it_bins=False,
@@ -1013,25 +1042,25 @@ def get_processed_data(dataset_name, args):
 	train_data_out_feats = get_time_features(train_data_out_timestamps)
 	dev_data_in_feats = get_time_features(dev_data_in_timestamps)
 #=======
-	train_data_in_gaps_comp, train_data_out_gaps_comp, _, _, _, _, _, _ \
+	train_data_in_gaps_comp, train_data_out_gaps_comp, _, _, _, _, _, _, _, _ \
 		= make_seq_from_data(train_times_gaps_comp, comp_enc_len, in_bin_sz, out_bin_sz,
 							 batch_size,
 							 is_it_bins=False,
 							 stride_len=1,
 							 dataset_name=dataset_name)
-	train_data_in_timestamps_comp, train_data_out_timestamps_comp, _, _, _, _, _, _ \
+	train_data_in_timestamps_comp, train_data_out_timestamps_comp, _, _, _, _, _, _, _, _ \
 		= make_seq_from_data(train_times_timestamps_comp, comp_enc_len, in_bin_sz, out_bin_sz,
 							 batch_size,
 							 is_it_bins=False,
 							 stride_len=1,
 							 dataset_name=dataset_name)
-	train_data_in_gaps_comp_full, train_data_out_gaps_comp_full, _, _, _, _, _, _\
+	train_data_in_gaps_comp_full, train_data_out_gaps_comp_full, _, _, _, _, _, _, _, _ \
 		= make_seq_from_data(train_times_gaps_comp_full, comp_enc_len, in_bin_sz, out_bin_sz,
 							 batch_size,
 							 is_it_bins=False,
 							 stride_len=1,
 							 dataset_name=dataset_name)
-	train_data_in_timestamps_comp_full, train_data_out_timestamps_comp_full, _, _, _, _, _, _ \
+	train_data_in_timestamps_comp_full, train_data_out_timestamps_comp_full, _, _, _, _, _, _, _, _ \
 		= make_seq_from_data(train_times_timestamps_comp_full, comp_enc_len, in_bin_sz, out_bin_sz,
 							 batch_size,
 							 is_it_bins=False,
@@ -1140,10 +1169,10 @@ def get_processed_data(dataset_name, args):
 	 test_data_in_times_bin, test_data_out_times_bin,
 	 test_data_in_time_end_bin, test_end_hr_bins,
 	 test_gap_in_bin_norm_a, test_gap_in_bin_norm_d,
-	 test_data_in_types, test_data_out_types] \
+	 test_data_in_types_bin, test_data_out_types_bin] \
 		= get_end_time_from_bins(test_inp_times_in_bin, test_out_times_in_bin,
 								 test_end_hr_bins, enc_len,
-								 test_data_in_types, test_data_out_types)
+								 test_inp_types_in_bin, test_out_types_in_bin)
 
 	test_data_in_feats_bin = get_time_features(test_data_in_times_bin)
 
@@ -1204,6 +1233,7 @@ def get_processed_data(dataset_name, args):
 	test_end_hr_bins = np.expand_dims(test_end_hr_bins, axis=-1)
 	test_data_in_time_end_bin = np.expand_dims(test_data_in_time_end_bin, axis=-1)
 	test_data_in_gaps_bin = np.expand_dims(test_data_in_gaps_bin, axis=-1)
+	#test_data_in_types_bin = np.expand_dims(test_data_in_types_bin, axis=-1)
 #<<<<<<< HEAD
 	test_data_in_feats_bin = np.expand_dims(test_data_in_feats_bin, axis=-1)
 	train_end_hr_bins_relative = np.expand_dims(train_end_hr_bins_relative, axis=-1)
@@ -1248,6 +1278,7 @@ def get_processed_data(dataset_name, args):
 		'train_data_out_bin': train_data_out_bin,
 
 		'test_data_in_gaps_bin': test_data_in_gaps_bin,
+		'test_data_in_types_bin': test_data_in_types_bin,
 		'test_end_hr_bins': test_end_hr_bins,
 		'test_data_in_time_end_bin': test_data_in_time_end_bin,
 		'test_gap_in_bin_norm_a': test_gap_in_bin_norm_a,
@@ -1268,6 +1299,7 @@ def get_processed_data(dataset_name, args):
 		'more_threshold': more_threshold,
 		'interval_size': interval_size,
 		'test_out_times_in_bin': test_out_times_in_bin,
+		'test_out_types_in_bin': test_out_types_in_bin,
 
 		'train_data_in_gaps_bin': train_data_in_gaps_bin,
 		'train_data_out_gaps_bin': train_data_out_gaps_bin,
