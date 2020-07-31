@@ -173,20 +173,20 @@ args.dataset_name = dataset_names
 model_names = list()
 if args.model_name == 'all':
     #model_names.append('hawkes_model')
-    model_names.append('wgan')
-    model_names.append('seq2seq')
-    model_names.append('transformer')
+    #model_names.append('wgan')
+    #model_names.append('seq2seq')
+    #model_names.append('transformer')
     model_names.append('count_model')
     # model_names.append('hierarchical')
     #model_names.append('rmtpp_nll')
     model_names.append('rmtpp_mse')
     model_names.append('rmtpp_mse_var')
     #model_names.append('rmtpp_nll_comp')
-    model_names.append('rmtpp_mse_comp')
-    model_names.append('rmtpp_mse_var_comp')
+    #model_names.append('rmtpp_mse_comp')
+    #model_names.append('rmtpp_mse_var_comp')
     #model_names.append('pure_hierarchical_nll')
     #model_names.append('pure_hierarchical_mse')
-    model_names.append('rmtpp_count')
+    model_names.append('inference_models')
 else:
     model_names.append(args.model_name)
 args.model_name = model_names
@@ -295,7 +295,7 @@ for dataset_name in dataset_names:
         'rmtpp_mse': None,
         'rmtpp_nll': None,
         'rmtpp_mse_var': None,
-        'rmtpp_count': None,
+        'inference_models': None,
     }
     per_model_count['true'] = event_count_preds_true
     for model_name in model_names:
@@ -322,7 +322,7 @@ for dataset_name in dataset_names:
             per_model_save['rmtpp_var_model'] = rmtpp_var_model
         print("Finished Running", model_name, "Model\n")
 
-        #if model_name != 'rmtpp_count' and per_model_count[model_name] is not None:
+        #if model_name != 'inference_models' and per_model_count[model_name] is not None:
         #    old_stdout = sys.stdout
         #    sys.stdout=open("Outputs/count_model_"+dataset_name+".txt","a")
         #    print("____________________________________________________________________")
@@ -334,8 +334,9 @@ for dataset_name in dataset_names:
 
         print('Got result', 'for model', model_name, 'on dataset', dataset_name)
 
-    for idx in range(10):
-        utils.generate_plots(args, dataset_name, dataset, per_model_count, test_sample_idx=idx, count_var=count_var)
+    # TODO: Generate count prediction plots
+    #for idx in range(10):
+    #    utils.generate_plots(args, dataset_name, dataset, per_model_count, test_sample_idx=idx, count_var=count_var)
 
     event_count_result[dataset_name] = per_model_count
     print("####################################################################")

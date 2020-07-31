@@ -473,49 +473,7 @@ def run_rmtpp_init(args, data, test_data, var_data,
 											use_var_model=use_var_model,
 											rmtpp_type=rmtpp_type)
 
-
-	next_hidden_state = None
-	test_data_init_time = test_data_in_time_end_bin.astype(np.float32)
-	test_data_input_gaps_bin = test_data_in_gaps_bin.astype(np.float32)
-	all_event_count_preds = list()
-	all_times_pred_from_beg = None
-	#TODO: Should we pass more event than 80 for better prediction
-	for dec_idx in range(dec_len):
-		print('Simulating dec_idx', dec_idx)
-		all_gaps_pred, all_times_pred, all_types_pred, next_hidden_state = simulate(
-			model, 
-			test_data_init_time, 
-			test_data_input_gaps_bin,
-			test_data_in_feats_bin,
-			test_data_in_types,
-			test_end_hr_bins[:,dec_idx], 
-			(test_gap_in_bin_norm_a, 
-			test_gap_in_bin_norm_d),
-			prev_hidden_state=next_hidden_state
-		)
-		
-		if all_times_pred_from_beg is not None:
-			all_times_pred_from_beg = tf.concat([all_times_pred_from_beg, all_times_pred], axis=1)
-		else:
-			all_times_pred_from_beg = all_times_pred
-
-		event_count_preds = count_events(all_times_pred_from_beg, 
-											 test_end_hr_bins[:,dec_idx]-bin_size, 
-											 test_end_hr_bins[:,dec_idx])
-		all_event_count_preds.append(event_count_preds)
-		
-		test_data_init_time = all_times_pred[:,-1:].numpy()
-		
-		all_gaps_pred_norm = utils.normalize_avg_given_param(all_gaps_pred,
-												test_gap_in_bin_norm_a,
-												test_gap_in_bin_norm_d)
-		all_prev_gaps_pred = tf.concat([test_data_input_gaps_bin, all_gaps_pred_norm], axis=1)
-		all_prev_types_pred = tf.concat([test_data_in_types, all_types_pred], axis=1)
-		test_data_input_gaps_bin = all_prev_gaps_pred[:,-enc_len:].numpy()
-		test_data_in_types = all_prev_types_pred[:,-enc_len:].numpy()
-
-	event_count_preds = np.array(all_event_count_preds).T
-	return model, event_count_preds, rmtpp_var_model
+	return model, rmtpp_var_model
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
@@ -686,7 +644,7 @@ def run_rmtpp_comp_init(args, data, test_data, var_data,
 											use_var_model=use_var_model,
 											rmtpp_type=rmtpp_type,
 											comp_model=True)
-	return model, None, rmtpp_var_model
+	return model, rmtpp_var_model
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 
 
@@ -1077,46 +1035,7 @@ def run_wgan(args, data, test_data):
 	print('Best MAE and MSE of Dev data %s: %s' \
 		%(float(dev_gap_mae), float(dev_gap_mse)))
 
-	# Test Data results
-	event_count_preds = None
-	next_hidden_state = None
-	#event_count_preds of size [Test_example_numbers, bin_out_sz]
-
-	test_data_init_time = test_data_in_time_end_bin.astype(np.float32)
-	test_data_input_gaps_bin = test_data_in_gaps_bin.astype(np.float32)
-	all_event_count_preds = list()
-	all_times_pred_from_beg = None
-	for dec_idx in range(dec_len):
-		print('Simulating dec_idx', dec_idx)
-		all_gaps_pred, all_times_pred, next_hidden_state = simulate_wgan(model, 
-												test_data_init_time, 
-												test_data_input_gaps_bin,
-												test_data_in_feats_bin,
-												test_end_hr_bins[:,dec_idx], 
-												(test_gap_in_bin_norm_a, 
-												test_gap_in_bin_norm_d),
-												prev_hidden_state=next_hidden_state)
-		
-		if all_times_pred_from_beg is not None:
-			all_times_pred_from_beg = tf.concat([all_times_pred_from_beg, all_times_pred], axis=1)
-		else:
-			all_times_pred_from_beg = all_times_pred
-
-		event_count_preds = count_events(all_times_pred_from_beg, 
-											 test_end_hr_bins[:,dec_idx]-bin_size, 
-											 test_end_hr_bins[:,dec_idx])
-		all_event_count_preds.append(event_count_preds)
-		
-		test_data_init_time = all_times_pred[:,-1:].numpy()
-		
-		all_gaps_pred_norm = utils.normalize_avg_given_param(all_gaps_pred,
-												test_gap_in_bin_norm_a,
-												test_gap_in_bin_norm_d)
-		all_prev_gaps_pred = tf.concat([test_data_input_gaps_bin, all_gaps_pred_norm], axis=1)
-		test_data_input_gaps_bin = all_prev_gaps_pred[:,-enc_len:].numpy()
-
-	event_count_preds = np.array(all_event_count_preds).T
-	return model, event_count_preds
+	return model
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 
 
@@ -1301,47 +1220,8 @@ def run_seq2seq(args, data, test_data):
 	print('Best MAE and MSE of Dev data %s: %s' \
 		%(float(dev_gap_mae), float(dev_gap_mse)))
 
-	# Test Data results
-	event_count_preds = None
-	next_hidden_state = None
-	#event_count_preds of size [Test_example_numbers, bin_out_sz]
 
-	test_data_init_time = test_data_in_time_end_bin.astype(np.float32)
-	test_data_input_gaps_bin = test_data_in_gaps_bin.astype(np.float32)
-	all_event_count_preds = list()
-	all_times_pred_from_beg = None
-	for dec_idx in range(dec_len):
-		print('Simulating dec_idx', dec_idx)
-		all_gaps_pred, all_times_pred, next_hidden_state = simulate_seq2seq(
-			model, 
-			test_data_init_time, 
-			test_data_input_gaps_bin,
-			test_data_in_feats_bin,
-			test_end_hr_bins[:,dec_idx], 
-			(test_gap_in_bin_norm_a, 
-			test_gap_in_bin_norm_d),
-			prev_hidden_state=next_hidden_state)
-		
-		if all_times_pred_from_beg is not None:
-			all_times_pred_from_beg = tf.concat([all_times_pred_from_beg, all_times_pred], axis=1)
-		else:
-			all_times_pred_from_beg = all_times_pred
-
-		event_count_preds = count_events(all_times_pred_from_beg, 
-											 test_end_hr_bins[:,dec_idx]-bin_size, 
-											 test_end_hr_bins[:,dec_idx])
-		all_event_count_preds.append(event_count_preds)
-		
-		test_data_init_time = all_times_pred[:,-1:].numpy()
-		
-		all_gaps_pred_norm = utils.normalize_avg_given_param(all_gaps_pred,
-												test_gap_in_bin_norm_a,
-												test_gap_in_bin_norm_d)
-		all_prev_gaps_pred = tf.concat([test_data_input_gaps_bin, all_gaps_pred_norm], axis=1)
-		test_data_input_gaps_bin = all_prev_gaps_pred[:,-enc_len:].numpy()
-
-	event_count_preds = np.array(all_event_count_preds).T
-	return model, event_count_preds
+	return model
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 
 
@@ -1500,50 +1380,7 @@ def run_transformer(args, data, test_data):
 	print('Best MAE, MSE, type_acc of Dev data: %s, %s, %s' \
 		%(float(dev_gap_mae), float(dev_gap_mse), float(dev_types_acc)))
 
-	# Test Data results
-	event_count_preds = None
-	next_hidden_state = None
-	#event_count_preds of size [Test_example_numbers, bin_out_sz]
-
-	test_data_init_time = test_data_in_time_end_bin.astype(np.float32)
-	test_data_input_gaps_bin = test_data_in_gaps_bin.astype(np.float32)
-	all_event_count_preds = list()
-	all_times_pred_from_beg = None
-	for dec_idx in range(dec_len):
-		print('Simulating dec_idx', dec_idx)
-		all_gaps_pred, all_times_pred, all_types_pred, next_hidden_state = simulate_transformer(
-			model, 
-			test_data_init_time, 
-			test_data_input_gaps_bin,
-			test_data_in_feats_bin,
-			test_data_in_types,
-			test_end_hr_bins[:,dec_idx], 
-			(test_gap_in_bin_norm_a, 
-			test_gap_in_bin_norm_d),
-			prev_hidden_state=next_hidden_state)
-		
-		if all_times_pred_from_beg is not None:
-			all_times_pred_from_beg = tf.concat([all_times_pred_from_beg, all_times_pred], axis=1)
-		else:
-			all_times_pred_from_beg = all_times_pred
-
-		event_count_preds = count_events(all_times_pred_from_beg, 
-											 test_end_hr_bins[:,dec_idx]-bin_size, 
-											 test_end_hr_bins[:,dec_idx])
-		all_event_count_preds.append(event_count_preds)
-		
-		test_data_init_time = all_times_pred[:,-1:].numpy()
-		
-		all_gaps_pred_norm = utils.normalize_avg_given_param(all_gaps_pred,
-												test_gap_in_bin_norm_a,
-												test_gap_in_bin_norm_d)
-		all_prev_gaps_pred = tf.concat([test_data_input_gaps_bin, all_gaps_pred_norm], axis=1)
-		all_prev_types_pred = tf.concat([test_data_in_types, all_types_pred], axis=1)
-		test_data_input_gaps_bin = all_prev_gaps_pred[:, -enc_len:].numpy()
-		test_data_in_types = all_prev_types_pred[:,-enc_len:].numpy()
-
-	event_count_preds = np.array(all_event_count_preds).T
-	return model, event_count_preds
+	return model
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#:
 
 
@@ -2195,7 +2032,7 @@ def simulate_transformer(model, times_in, gaps_in, feats_in, types_in,
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
-# Run rmtpp_count model with state reinitialized 
+# Run rmtpp with state reinitialized 
 # after each bin events preds and scaled, each bin has events
 # whose count generated by count model
 def run_rmtpp_count_reinit(args, models, data, test_data, rmtpp_type):
@@ -2308,10 +2145,10 @@ def run_rmtpp_count_reinit(args, models, data, test_data, rmtpp_type):
 
 
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
-# Run rmtpp_count model with one rmtpp simulation untill 
+# Run rmtpp with one rmtpp simulation untill 
 # all events of bins generated then scale , each bin has events
 # whose count generated by count model
-def run_rmtpp_count_cont_rmtpp(args, models, data, test_data, rmtpp_type):
+def run_rmtpp_rescaling_model(args, models, data, test_data, rmtpp_type):
 	model_cnt = models['count_model']
 	if rmtpp_type=='nll':
 		model_rmtpp = models['rmtpp_nll']
@@ -2322,7 +2159,7 @@ def run_rmtpp_count_cont_rmtpp(args, models, data, test_data, rmtpp_type):
 	else:
 		assert False, "rmtpp_type must be nll or mse"
 	model_check = (model_cnt is not None) and (model_rmtpp is not None)
-	assert model_check, "run_rmtpp_count_cont_rmtpp requires count and RMTPP model"
+	assert model_check, "run_rmtpp_rescaling_model requires count and RMTPP model"
 
 	[test_data_in_bin, test_data_in_bin_feats,
 	 test_data_out_bin, test_end_hr_bins, test_data_in_time_end_bin,
@@ -2425,10 +2262,10 @@ def run_rmtpp_count_cont_rmtpp(args, models, data, test_data, rmtpp_type):
 
 
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
-# Run rmtpp_count model with one rmtpp simulation untill 
+# Run rmtpp with one rmtpp simulation untill 
 # all events of bins generated then scale , each bin has events
 # whose count generated by rmtpp_comp model
-def run_rmtpp_count_cont_rmtpp_comp(args, models, data, test_data, test_data_comp, rmtpp_type, rmtpp_type_comp):
+def run_rmtpp_rescaling_model_comp(args, models, data, test_data, test_data_comp, rmtpp_type, rmtpp_type_comp):
 	if rmtpp_type=='nll':
 		model_rmtpp = models['rmtpp_nll']
 	elif rmtpp_type=='mse':
@@ -2448,7 +2285,7 @@ def run_rmtpp_count_cont_rmtpp_comp(args, models, data, test_data, test_data_com
 		assert False, "rmtpp_type_comp must be nll_comp or mse_comp"
 
 	model_check = (model_rmtpp is not None) and (model_rmtpp_comp is not None)
-	assert model_check, "run_rmtpp_count_cont_rmtpp_comp requires RMTPP and RMTPP_comp model"
+	assert model_check, "run_rmtpp_rescaling_model_comp requires RMTPP and RMTPP_comp model"
 
 	[test_data_in_bin, test_data_in_bin_feats,
 	 test_data_out_bin, test_end_hr_bins, test_data_in_time_end_bin,
@@ -3352,13 +3189,13 @@ def run_rmtpp_with_optimization_fixed_cnt(args, query_models, data, test_data):
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
-# Run rmtpp_count model with optimized gaps generated from rmtpp simulation untill 
+# Run rmtpp with optimized gaps generated from rmtpp simulation untill 
 # all events of bins generated then rescale
 # For each possible count, find the best rmtpp_loss for that many gaps 
 # by using solver library
 # Select the final count as the count that produces best rmtpp_loss across
 # all counts
-def run_rmtpp_with_optimization_fixed_cnt_solver(
+def run_rmtpp_optimizer_model(
 	args,
 	query_models,
 	data,
@@ -4142,13 +3979,13 @@ def run_rmtpp_with_optimization_fixed_cnt_solver(
 
 
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
-# Run rmtpp_count model with optimized gaps generated from rmtpp simulation untill 
+# Run rmtpp with optimized gaps generated from rmtpp simulation untill 
 # all events of bins generated then rescale
 # For each possible count, find the best rmtpp_loss for that many gaps 
 # by using solver library
 # Select the final count as the count that produces best rmtpp_loss across
 # all counts
-def run_rmtpp_with_optimization_fixed_cnt_solver_comp(
+def run_rmtpp_optimizer_model_comp(
 	args,
 	query_models,
 	data,
@@ -4190,7 +4027,7 @@ def run_rmtpp_with_optimization_fixed_cnt_solver_comp(
 		assert False, "rmtpp_type_comp must be nll_comp or mse_comp"
 
 	model_check = (model_rmtpp is not None) and (model_rmtpp_comp is not None)
-	assert model_check, "run_rmtpp_with_optimization_fixed_cnt_solver_comp requires RMTPP and RMTPP_comp model"
+	assert model_check, "run_rmtpp_optimizer_model_comp requires RMTPP and RMTPP_comp model"
 
 	enc_len = args.enc_len
 	comp_enc_len = args.comp_enc_len
@@ -4495,7 +4332,7 @@ def run_rmtpp_with_optimization_fixed_cnt_solver_comp(
 
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 # Plain rmtpp model to generate events independent of bin boundary
-def run_rmtpp_for_count(args, models, data, test_data, query_data=None, simul_end_time=None, rmtpp_type='mse'):
+def run_rmtpp_simulation(args, models, data, test_data, query_data=None, simul_end_time=None, rmtpp_type='mse'):
 	if rmtpp_type=='nll':
 		model_rmtpp = models['rmtpp_nll']
 	elif rmtpp_type=='mse':
@@ -4505,7 +4342,7 @@ def run_rmtpp_for_count(args, models, data, test_data, query_data=None, simul_en
 	else:
 		assert False, "rmtpp_type must be nll or mse"
 	model_check = (model_rmtpp is not None)
-	assert model_check, "run_rmtpp_for_count requires RMTPP model"
+	assert model_check, "run_rmtpp_simulation requires RMTPP model"
 
 	[test_data_in_bin, test_data_in_bin_feats,
 	 test_data_out_bin, test_end_hr_bins, test_data_in_time_end_bin,
@@ -4563,7 +4400,7 @@ def run_rmtpp_for_count(args, models, data, test_data, query_data=None, simul_en
 
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 # Plain wgan model to generate events independent of bin boundary
-def run_wgan_for_count(args, models, data, test_data, query_data=None, simul_end_time=None):
+def run_wgan_simulation(args, models, data, test_data, query_data=None, simul_end_time=None):
 	'''
 	TODO:
 		Call the simulate_wgan method with condition:
@@ -4577,7 +4414,7 @@ def run_wgan_for_count(args, models, data, test_data, query_data=None, simul_end
 
 	model_wgan = models['wgan']
 	model_check = (model_wgan is not None)
-	assert model_check, "run_wgan_for_count requires WGAN model"
+	assert model_check, "run_wgan_simulation requires WGAN model"
 
 	[test_data_in_bin, test_data_in_bin_feats,
 	 test_data_out_bin, test_end_hr_bins, test_data_in_time_end_bin,
@@ -4629,7 +4466,7 @@ def run_wgan_for_count(args, models, data, test_data, query_data=None, simul_end
 
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 # Plain wgan model to generate events independent of bin boundary
-def run_seq2seq_for_count(args, models, data, test_data, query_data=None, simul_end_time=None):
+def run_seq2seq_simulation(args, models, data, test_data, query_data=None, simul_end_time=None):
 	'''
 	TODO:
 		Call the simulate_seq2seq method with condition:
@@ -4643,7 +4480,7 @@ def run_seq2seq_for_count(args, models, data, test_data, query_data=None, simul_
 
 	model_seq2seq = models['seq2seq']
 	model_check = (model_seq2seq is not None)
-	assert model_check, "run_seq2seq_for_count requires Seq2Seq model"
+	assert model_check, "run_seq2seq_simulation requires Seq2Seq model"
 
 	[test_data_in_bin, test_data_in_bin_feats,
 	 test_data_out_bin, test_end_hr_bins, test_data_in_time_end_bin,
@@ -4696,10 +4533,10 @@ def run_seq2seq_for_count(args, models, data, test_data, query_data=None, simul_
 
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 # Plain transformer model to generate events independent of bin boundary
-def run_transformer_for_count(args, models, data, test_data, query_data=None, simul_end_time=None):
+def run_transformer_simulation(args, models, data, test_data, query_data=None, simul_end_time=None):
 	model_transformer = models['transformer']
 	model_check = (model_transformer is not None)
-	assert model_check, "run_transformer_for_count requires transformer^ model"
+	assert model_check, "run_transformer_simulation requires transformer^ model"
 
 	[test_data_in_bin, test_data_in_bin_feats,
 	 test_data_out_bin, test_end_hr_bins, test_data_in_time_end_bin,
@@ -5407,7 +5244,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					  'rmtpp_nll_comp', 'rmtpp_mse_comp', 'rmtpp_mse_var_comp',
 					  'pure_hierarchical_nll', 'pure_hierarchical_mse', 
 					  'wgan', 'seq2seq', 'transformer',
-					  'rmtpp_count', 'hawkes_model']:
+					  'inference_models', 'hawkes_model']:
 					  
 		train_data_in_gaps = dataset['train_data_in_gaps']
 		train_data_in_feats = dataset['train_data_in_feats'].astype(np.float32)
@@ -5544,16 +5381,16 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 
 
 		if model_name == 'wgan':
-			model, result = run_wgan(args, data, test_data)
+			model = run_wgan(args, data, test_data)
 
 		if model_name == 'seq2seq':
-			model, result = run_seq2seq(args, data, test_data)
+			model = run_seq2seq(args, data, test_data)
 
 		if model_name == 'transformer':
-			model, result = run_transformer(args, data, test_data)
+			model = run_transformer(args, data, test_data)
 
 		if model_name == 'rmtpp_nll':
-			event_count_preds_nll = run_rmtpp_init(
+			model, _ = run_rmtpp_init(
 				args,
 				data,
 				test_data,
@@ -5561,10 +5398,9 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 				NLL_loss=True,
 				rmtpp_type='nll'
 			)
-			model, result, _ = event_count_preds_nll
 
 		if model_name == 'rmtpp_mse':
-			event_count_preds_mse = run_rmtpp_init(
+			model, rmtpp_var_model = run_rmtpp_init(
 				args,
 				data,
 				test_data,
@@ -5572,10 +5408,9 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 				NLL_loss=False,
 				rmtpp_type='mse'
 			)
-			model, result, rmtpp_var_model = event_count_preds_mse
 
 		if model_name == 'rmtpp_mse_var':
-			event_count_preds_mse_var = run_rmtpp_init(
+			model, _ = run_rmtpp_init(
 				args,
 				data,
 				test_data,
@@ -5584,10 +5419,9 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 				use_var_model=True,
 				rmtpp_type='mse_var'
 			)
-			model, result, _ = event_count_preds_mse_var
 
 		if model_name == 'rmtpp_nll_comp':
-			model, _, rmtpp_var_model = run_rmtpp_comp_init(
+			model, rmtpp_var_model = run_rmtpp_comp_init(
 				args,
 				data_comp,
 				test_data_comp,
@@ -5597,7 +5431,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 			)
 
 		if model_name == 'rmtpp_mse_comp':
-			model, _, rmtpp_var_model = run_rmtpp_comp_init(
+			model, rmtpp_var_model = run_rmtpp_comp_init(
 				args,
 				data_comp,
 				test_data_comp,
@@ -5607,7 +5441,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 			)
 
 		if model_name == 'rmtpp_mse_var_comp':
-			model, _, rmtpp_var_model = run_rmtpp_comp_init(
+			model, rmtpp_var_model = run_rmtpp_comp_init(
 				args,
 				data_comp,
 				test_data_comp,
@@ -5629,7 +5463,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 			
 		# This block contains all the inference models that returns
 		# answers to various queries
-		if model_name == 'rmtpp_count':
+		if model_name == 'inference_models':
 			test_data_in_bin = dataset['test_data_in_bin']
 			test_data_in_bin_feats = dataset['test_data_in_bin_feats']
 			test_data_out_bin = dataset['test_data_out_bin']
@@ -5739,6 +5573,9 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 				print("")
 			# ----- End: Stale models, not updated according to latest code ----- #
 
+			# ----- Start: Variants of Hierarchical model ----- #
+			# (i) Pure hierarchical: Both compound and simple layer jointly trained
+			# (ii) Hierarchical with count: Count loss also included in the optimizer of hierarchical model
 			# Pure hierarchical model: jointly trained both simple layer and compound layer
 			if 'run_pure_hierarchical_infer_nll' in run_model_flags and run_model_flags['run_pure_hierarchical_infer_nll']:
 				print("Prediction for run_pure_hierarchical_infer_nll model")
@@ -5786,6 +5623,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 				compute_full_model_acc(args, test_data, None, all_times_bin_pred_opt, test_out_times_in_bin, dataset_name, 'run_rmtpp_with_joint_optimization_fixed_cnt_solver_mse_comp')
 				print("____________________________________________________________________")
 				print("")
+			# ----- End: Variants of Hierarchical model ----- #
 
 			if 'rmtpp_nll_opt_comp' in run_model_flags and run_model_flags['rmtpp_nll_opt_comp']:
 				print("Prediction for rmtpp_nll_opt_comp model")
@@ -5795,7 +5633,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 				(
 					_,
 					all_times_bin_pred_opt,
-				) = run_rmtpp_with_optimization_fixed_cnt_solver_comp(
+				) = run_rmtpp_optimizer_model_comp(
 					args,
 					models,
 					data,
@@ -5880,7 +5718,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 				(
 					_,
 					all_times_bin_pred_opt,
-				) = run_rmtpp_with_optimization_fixed_cnt_solver_comp(
+				) = run_rmtpp_optimizer_model_comp(
 					args,
 					models,
 					data,
@@ -5965,7 +5803,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 				(
 					_,
 					all_times_bin_pred_opt,
-				) = run_rmtpp_with_optimization_fixed_cnt_solver_comp(
+				) = run_rmtpp_optimizer_model_comp(
 					args,
 					models,
 					data,
@@ -6047,7 +5885,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 				(
 					_,
 					all_times_bin_pred_opt,
-				) = run_rmtpp_count_cont_rmtpp_comp(
+				) = run_rmtpp_rescaling_model_comp(
 					args,
 					models,
 					data,
@@ -6126,7 +5964,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 				(
 					_,
 					all_times_bin_pred_opt,
-				) = run_rmtpp_count_cont_rmtpp_comp(
+				) = run_rmtpp_rescaling_model_comp(
 					args,
 					models,
 					data,
@@ -6205,7 +6043,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 				(
 					_,
 					all_times_bin_pred_opt,
-				) = run_rmtpp_count_cont_rmtpp_comp(
+				) = run_rmtpp_rescaling_model_comp(
 					args,
 					models,
 					data,
@@ -6289,7 +6127,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					all_best_opt_nc_losses,
 					all_best_cont_nc_losses,
 					all_best_nc_count_losses,
-				) = run_rmtpp_with_optimization_fixed_cnt_solver(
+				) = run_rmtpp_optimizer_model(
 					args,
 					models,
 					data,
@@ -6395,7 +6233,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					all_best_opt_nc_losses,
 					all_best_cont_nc_losses,
 					all_best_nc_count_losses,
-				) = run_rmtpp_with_optimization_fixed_cnt_solver(
+				) = run_rmtpp_optimizer_model(
 					args,
 					models,
 					data,
@@ -6501,7 +6339,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					all_best_opt_nc_losses,
 					all_best_cont_nc_losses,
 					all_best_nc_count_losses,
-				) = run_rmtpp_with_optimization_fixed_cnt_solver(
+				) = run_rmtpp_optimizer_model(
 					args,
 					models,
 					data,
@@ -6601,10 +6439,10 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 			print("")
 
 			if 'rmtpp_nll_cont' in run_model_flags and run_model_flags['rmtpp_nll_cont']:
-				print("Prediction for run_rmtpp_count_cont_rmtpp model with rmtpp_nll")
+				print("Prediction for run_rmtpp_rescaling_model with rmtpp_nll")
 				(
 					all_bins_count_pred, all_times_bin_pred, all_types_pred,
-				) = run_rmtpp_count_cont_rmtpp(args, models, data, test_data, rmtpp_type='nll')
+				) = run_rmtpp_rescaling_model(args, models, data, test_data, rmtpp_type='nll')
 				(
 					deep_mae_rh,
 					count_mae_rh,
@@ -6681,10 +6519,10 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 				print("")
 
 			if 'rmtpp_mse_cont' in run_model_flags and run_model_flags['rmtpp_mse_cont']:
-				print("Prediction for run_rmtpp_count_cont_rmtpp model with rmtpp_mse")
+				print("Prediction for run_rmtpp_rescaling_model with rmtpp_mse")
 				(
 					all_bins_count_pred, all_times_bin_pred, all_types_pred,
-				) = run_rmtpp_count_cont_rmtpp(args, models, data, test_data, rmtpp_type='mse')
+				) = run_rmtpp_rescaling_model(args, models, data, test_data, rmtpp_type='mse')
 				(
 					deep_mae_rh,
 					count_mae_rh,
@@ -6761,10 +6599,10 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 				print("")
 
 			if 'rmtpp_mse_var_cont' in run_model_flags and run_model_flags['rmtpp_mse_var_cont']:
-				print("Prediction for run_rmtpp_count_cont_rmtpp model with rmtpp_mse_var")
+				print("Prediction for run_rmtpp_rescaling_model with rmtpp_mse_var")
 				(
 					all_bins_count_pred, all_times_bin_pred, all_types_pred,
-				) = run_rmtpp_count_cont_rmtpp(args, models, data, test_data, rmtpp_type='mse_var')
+				) = run_rmtpp_rescaling_model(args, models, data, test_data, rmtpp_type='mse_var')
 				(
 					deep_mae_rh,
 					count_mae_rh,
@@ -7201,7 +7039,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					result,
 					all_times_bin_pred,
 					all_types_pred
-				) = run_rmtpp_for_count(args, models, data, test_data, rmtpp_type='nll')
+				) = run_rmtpp_simulation(args, models, data, test_data, rmtpp_type='nll')
 				(
 					deep_mae_rh,
 					count_mae_rh,
@@ -7273,7 +7111,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					result,
 					all_times_bin_pred,
 					all_types_pred
-				) = run_rmtpp_for_count(args, models, data, test_data, rmtpp_type='mse')
+				) = run_rmtpp_simulation(args, models, data, test_data, rmtpp_type='mse')
 				(
 					deep_mae_rh,
 					count_mae_rh,
@@ -7355,7 +7193,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					result,
 					all_times_bin_pred,
 					all_types_pred
-				) = run_rmtpp_for_count(args, models, data, test_data, rmtpp_type='mse_var')
+				) = run_rmtpp_simulation(args, models, data, test_data, rmtpp_type='mse_var')
 				(
 					deep_mae_rh,
 					count_mae_rh,
@@ -7433,7 +7271,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 
 			if 'wgan_simu' in run_model_flags and run_model_flags['wgan_simu']:
 				print("Prediction for plain_wgan_count model")
-				result, all_times_bin_pred = run_wgan_for_count(args, models, data, test_data)
+				result, all_times_bin_pred = run_wgan_simulation(args, models, data, test_data)
 				(
 					deep_mae_rh,
 					count_mae_rh,
@@ -7502,7 +7340,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 
 			if 'seq2seq_simu' in run_model_flags and run_model_flags['seq2seq_simu']:
 				print("Prediction for plain_seq2seq_count model")
-				result, all_times_bin_pred = run_seq2seq_for_count(args, models, data, test_data)
+				result, all_times_bin_pred = run_seq2seq_simulation(args, models, data, test_data)
 				(
 					deep_mae_rh,
 					count_mae_rh,
@@ -7574,7 +7412,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					result,
 					all_times_bin_pred,
 					all_types_pred
-				) = run_transformer_for_count(args, models, data, test_data)
+				) = run_transformer_simulation(args, models, data, test_data)
 				(
 					deep_mae_rh,
 					count_mae_rh,
@@ -7656,22 +7494,22 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 				print("Running threshold query to generate pdf for all models")
 				model_data = [args, models, data, test_data]
 				all_run_fun_pdf = {
-					'rmtpp_nll_opt': [run_rmtpp_with_optimization_fixed_cnt_solver, 'nll'],
-					'rmtpp_mse_opt': [run_rmtpp_with_optimization_fixed_cnt_solver, 'mse'],
-					'rmtpp_mse_var_opt': [run_rmtpp_with_optimization_fixed_cnt_solver, 'mse_var'],
+					'rmtpp_nll_opt': [run_rmtpp_optimizer_model, 'nll'],
+					'rmtpp_mse_opt': [run_rmtpp_optimizer_model, 'mse'],
+					'rmtpp_mse_var_opt': [run_rmtpp_optimizer_model, 'mse_var'],
 
-					'rmtpp_nll_cont': [run_rmtpp_count_cont_rmtpp, 'nll'],
-					'rmtpp_mse_cont': [run_rmtpp_count_cont_rmtpp, 'mse'],
-					'rmtpp_mse_var_cont': [run_rmtpp_count_cont_rmtpp, 'mse_var'],
+					'rmtpp_nll_cont': [run_rmtpp_rescaling_model, 'nll'],
+					'rmtpp_mse_cont': [run_rmtpp_rescaling_model, 'mse'],
+					'rmtpp_mse_var_cont': [run_rmtpp_rescaling_model, 'mse_var'],
 					'rmtpp_nll_reinit': [run_rmtpp_count_reinit, 'nll'],
 					'rmtpp_mse_reinit': [run_rmtpp_count_reinit, 'mse'],
 					'rmtpp_mse_var_reinit': [run_rmtpp_count_reinit, 'mse_var'],
 
-					'rmtpp_nll_simu': [run_rmtpp_for_count, 'nll'],
-					'rmtpp_mse_simu': [run_rmtpp_for_count, 'mse'],
-					'rmtpp_mse_var_simu': [run_rmtpp_for_count, 'mse_var'],
-					'wgan_simu': [run_wgan_for_count, None],
-					'transformer_simu': [run_transformer_for_count, None],
+					'rmtpp_nll_simu': [run_rmtpp_simulation, 'nll'],
+					'rmtpp_mse_simu': [run_rmtpp_simulation, 'mse'],
+					'rmtpp_mse_var_simu': [run_rmtpp_simulation, 'mse_var'],
+					'wgan_simu': [run_wgan_simulation, None],
+					'transformer_simu': [run_transformer_simulation, None],
 					'count_only': [run_count_only_model, None],
 				}
 				clean_dict_for_na_model(all_run_fun_pdf, run_model_flags)
