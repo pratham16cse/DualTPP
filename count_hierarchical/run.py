@@ -4423,7 +4423,8 @@ def run_rmtpp_simulation(args, models, data, test_data, rmtpp_type=None):
 	all_counts_pred = count_events(all_times_pred, t_b_plus, t_e_plus)
 	all_counts_pred = np.array(all_counts_pred)
 
-	all_times_pred = np.expand_dims(all_times_pred.numpy(), axis=-1)
+	all_times_pred = all_times_pred.numpy()
+	#all_times_pred = np.expand_dims(all_times_pred.numpy(), axis=-1)
 	all_types_pred = all_types_pred.numpy()
 	return all_counts_pred, all_times_pred, all_types_pred
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
@@ -4762,7 +4763,7 @@ def compute_random_horizon_metrics(
 	)
 
 	wass_dist_rh, wass_dist_rh_pe = compute_wasserstein_dist(
-		all_types_pred, all_types_true, t_b_plus, t_e_plus,
+		all_times_pred, all_times_true, t_b_plus, t_e_plus,
 	)
 
 	bleu_score_rh, bleu_score_rh_pe = compute_bleu_score(
