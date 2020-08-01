@@ -3,6 +3,10 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
+from collections import OrderedDict
+from collections import Counter
+from operator import itemgetter
+
 # Hawkes model is from https://omitakahiro.github.io/Hawkes/index.html
 from modules import Hawkes as hk
 
@@ -195,22 +199,33 @@ def generate_dataset():
 		np.savetxt('taxi.txt', timestamps)
 	os.chdir('../')
 
-def create_twitter_data(dataset_name):
+def create_twitter_data(dataset_name, keep_classes=10):
 	delimiter=' '
 	if dataset_name in ['Movie', 'Delhi', 'Verdict', 'Fight']:
 		delimiter='\t'
 	twitter_df = pd.read_csv('../TwitterDataset/'+dataset_name+'.txt', delimiter=delimiter, header=None)
-	twitter_df = twitter_df[1]
-	timestamps = np.sort(np.array(twitter_df))
+	twitter_df = twitter_df.values[::-1]
+	#twitter_df = twitter_df[1]
+	timestamps = twitter_df[:, 1]
 	timestamps -= timestamps[0]
 	gaps = timestamps[1:] - timestamps[:-1]
+	types = twitter_df[:, 0]
+	types_counter = OrderedDict(sorted(Counter(types).items(), key=itemgetter(1), reverse=True))
+	type2supertype = OrderedDict()
+	for i, (type_, _) in enumerate(types_counter.items()):
+		if i > keep_classes:
+			type2supertype[type_] = keep_classes + 1
+		else:
+			type2supertype[type_] = i + 1
+
+	types_new = [type2supertype[ty] for ty in types]
+	types = types_new
 	if dataset_name in downsampling:
 		plt.plot(gaps)
 		plt.ylabel('all_Gaps_before_downsample')
 		plt.savefig(dataset_name+'_all_gaps_before_downsample.png')
 		plt.close()
 		timestamps = downsampling_dataset(timestamps, dataset_name)
-	gaps = timestamps[1:] - timestamps[:-1]
 
 	plt.plot(gaps[:100])
 	plt.ylabel('Gaps')
@@ -220,7 +235,7 @@ def create_twitter_data(dataset_name):
 	plt.ylabel('all_Gaps')
 	plt.savefig(dataset_name+'_all_gaps.png')
 	plt.close()
-	return gaps, timestamps
+	return gaps, timestamps, types
 
 def generate_twitter_dataset(twitter_dataset_names):
 	os.makedirs('./data', exist_ok=True)
@@ -228,6 +243,7 @@ def generate_twitter_dataset(twitter_dataset_names):
 	for dataset_name in twitter_dataset_names:
 		if not os.path.isfile(dataset_name+'.txt'):
 			print('Generating', dataset_name, 'data')
-			gaps, timestamps = create_twitter_data(dataset_name)
+			gaps, timestamps, types = create_twitter_data(dataset_name)
 			np.savetxt(dataset_name+'.txt', timestamps)
+			np.savetxt(dataset_name+'_types.txt', types)
 	os.chdir('../')
