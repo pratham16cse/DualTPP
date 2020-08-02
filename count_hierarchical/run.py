@@ -2,6 +2,7 @@ import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
 import tensorflow_probability as tfp
+tfd = tfp.distributions
 
 import cvxpy as cp
 import numpy as np
@@ -1485,16 +1486,17 @@ def simulate_v2(model, times_in, gaps_in, bins_end_hrs, normalizers,
 
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 # Simulate model until t_b_plus
-def simulate(model, times_in, gaps_in, feats_in, types_in,
+def simulate_rmtpp(model, times_in, gaps_in, feats_in, types_in,
 			 t_b_plus, normalizers, prev_hidden_state=None):
 	#TODO: Check for this modification in functions which calls this def
 	gaps_pred = list()
 	types_pred = list()
 	times_pred = list()
+	D_pred, WT_pred = [], []
 	data_norm_a, data_norm_d = normalizers
 	
 	# step_gaps_pred = gaps_in[:, -1]
-	step_gaps_pred, step_types_logits, _, _, prev_hidden_state, _ \
+	step_gaps_pred, step_types_logits, D, WT, prev_hidden_state, _ \
 			= model(gaps_in, feats_in, types_in, initial_state=prev_hidden_state)
 
 	step_types_pred = tf.argmax(step_types_logits, axis=-1) + 1
@@ -1511,11 +1513,13 @@ def simulate(model, times_in, gaps_in, feats_in, types_in,
 	gaps_pred.append(last_gaps_pred_unnorm)
 	types_pred.append(step_types_pred)
 	times_pred.append(last_times_pred)
+	D_pred.append(D[:, -1:])
+	WT_pred.append(WT[:, -1:])
 
 	simul_step = 0
 
 	while any(times_pred[-1]<t_b_plus):
-		step_gaps_pred, step_types_logits, _, _, prev_hidden_state, _ \
+		step_gaps_pred, step_types_logits, D, WT, prev_hidden_state, _ \
 				= model(gaps_in, feats_in, types_in, initial_state=prev_hidden_state)
 
 		step_types_pred = tf.argmax(step_types_logits, axis=-1) + 1
@@ -1532,6 +1536,8 @@ def simulate(model, times_in, gaps_in, feats_in, types_in,
 		gaps_pred.append(last_gaps_pred_unnorm)
 		types_pred.append(step_types_pred)
 		times_pred.append(last_times_pred)
+		D_pred.append(D[:, -1:])
+		WT_pred.append(WT[:, -1:])
 		
 		simul_step += 1
 
@@ -1542,7 +1548,10 @@ def simulate(model, times_in, gaps_in, feats_in, types_in,
 	times_pred = tf.squeeze(tf.stack(times_pred, axis=1), axis=2)
 	all_times_pred = times_pred
 
-	return all_gaps_pred, all_times_pred, types_pred, prev_hidden_state
+	D_pred = tf.squeeze(tf.concat(D_pred, axis=1), axis=-1)
+	WT_pred = tf.squeeze(tf.concat(WT_pred, axis=1), axis=-1)
+
+	return all_gaps_pred, all_times_pred, types_pred, prev_hidden_state, D_pred, WT_pred
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
@@ -2346,14 +2355,16 @@ def run_rmtpp_rescaling_model_comp(args, models, data, test_data, test_data_comp
 	all_events_in_bin_pred = list()
 
 	t_e_plus = test_end_hr_bins[:,-1]
-	all_gaps_pred_comp, all_times_pred_comp, _ = simulate(model_rmtpp_comp,
-												test_data_init_time,
-												test_data_input_gaps_bin_comp,
-												test_data_in_feats_bin_comp,
-												t_e_plus,
-												(test_gap_in_bin_norm_a_comp,
-												test_gap_in_bin_norm_d_comp),
-												prev_hidden_state=next_hidden_state)
+	all_gaps_pred_comp, all_times_pred_comp, _, _, _ = simulate_rmtpp(
+		model_rmtpp_comp,
+		test_data_init_time,
+		test_data_input_gaps_bin_comp,
+		test_data_in_feats_bin_comp,
+		t_e_plus,
+		(test_gap_in_bin_norm_a_comp,
+		test_gap_in_bin_norm_d_comp),
+		prev_hidden_state=next_hidden_state
+	)
 
 	event_count_preds_cnt = np.ones_like(test_data_init_time) * all_times_pred_comp.shape[1] * comp_bin_sz
 	event_count_preds_true = test_data_out_bin
@@ -4408,7 +4419,7 @@ def run_rmtpp_simulation(args, models, data, test_data, rmtpp_type=None):
 	t_b_plus = test_end_hr_bins[:, 0] - bin_size
 	t_e_plus = test_end_hr_bins[:, -1]
 
-	_, all_times_pred, all_types_pred, _ = simulate(
+	_, all_times_pred, all_types_pred, _, D_pred, WT_pred = simulate_rmtpp(
 		model_rmtpp,
 		test_data_init_time,
 		test_data_input_gaps_bin,
@@ -4431,7 +4442,9 @@ def run_rmtpp_simulation(args, models, data, test_data, rmtpp_type=None):
 	all_times_pred = all_times_pred.numpy()
 	#all_times_pred = np.expand_dims(all_times_pred.numpy(), axis=-1)
 	all_types_pred = all_types_pred.numpy()
-	return all_counts_pred, all_times_pred, all_types_pred
+
+	event_dist_params = (D_pred, WT_pred)
+	return all_counts_pred, all_times_pred, all_types_pred, event_dist_params
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
@@ -5041,6 +5054,95 @@ def compute_wasserstein_dist(all_event_pred, all_event_true, t_b_plus, t_e_plus)
 	return sum_dist, dist_lst
 
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
+
+def evaluate_query_2(
+	event_dist_params, all_times_pred, all_times_true,
+	horizon_start, horizon_end,
+	interval_size, normalizers,
+	less_threshold, more_threshold,
+):
+	norm_a, norm_d = normalizers
+	num_intervals = 500
+
+	idx_tb = [bisect_right(t_out, t_b) for t_out, t_b in zip(all_times_pred, horizon_start)]
+	idx_te = [bisect_right(t_out, t_e) for t_out, t_e in zip(all_times_pred, horizon_end)]
+	event_dist_means = [event_dist_params[0][idx][idx_tb[idx]:idx_te[idx]] for idx in range(len(horizon_start))]
+	event_dist_sigms = [event_dist_params[1][idx][idx_tb[idx]:idx_te[idx]] for idx in range(len(horizon_start))]
+
+	idx_tb = [bisect_right(t_out, t_b) for t_out, t_b in zip(all_times_true, horizon_start)]
+	idx_te = [bisect_right(t_out, t_e) for t_out, t_e in zip(all_times_true, horizon_end)]
+	all_times_true = [all_times_true[idx][idx_tb[idx]:idx_te[idx]] for idx in range(len(horizon_start))]
+
+	horizon_end_norm = utils.normalize_avg_given_param(
+		horizon_end - horizon_start,			
+		norm_a, norm_d,
+	)
+	interval_size_norm = utils.normalize_avg_given_param(
+		interval_size, norm_a, norm_d,
+	)
+
+	more_mismatch_pe, less_mismatch_pe = [], []
+	for batch_idx in range(len(all_times_true)):
+		batch_true_shifted = utils.normalize_avg_given_param(
+			all_times_true[batch_idx] - horizon_start[0],
+			norm_a, norm_d,
+		)
+
+		batch_means = event_dist_means[batch_idx]
+		batch_sigms = event_dist_sigms[batch_idx]
+
+		all_intervals = np.linspace(
+			0., horizon_end_norm[batch_idx] - interval_size_norm,
+			num=num_intervals,
+		)
+
+		batch_means_shifted = np.cumsum(batch_means)
+		dist = tfd.Normal(loc=batch_means_shifted, scale=batch_sigms)
+		interval_begin_cdf = dist.cdf(all_intervals)
+		interval_end_cdf = dist.cdf(all_intervals + interval_size_norm)
+		pred_counts = np.sum(interval_end_cdf - interval_begin_cdf, axis=1)
+
+		#import ipdb
+		#ipdb.set_trace()
+		dist_true = tfd.Normal(
+			loc=batch_true_shifted,
+			scale=(np.ones_like(batch_true_shifted)*1e-6).astype(np.float64)
+		)
+		interval_begin_cdf = dist_true.cdf(all_intervals)
+		interval_end_cdf = dist_true.cdf(all_intervals + interval_size_norm)
+		true_counts = np.sum(interval_end_cdf - interval_begin_cdf, axis=1)
+
+		#import ipdb
+		#ipdb.set_trace()
+		more_true = (true_counts >= more_threshold[batch_idx]).astype(np.float32)
+		more_pred = (pred_counts >= more_threshold[batch_idx]).astype(np.float32)
+		more_mismatch = np.sum(np.abs(more_true-more_pred))
+		more_mismatch_pe.append(more_mismatch)
+
+		less_true = (true_counts <= less_threshold[batch_idx]).astype(np.float32)
+		less_pred = (pred_counts <= less_threshold[batch_idx]).astype(np.float32)
+		less_mismatch = np.sum(np.abs(less_true-less_pred))
+		less_mismatch_pe.append(less_mismatch)
+
+	more_mismatch_pe = np.array(more_mismatch_pe)
+	less_mismatch_pe = np.array(less_mismatch_pe)
+
+	more_metric = np.sum(more_mismatch_pe) / (len(more_mismatch_pe) * num_intervals) * 1.
+	less_metric = np.sum(less_mismatch_pe) / (len(less_mismatch_pe) * num_intervals) * 1.
+
+	more_metric_pe = more_mismatch_pe / num_intervals
+	less_metric_pe = less_mismatch_pe / num_intervals
+
+
+	return (
+		more_metric, less_metric,
+		more_metric_pe, less_metric_pe
+	)
+
+
+
+
+
 
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 # Threshold MAE Loss calculations
@@ -5836,7 +5938,8 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 				if inference_model_name in ['rmtpp_nll_simu', 'rmtpp_mse_simu', 'rmtpp_mse_var_simu'] \
 					and run_model_flags[inference_model_name]:
 					(
-						all_counts_pred, all_times_pred, all_types_pred
+						all_counts_pred, all_times_pred, all_types_pred,
+						event_dist_params,
 					) = run_rmtpp_simulation(
 						args, models, data, test_data,
 						rmtpp_type=run_model_flags[inference_model_name]['rmtpp_type']
@@ -5892,6 +5995,23 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					test_time_out_te_plus,
 				)
 
+				# Evaluate Query 2
+				#query_2_data = [interval_range_count_less, interval_range_count_more, 
+				#less_threshold, more_threshold, interval_size, all_times_true]
+				(
+					more_metric, less_metric,
+					more_metric_pe, less_metric_pe,
+				) = evaluate_query_2(
+					event_dist_params,
+					all_times_pred,
+					all_times_true,
+					test_end_hr_bins[:, 0] - args.bin_size,
+					test_end_hr_bins[:, -1],
+					args.interval_size,
+					(test_gap_in_bin_norm_a, test_gap_in_bin_norm_d),
+					less_threshold, more_threshold,
+				)
+
 
 				#(
 				#	deep_mae_fh,
@@ -5941,6 +6061,8 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					wass_dist_rh,
 					bleu_score_rh,
 					count_mae_fh_per_bin,
+					more_metric,
+					less_metric,
 					np.mean(all_best_opt_nc_losses),
 					np.mean(all_best_cont_nc_losses),
 					np.mean(all_best_nc_count_losses),
@@ -5960,9 +6082,8 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 						'Outputs',
 						args.current_dataset+'__'+inference_model_name,
 					),
-					count_mae_fh_pe,
-					wass_dist_fh_pe,
-					bleu_score_fh_pe,
+					count_mae_fh_pe, wass_dist_fh_pe, bleu_score_fh_pe,
+					more_metric_pe, less_metric_pe,
 				)
 				write_opt_losses_to_file(
 					os.path.join(

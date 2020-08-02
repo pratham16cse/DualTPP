@@ -62,6 +62,8 @@ def add_metrics_to_dict(
 	wass_dist_rh,
 	bleu_score_rh,
 	count_mae_fh_per_bin,
+	more_metric,
+	less_metric,
 	opt_loss=0.,
 	cont_loss=0.,
 	count_loss=0.,
@@ -78,6 +80,9 @@ def add_metrics_to_dict(
 
 	for i in range(len(count_mae_fh_per_bin)):
 		metrics_dict[model_name]['count_mae_fh_bin_'+str(i)] = count_mae_fh_per_bin[i]
+
+	metrics_dict[model_name]['more_metric'] = more_metric
+	metrics_dict[model_name]['less_metric'] = less_metric
 
 	metrics_dict[model_name]['opt_loss'] = opt_loss
 	metrics_dict[model_name]['cont_loss'] = cont_loss
@@ -106,9 +111,8 @@ def write_arr_to_file(output_path, arr_true, arr_pred, types_true, types_pred):
 
 def write_pe_metrics_to_file(
 	output_path,
-	count_mae_fh_pe,
-	wass_dist_fh_pe,
-	bleu_score_fh_pe,
+	count_mae_fh_pe, wass_dist_fh_pe, bleu_score_fh_pe,
+	more_metric_pe, less_metric_pe
 ):
 	np.save(
 		output_path + '__' + 'count_mae_fh_pe',
@@ -121,6 +125,14 @@ def write_pe_metrics_to_file(
 	np.save(
 		output_path + '__' + 'bleu_score_fh_pe',
 		wass_dist_fh_pe,
+	)
+	np.save(
+		output_path + '__' + 'more_metric_pe',
+		more_metric_pe,
+	)
+	np.save(
+		output_path + '__' + 'less_metric_pe',
+		less_metric_pe,
 	)
 
 def write_opt_losses_to_file(

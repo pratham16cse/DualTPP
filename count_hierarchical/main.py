@@ -376,6 +376,25 @@ with open('Outputs/results_'+dataset_name+'.txt', 'w') as fp:
             )
         )
 
+    fp.write('\n\nQuery 2 Results')
+    fp.write('\nModel Name & Query_2_Metric')
+    for model_name, metrics_dict in results.items():
+        fp.write(
+            '\n & {} & {:.3f} \\\\'.format(
+                model_name,
+                metrics_dict['more_metric'],
+            )
+        )
+    fp.write('\n\nQuery 3 Results')
+    fp.write('\nModel Name & Query_3_Metric')
+    for model_name, metrics_dict in results.items():
+        fp.write(
+            '\n & {} & {:.3f} \\\\'.format(
+                model_name,
+                metrics_dict['less_metric'],
+            )
+        )
+
 
     fp.write('\n\nAll metrics in random interval:')
     fp.write('\nModel Name & Count MAE & Wass dist & opt_loss & cont_loss & count_loss')
