@@ -4420,8 +4420,14 @@ def run_rmtpp_simulation(args, models, data, test_data, rmtpp_type=None):
 		test_gap_in_bin_norm_d),
 		prev_hidden_state=next_hidden_state
 	)
-	all_counts_pred = count_events(all_times_pred, t_b_plus, t_e_plus)
-	all_counts_pred = np.array(all_counts_pred)
+	all_counts_pred = []
+	for dec_idx in range(dec_len):
+		t_b_plus = test_end_hr_bins[:, dec_idx] - bin_size
+		t_e_plus = test_end_hr_bins[:, dec_idx]
+		all_counts_pred.append(
+			count_events(all_times_pred, t_b_plus, t_e_plus)
+		)
+	all_counts_pred = np.stack(all_counts_pred, axis=1)
 
 	all_times_pred = all_times_pred.numpy()
 	#all_times_pred = np.expand_dims(all_times_pred.numpy(), axis=-1)
@@ -4465,8 +4471,14 @@ def run_wgan_simulation(args, models, data, test_data):
 		prev_hidden_state=next_hidden_state
 	)
 
-	all_counts_pred = count_events(all_times_pred, t_b_plus, t_e_plus)
-	all_counts_pred = np.array(all_counts_pred)
+	all_counts_pred = []
+	for dec_idx in range(dec_len):
+		t_b_plus = test_end_hr_bins[:, dec_idx] - bin_size
+		t_e_plus = test_end_hr_bins[:, dec_idx]
+		all_counts_pred.append(
+			count_events(all_times_pred, t_b_plus, t_e_plus)
+		)
+	all_counts_pred = np.stack(all_counts_pred, axis=1)
 
 	all_times_pred = np.expand_dims(all_times_pred.numpy(), axis=-1)
 	return all_counts_pred, all_times_pred
@@ -4508,8 +4520,14 @@ def run_seq2seq_simulation(args, models, data, test_data):
 		prev_hidden_state=next_hidden_state
 	)
 
-	all_counts_pred = count_events(all_times_pred, t_b_plus, t_e_plus)
-	all_counts_pred = np.array(all_counts_pred)
+	all_counts_pred = []
+	for dec_idx in range(dec_len):
+		t_b_plus = test_end_hr_bins[:, dec_idx] - bin_size
+		t_e_plus = test_end_hr_bins[:, dec_idx]
+		all_counts_pred.append(
+			count_events(all_times_pred, t_b_plus, t_e_plus)
+		)
+	all_counts_pred = np.stack(all_counts_pred, axis=1)
 
 	all_times_pred = np.expand_dims(all_times_pred.numpy(), axis=-1)
 	return all_counts_pred, all_times_pred
@@ -4553,8 +4571,14 @@ def run_transformer_simulation(args, models, data, test_data):
 		prev_hidden_state=next_hidden_state
 	)
 
-	all_counts_pred = count_events(all_times_pred, t_b_plus, t_e_plus)
-	all_counts_pred = np.array(all_counts_pred)
+	all_counts_pred = []
+	for dec_idx in range(dec_len):
+		t_b_plus = test_end_hr_bins[:, dec_idx] - bin_size
+		t_e_plus = test_end_hr_bins[:, dec_idx]
+		all_counts_pred.append(
+			count_events(all_times_pred, t_b_plus, t_e_plus)
+		)
+	all_counts_pred = np.stack(all_counts_pred, axis=1)
 
 	all_times_pred = np.expand_dims(all_times_pred.numpy(), axis=-1)
 	all_types_pred = all_types_pred.numpy()
@@ -4713,7 +4737,6 @@ def compute_full_horizon_metrics(
 	t_b_plus, t_e_plus,
 ):
 	count_mae_fh = np.mean(np.abs(all_counts_true - all_counts_pred))
-	count_mae_fh_per_bin = np.mean(np.abs(all_counts_true - all_counts_pred), axis=0)
 	count_mae_fh_pe = np.mean(np.abs(all_counts_true - all_counts_pred), axis=1)
 	count_mae_fh_per_bin = np.mean(np.abs(all_counts_true - all_counts_pred), axis=0)
 
@@ -5834,9 +5857,6 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 
 				all_counts_true = test_data_out_bin
 				for ts_seq, ty_seq in zip(all_times_pred, all_types_pred):
-					if len(ts_seq) != len(ty_seq):
-						import ipdb
-						ipdb.set_trace()
 					assert len(ts_seq) == len(ty_seq)
 				(
 					count_mae_fh,
