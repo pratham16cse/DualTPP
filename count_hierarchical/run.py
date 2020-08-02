@@ -1288,7 +1288,6 @@ def run_transformer(args, data, test_data):
 					feats_batch_in,
 					types_batch_in)
 
-				print(tf.squeeze(gaps_pred, axis=-1))
 
 				# Compute the loss for this minibatch.
 				#TODO: type_loss_func not correctly mapped from torch to tf
@@ -5851,7 +5850,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 	
 				if inference_model_name=='transformer_simu' and run_model_flags[inference_model_name]:
 					(
-						result, all_times_pred, all_types_pred
+						all_counts_pred, all_times_pred, all_types_pred
 					) = run_transformer_simulation(args, models, data, test_data)
 
 
