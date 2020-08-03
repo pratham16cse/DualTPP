@@ -190,7 +190,7 @@ class RMTPP(tf.keras.Model):
         final_state = self.hidden_states[:,-1]
         return self.gaps_pred, self.types_logits, self.D, self.WT, next_initial_state, final_state
 
-def build_rmtpp_model(args, use_intensity, use_var_model=False):
+def build_rmtpp_model(args, use_intensity, use_var_model, num_types):
     hidden_layer_size = args.hidden_layer_size
     batch_size = args.batch_size
     enc_len = args.enc_len
@@ -199,7 +199,7 @@ def build_rmtpp_model(args, use_intensity, use_var_model=False):
         hidden_layer_size,
         args.embed_size,
         use_intensity=use_intensity,
-        num_types=args.num_types,
+        num_types=num_types,
         use_var_model=use_var_model,
         use_time_feats=(not args.no_rmtpp_model_feats)
     )

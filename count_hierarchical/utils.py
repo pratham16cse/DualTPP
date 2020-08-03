@@ -1279,6 +1279,13 @@ def get_processed_data(dataset_name, args):
 	test_data_in_feats_bin_comp_full =  np.expand_dims(test_data_in_feats_bin_comp_full, axis=-1)
 #>>>>>>> hierarchical_count_model
 
+	# ----- Define dummy types for _comp datasets ----- #
+	dev_data_in_types_comp = np.array([np.ones_like(seq) for seq in dev_data_in_gaps_comp])
+	dev_data_out_types_comp = np.array([np.ones_like(seq) for seq in dev_data_out_gaps_comp])
+	test_data_in_types_bin_comp = np.array([np.ones_like(seq) for seq in test_data_in_gaps_bin_comp])
+	train_data_in_types_comp = np.array([np.ones_like(seq) for seq in train_data_in_gaps_comp])
+	train_data_out_types_comp = np.array([np.ones_like(seq) for seq in train_data_out_gaps_comp])
+
 	dataset = {
 		'train_data_in_gaps': train_data_in_gaps,
 		'train_data_out_gaps': train_data_out_gaps,
@@ -1370,6 +1377,12 @@ def get_processed_data(dataset_name, args):
 		'train_data_out_types': train_data_out_types,
 		'dev_data_out_types': dev_data_out_types,
 		'test_data_out_types': test_data_out_types,
+
+		'dev_data_in_types_comp': dev_data_in_types_comp,
+		'dev_data_out_types_comp': dev_data_out_types_comp,
+		'test_data_in_types_bin_comp': test_data_in_types_bin_comp,
+		'train_data_in_types_comp': train_data_in_types_comp,
+		'train_data_out_types_comp': train_data_out_types_comp,
 	}
 
 	return dataset
