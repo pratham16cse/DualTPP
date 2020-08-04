@@ -4237,8 +4237,8 @@ def run_rmtpp_optimizer_model_comp(
 	all_best_cnt = [0 for _ in range(len(test_data_input_gaps_bin))]
 	#import ipdb
 	#ipdb.set_trace()
-	#for dec_idx in range(all_gaps_pred_simu.shape[1]):
-	for dec_idx in range(4):
+	for dec_idx in range(all_gaps_pred_simu.shape[1]):
+	#for dec_idx in range(4):
 
 		#if dec_idx == 0:
 		#	(
@@ -5074,6 +5074,7 @@ def evaluate_query_2(
 
 		batch_means = event_dist_means[batch_idx]
 		batch_sigms = event_dist_sigms[batch_idx]
+		batch_sigms = np.where(batch_sigms==0., np.ones_like(batch_sigms)*1e-6, batch_sigms)
 
 		all_intervals = np.linspace(
 			0., horizon_end_norm[batch_idx] - interval_size_norm,
