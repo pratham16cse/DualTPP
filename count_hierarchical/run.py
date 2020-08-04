@@ -2210,7 +2210,7 @@ def run_rmtpp_rescaling_model(args, models, data, test_data, rmtpp_type):
 	full_cnt_event_all_bins_pred = np.expand_dims(full_cnt_event_all_bins_pred, axis=-1)
 
 	(
-		all_gaps_pred, all_times_pred, all_types_pred, _, _, _,
+		all_gaps_pred, all_times_pred, all_types_pred, _, D_pred, WT_pred,
 	) = simulate_with_counter(
 		model_rmtpp, 
 		test_data_init_time, 
@@ -2225,10 +2225,12 @@ def run_rmtpp_rescaling_model(args, models, data, test_data, rmtpp_type):
 	
 	all_times_pred_lst = list()
 	all_types_pred_lst = list()
+	all_sigms_pred_lst = list()
 	for batch_idx in range(len(all_gaps_pred)):
 		event_past_cnt=0
 		times_pred_all_bin_lst = list()
 		batch_types_pred_lst = list()
+		batch_sigms_pred_lst = list()
 
 		gaps_before_bin = all_times_pred[batch_idx,:1] - test_data_init_time[batch_idx]
 		gaps_before_bin = gaps_before_bin * np.random.uniform(size=gaps_before_bin.shape)
@@ -2238,6 +2240,7 @@ def run_rmtpp_rescaling_model(args, models, data, test_data, rmtpp_type):
 
 			times_pred_for_bin = all_times_pred[batch_idx,event_past_cnt:event_past_cnt+int(output_event_count_pred[batch_idx,dec_idx,0])]
 			batch_bin_types_pred = all_types_pred[batch_idx, event_past_cnt:event_past_cnt+int(output_event_count_pred[batch_idx,dec_idx,0])]
+			batch_bin_sigms_pred = WT_pred[batch_idx, event_past_cnt:event_past_cnt+int(output_event_count_pred[batch_idx,dec_idx,0]), 0]
 			event_past_cnt += int(output_event_count_pred[batch_idx,dec_idx,0])
 
 			bin_start = next_bin_start
@@ -2260,24 +2263,50 @@ def run_rmtpp_rescaling_model(args, models, data, test_data, rmtpp_type):
 			
 			times_pred_all_bin_lst.append(times_pred_for_bin_scaled.numpy())
 			batch_types_pred_lst.append(batch_bin_types_pred)
+			batch_sigms_pred_lst.append(batch_bin_sigms_pred.numpy())
 
 
 
 		all_times_pred_lst.append(times_pred_all_bin_lst)
 		all_types_pred_lst.append(batch_types_pred_lst)
+		all_sigms_pred_lst.append(batch_sigms_pred_lst)
+
+
 	all_times_pred = np.array(all_times_pred_lst)
 	all_types_pred = np.array(all_types_pred_lst)
+	all_sigms_pred = np.array(all_sigms_pred_lst)
+
 	all_types_pred_flatten = []
 	for seq in all_types_pred:
 		seq = [s.numpy().tolist() for s in seq]
 		all_types_pred_flatten.append(np.array(flatten(seq)))
 	all_types_pred = np.array(all_types_pred_flatten)
+
 	all_times_pred_flatten = []
 	for seq in all_times_pred:
 		seq = [s.tolist() for s in seq]
 		all_times_pred_flatten.append(np.array(flatten(seq)))
 	all_times_pred = np.array(all_times_pred_flatten)
-	return event_count_preds_cnt, all_times_pred, all_types_pred
+
+	all_means_pred = []
+	for seq, beg_time in zip(all_times_pred, test_end_hr_bins[:, 0] - args.bin_size):
+		all_means_pred.append(
+			utils.normalize_avg_given_param(
+				seq - np.concatenate([beg_time, seq[:-1]]),
+				test_gap_in_bin_norm_a, test_gap_in_bin_norm_d
+			)
+		)
+	all_means_pred = np.array(all_means_pred)
+
+	all_sigms_pred_flatten = []
+	for seq in all_sigms_pred:
+		seq = [s.tolist() for s in seq]
+		all_sigms_pred_flatten.append(np.array(flatten(seq)))
+	all_sigms_pred = np.array(all_sigms_pred_flatten)
+
+	event_dist_params = [all_means_pred, all_sigms_pred]
+
+	return event_count_preds_cnt, all_times_pred, all_types_pred, event_dist_params
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 
 
@@ -2532,17 +2561,36 @@ def run_count_only_model(args, models, data, test_data):
 		all_times_pred_lst.append(times_pred_per_bin_lst)
 		all_types_pred_lst.append(batch_types_pred)
 	all_times_pred = np.array(all_times_pred_lst)
+
 	all_types_pred_flatten = []
 	for seq in all_types_pred_lst:
 		seq = [s.tolist() for s in seq]
 		all_types_pred_flatten.append(np.array(flatten(seq)))
 	all_types_pred = np.array(all_types_pred_flatten)
+
 	all_times_pred_flatten = []
 	for seq in all_times_pred:
 		seq = [s.tolist() for s in seq]
 		all_times_pred_flatten.append(np.array(flatten(seq)))
 	all_times_pred = np.array(all_times_pred_flatten)
-	return event_count_preds_cnt, all_times_pred, all_types_pred
+
+	all_means_pred = []
+	for seq, beg_time in zip(all_times_pred, test_end_hr_bins[:, 0] - args.bin_size):
+		all_means_pred.append(
+			utils.normalize_avg_given_param(
+				seq - np.concatenate([beg_time, seq[:-1]]),
+				test_gap_in_bin_norm_a, test_gap_in_bin_norm_d
+			)
+		)
+	all_means_pred = np.array(all_means_pred)
+
+	all_sigms_pred = []
+	for seq in all_means_pred:
+		all_sigms_pred.append(np.ones_like(seq)*1e-6)
+	all_sigms_pred = np.array(all_sigms_pred)
+
+	event_dist_params = [all_means_pred, all_sigms_pred]
+	return event_count_preds_cnt, all_times_pred, all_types_pred, event_dist_params
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
@@ -3969,7 +4017,8 @@ def run_rmtpp_optimizer_model(
 	for seq, beg_time in zip(all_times_pred, test_end_hr_bins[:, 0] - args.bin_size):
 		all_means_pred.append(
 			utils.normalize_avg_given_param(
-				seq-beg_time, test_gap_in_bin_norm_a, test_gap_in_bin_norm_d
+				seq - np.concatenate([beg_time, seq[:-1]]),
+				test_gap_in_bin_norm_a, test_gap_in_bin_norm_d
 			)
 		)
 	all_means_pred = np.array(all_means_pred)
@@ -4184,6 +4233,7 @@ def run_rmtpp_optimizer_model_comp(
 	all_times_pred = list()
 	all_times_pred = [[] for _ in range(len(test_data_input_gaps_bin))]
 	all_types_pred = [[] for _ in range(len(test_data_input_gaps_bin))]
+	all_sigms_pred = [[] for _ in range(len(test_data_input_gaps_bin))]
 	all_best_cnt = [0 for _ in range(len(test_data_input_gaps_bin))]
 	#import ipdb
 	#ipdb.set_trace()
@@ -4265,20 +4315,24 @@ def run_rmtpp_optimizer_model_comp(
 				batch_bin_curr_cnt_opt_times_pred \
 					= (test_data_init_time_batch + tf.cast(tf.cumsum(batch_bin_curr_cnt_opt_gaps_pred, axis=1), tf.float64))
 				batch_bin_curr_cnt_opt_times_pred = batch_bin_curr_cnt_opt_times_pred[0].numpy()
+				batch_bin_sigms_pred = batch_bin_curr_cnt_WT_pred[0]
+
 				all_times_pred[batch_idx].append(batch_bin_curr_cnt_opt_times_pred)
 				all_types_pred[batch_idx].append(types_pred_for_bin[0])
+				all_sigms_pred[batch_idx].append(batch_bin_sigms_pred)
 				all_best_cnt[batch_idx] += comp_bin_sz
 
 
 	all_times_pred = np.array(all_times_pred)
 	all_types_pred = np.array(all_types_pred)
-	import ipdb
-	ipdb.set_trace()
+	all_sigms_pred = np.array(all_sigms_pred)
+
 	all_times_pred_flatten = []
 	for seq in all_times_pred:
 		seq = [s.tolist() for s in seq]
 		all_times_pred_flatten.append(np.array(flatten(seq)))
 	all_times_pred = np.array(all_times_pred_flatten)
+
 	all_types_pred_flatten = []
 	for seq in all_types_pred:
 		seq = [s.tolist() for s in seq]
@@ -4293,10 +4347,26 @@ def run_rmtpp_optimizer_model_comp(
 			count_events(all_times_pred, t_b_plus, t_e_plus)
 		)
 	all_counts_pred = np.stack(all_counts_pred, axis=1)
-	import ipdb
-	ipdb.set_trace()
 
-	return all_times_pred, all_types_pred, all_counts_pred
+	all_means_pred = []
+	for seq, beg_time in zip(all_times_pred, test_end_hr_bins[:, 0] - args.bin_size):
+		all_means_pred.append(
+			utils.normalize_avg_given_param(
+				seq - np.concatenate([beg_time, seq[:-1]]),
+				test_gap_in_bin_norm_a, test_gap_in_bin_norm_d
+			)
+		)
+	all_means_pred = np.array(all_means_pred)
+
+	all_sigms_pred_flatten = []
+	for seq in all_sigms_pred:
+		seq = [s.tolist() for s in seq]
+		all_sigms_pred_flatten.append(np.array(flatten(seq)))
+	all_sigms_pred = np.array(all_sigms_pred_flatten)
+
+	event_dist_params = [all_means_pred, all_sigms_pred]
+
+	return all_times_pred, all_types_pred, all_counts_pred, event_dist_params
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 
 
@@ -4976,7 +5046,7 @@ def evaluate_query_2(
 	less_threshold, more_threshold,
 ):
 	norm_a, norm_d = normalizers
-	num_intervals = 500
+	num_intervals = 1000
 
 	idx_tb = [bisect_right(t_out, t_b) for t_out, t_b in zip(all_times_pred, horizon_start)]
 	idx_te = [bisect_right(t_out, t_e) for t_out, t_e in zip(all_times_pred, horizon_end)]
@@ -4998,7 +5068,7 @@ def evaluate_query_2(
 	more_mismatch_pe, less_mismatch_pe = [], []
 	for batch_idx in range(len(all_times_true)):
 		batch_true_shifted = utils.normalize_avg_given_param(
-			all_times_true[batch_idx] - horizon_start[0],
+			all_times_true[batch_idx] - horizon_start[batch_idx],
 			norm_a, norm_d,
 		)
 
@@ -5026,8 +5096,6 @@ def evaluate_query_2(
 		interval_end_cdf = dist_true.cdf(all_intervals + interval_size_norm)
 		true_counts = np.sum(interval_end_cdf - interval_begin_cdf, axis=1)
 
-		#import ipdb
-		#ipdb.set_trace()
 		more_true = (true_counts >= more_threshold[batch_idx]).astype(np.float32)
 		more_pred = (pred_counts >= more_threshold[batch_idx]).astype(np.float32)
 		more_mismatch = np.sum(np.abs(more_true-more_pred))
@@ -5798,6 +5866,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					and run_model_flags[inference_model_name]:
 					(
 						all_counts_pred, all_times_pred, all_types_pred,
+						event_dist_params,
 					) = run_rmtpp_rescaling_model(
 						args, models, data, test_data,
 						rmtpp_type=run_model_flags[inference_model_name]['rmtpp_type']
@@ -5819,6 +5888,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					test_data_out_gaps_bin_comp = None
 					(
 						all_times_pred, all_types_pred, all_counts_pred,
+						event_dist_params,
 					) = run_rmtpp_optimizer_model_comp(
 						args,
 						models,
@@ -5854,6 +5924,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 				if inference_model_name=='count_only' and run_model_flags['count_only']:
 					(
 						all_counts_pred, all_times_pred, all_types_pred,
+						event_dist_params,
 					) = run_count_only_model(args, models, data, test_data)
 
 				if inference_model_name in ['rmtpp_nll_simu', 'rmtpp_mse_simu', 'rmtpp_mse_var_simu'] \
