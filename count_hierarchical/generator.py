@@ -93,28 +93,35 @@ def create_sin_hawkes_overlay_data():
 def create_taxi_data():
 	# https://s3.amazonaws.com/nyc-tlc/trip+data/yellow_tripdata_2019-01.csv
 	# https://s3.amazonaws.com/nyc-tlc/trip+data/yellow_tripdata_2019-02.csv
-	taxi_df_jan = pd.read_csv('../yellow_tripdata_2019-01.csv', usecols=["tpep_pickup_datetime", "PULocationID"])
-	taxi_df_feb = pd.read_csv('../yellow_tripdata_2019-02.csv', usecols=["tpep_pickup_datetime", "PULocationID"])
+	taxi_df_jan = pd.read_csv(
+		'../yellow_tripdata_2019-01.csv',
+		usecols=["tpep_pickup_datetime", "PULocationID", "DOLocationID"])
+	taxi_df_feb = pd.read_csv(
+		'../yellow_tripdata_2019-02.csv',
+		usecols=["tpep_pickup_datetime", "PULocationID", "DOLocationID"])
 	taxi_df = taxi_df_jan.append(taxi_df_feb)
 	taxi_df = taxi_df[taxi_df.PULocationID == 237]
-	taxi_df = pd.to_datetime(taxi_df['tpep_pickup_datetime'], errors='coerce')
-	taxi_df = taxi_df[(taxi_df.dt.year == 2019)]
-	taxi_df = taxi_df[(taxi_df.dt.month < 3)]
-	taxi_df = pd.DatetimeIndex(taxi_df).astype(np.int64)/1000000000
-	taxi_df = taxi_df.sort_values().astype(np.int64)
-	taxi_timestamps = taxi_df
+	taxi_df['tpep_pickup_datetime'] = pd.to_datetime(taxi_df['tpep_pickup_datetime'], errors='coerce')
+	taxi_df = taxi_df[(taxi_df['tpep_pickup_datetime'].dt.year == 2019)]
+	taxi_df = taxi_df[(taxi_df['tpep_pickup_datetime'].dt.month < 3)]
+	taxi_df = taxi_df.sort_values('tpep_pickup_datetime')
+	taxi_timestamps = pd.DatetimeIndex(taxi_df['tpep_pickup_datetime']).astype(np.int64)/1000000000
+	taxi_types = taxi_df['DOLocationID'].values
+	#taxi_timestamps = taxi_timestamps.sort_values().astype(np.int64)
 	taxi_timestamps = np.array(taxi_timestamps)
 	taxi_timestamps -= taxi_timestamps[0]
 	taxi_timestamps = taxi_timestamps[:-1]
+	taxi_types = taxi_types[:-1]
 	dataset_name = 'taxi'
 	if dataset_name in downsampling:
 		taxi_timestamps = downsampling_dataset(taxi_timestamps, dataset_name)
+		taxi_types = downsampling_dataset(taxi_types, dataset_name)
 	taxi_gaps = taxi_timestamps[1:] - taxi_timestamps[:-1]
 	plt.plot(taxi_gaps[:100])
 	plt.ylabel('Gaps')
 	plt.savefig('taxi_gaps.png')
 	plt.close()
-	return taxi_gaps, taxi_timestamps
+	return taxi_gaps, taxi_timestamps, taxi_types
 
 def create_911_traffic_data():
 	call_df = pd.read_csv('../911.csv', usecols=["title", "timeStamp"])
@@ -195,8 +202,9 @@ def generate_dataset():
 		np.savetxt('911_ems.txt', timestamps)
 	if not os.path.isfile("taxi.txt"):
 		print('Generating taxi data')
-		gaps, timestamps = create_taxi_data()
+		gaps, timestamps, types = create_taxi_data()
 		np.savetxt('taxi.txt', timestamps)
+		np.savetxt('taxi_types.txt', types)
 	os.chdir('../')
 
 def create_twitter_data(dataset_name, keep_classes=10):
@@ -226,6 +234,7 @@ def create_twitter_data(dataset_name, keep_classes=10):
 		plt.savefig(dataset_name+'_all_gaps_before_downsample.png')
 		plt.close()
 		timestamps = downsampling_dataset(timestamps, dataset_name)
+		types = downsampling_dataset(types, dataset_name)
 
 	plt.plot(gaps[:100])
 	plt.ylabel('Gaps')

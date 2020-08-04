@@ -789,6 +789,21 @@ def get_time_features(times):
     # time_feature = time_feature*1./24.
     return time_feature
 
+def reset_indices(types):
+	types_new = []
+	num_types = len(np.unique(types))
+	unique_types = sorted(np.unique(types))
+	type2id = dict()
+	cur_id = 1
+	for t in unique_types:
+		if type2id.get(t, -1) == -1:
+			type2id[t] = cur_id
+			cur_id += 1
+	for t in types:
+		types_new.append(type2id[t])
+	types_new = np.array(types_new)
+	return types_new, type2id
+
 def get_processed_data(dataset_name, args):
 
 	bin_size = args.bin_size
@@ -809,8 +824,9 @@ def get_processed_data(dataset_name, args):
 		types = np.ones_like(timestamps)
 	gaps = timestamps[1:] - timestamps[:-1]
 	gaps = gaps.astype(np.float32)
-	data_bins, end_hr_bins, times_in_bin, types_in_bin = create_bin(timestamps, types, bin_size)
 	args.num_types = len(np.unique(types))
+	types, _ = reset_indices(types)
+	data_bins, end_hr_bins, times_in_bin, types_in_bin = create_bin(timestamps, types, bin_size)
 
 	timestamps_comp_full = list()
 	gaps_comp_full = list()
@@ -1285,6 +1301,7 @@ def get_processed_data(dataset_name, args):
 	test_data_in_types_bin_comp = np.array([np.ones_like(seq) for seq in test_data_in_gaps_bin_comp])
 	train_data_in_types_comp = np.array([np.ones_like(seq) for seq in train_data_in_gaps_comp])
 	train_data_out_types_comp = np.array([np.ones_like(seq) for seq in train_data_out_gaps_comp])
+
 
 	dataset = {
 		'train_data_in_gaps': train_data_in_gaps,
