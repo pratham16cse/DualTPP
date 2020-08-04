@@ -105,9 +105,9 @@ def create_taxi_data():
 	taxi_df = taxi_df[(taxi_df['tpep_pickup_datetime'].dt.year == 2019)]
 	taxi_df = taxi_df[(taxi_df['tpep_pickup_datetime'].dt.month < 3)]
 	taxi_df = taxi_df.sort_values('tpep_pickup_datetime')
-	taxi_timestamps = pd.DatetimeIndex(taxi_df['tpep_pickup_datetime']).astype(np.int64)/1000000000
 	taxi_types = taxi_df['DOLocationID'].values
 	#taxi_timestamps = taxi_timestamps.sort_values().astype(np.int64)
+	taxi_timestamps = pd.DatetimeIndex(taxi_df['tpep_pickup_datetime']).astype(np.int64)/1000000000
 	taxi_timestamps = np.array(taxi_timestamps)
 	taxi_timestamps -= taxi_timestamps[0]
 	taxi_timestamps = taxi_timestamps[:-1]
@@ -124,7 +124,8 @@ def create_taxi_data():
 	return taxi_gaps, taxi_timestamps, taxi_types
 
 def create_911_traffic_data():
-	call_df = pd.read_csv('../911.csv', usecols=["title", "timeStamp"])
+	call_df = pd.read_csv('../911.csv')
+	call_df = call_df[call_df['zip'].isnull()==False] # Ignore calls with NaN zip codes
 	print('Types of Emergencies')
 	print(call_df.title.apply(lambda x: x.split(':')[0]).value_counts())
 	call_df['type'] = call_df.title.apply(lambda x: x.split(':')[0])
@@ -134,47 +135,54 @@ def create_911_traffic_data():
 		print('For', each, 'type of Emergency, we have ', subtype_count.count(), 'subtypes')
 		print(subtype_count[subtype_count>100])
 	print('Out of 3 types taking Traffic type considering only Traffic')
-	call_data = call_df[call_df['type']=='Traffic'].timeStamp
-	call_data = pd.to_datetime(call_data, errors='coerce')
-	print("We have timeline from", call_data.min(), "to", call_data.max())
+	call_data = call_df[call_df['type']=='Traffic']
+	call_data['timeStamp'] = pd.to_datetime(call_data['timeStamp'], errors='coerce')
+	print("We have timeline from", call_data['timeStamp'].min(), "to", call_data['timeStamp'].max())
+	call_data = call_data.sort_values('timeStamp')
 
-	call_data = pd.DatetimeIndex(call_data).astype(np.int64)/1000000000
-	call_timestamps = call_data.sort_values().astype(np.int64)
+	call_timestamps = pd.DatetimeIndex(call_data['timeStamp']).astype(np.int64)/1000000000
+	#call_timestamps = call_data.sort_values().astype(np.int64)
 	call_timestamps = np.array(call_timestamps)
 	call_timestamps -= call_timestamps[0]
+	call_types = call_data['zip'].values
 	dataset_name = 'call'
 	if dataset_name in downsampling:
 		call_timestamps = downsampling_dataset(call_timestamps, dataset_name)
+		call_types = downsampling_dataset(call_types, dataset_name)
 	call_gaps = call_timestamps[1:] - call_timestamps[:-1]
 	plt.plot(call_gaps[:100])
 	plt.ylabel('Gaps')
 	plt.xlabel('timeline')
 	plt.savefig('call_traffic_gaps.png')
 	plt.close()
-	return call_gaps, call_timestamps	
+	return call_gaps, call_timestamps, call_types
 
 def create_911_ems_data():
-	call_df = pd.read_csv('../911.csv', usecols=["title", "timeStamp"])
+	call_df = pd.read_csv('../911.csv')
+	call_df = call_df[call_df['zip'].isnull()==False] # Ignore calls with NaN zip codes
 	call_df['type'] = call_df.title.apply(lambda x: x.split(':')[0])
 	print('Out of 3 types taking EMS type considering only EMS')
-	call_data = call_df[call_df['type']=='EMS'].timeStamp
-	call_data = pd.to_datetime(call_data, errors='coerce')
-	print("We have timeline from", call_data.min(), "to", call_data.max())
+	call_data = call_df[call_df['type']=='EMS']
+	call_data['timeStamp'] = pd.to_datetime(call_data['timeStamp'], errors='coerce')
+	print("We have timeline from", call_data['timeStamp'].min(), "to", call_data['timeStamp'].max())
+	call_data = call_data.sort_values('timeStamp')
 
-	call_data = pd.DatetimeIndex(call_data).astype(np.int64)/1000000000
-	call_timestamps = call_data.sort_values().astype(np.int64)
+	call_timestamps = pd.DatetimeIndex(call_data['timeStamp']).astype(np.int64)/1000000000
+	#call_timestamps = call_data.sort_values().astype(np.int64)
 	call_timestamps = np.array(call_timestamps)
 	call_timestamps -= call_timestamps[0]
+	call_types = call_data['zip'].values
 	dataset_name = 'call'
 	if dataset_name in downsampling:
 		call_timestamps = downsampling_dataset(call_timestamps, dataset_name)
+		call_types = downsampling_dataset(call_types, dataset_name)
 	call_gaps = call_timestamps[1:] - call_timestamps[:-1]
 	plt.plot(call_gaps[:100])
 	plt.ylabel('Gaps')
 	plt.xlabel('timeline')
 	plt.savefig('call_ems_gaps.png')
 	plt.close()
-	return call_gaps, call_timestamps	
+	return call_gaps, call_timestamps, call_types
 
 def generate_dataset():
 	os.makedirs('./data', exist_ok=True)
@@ -194,12 +202,14 @@ def generate_dataset():
 		np.savetxt('sin_hawkes_overlay.txt', timestamps)
 	if not os.path.isfile("911_traffic.txt"):
 		print('Generating 911 data')
-		gaps, timestamps = create_911_traffic_data()
+		gaps, timestamps, types = create_911_traffic_data()
 		np.savetxt('911_traffic.txt', timestamps)
+		np.savetxt('911_traffic_types.txt', types)
 	if not os.path.isfile("911_ems.txt"):
 		print('Generating 911 data')
-		gaps, timestamps = create_911_ems_data()
+		gaps, timestamps, types = create_911_ems_data()
 		np.savetxt('911_ems.txt', timestamps)
+		np.savetxt('911_ems_types.txt', types)
 	if not os.path.isfile("taxi.txt"):
 		print('Generating taxi data')
 		gaps, timestamps, types = create_taxi_data()
