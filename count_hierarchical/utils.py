@@ -804,6 +804,9 @@ def reset_indices(types):
 	types_new = np.array(types_new)
 	return types_new, type2id
 
+def set_comp_bin_sz(bin_counts):
+	return int(np.round(np.mean(bin_counts)))
+
 def get_processed_data(dataset_name, args):
 
 	bin_size = args.bin_size
@@ -827,6 +830,7 @@ def get_processed_data(dataset_name, args):
 	args.num_types = len(np.unique(types))
 	types, _ = reset_indices(types)
 	data_bins, end_hr_bins, times_in_bin, types_in_bin = create_bin(timestamps, types, bin_size)
+	args.comp_bin_sz = set_comp_bin_sz(data_bins)
 
 	timestamps_comp_full = list()
 	gaps_comp_full = list()
