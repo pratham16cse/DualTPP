@@ -4237,7 +4237,7 @@ def run_rmtpp_optimizer_model_comp(
 	all_best_cnt = [0 for _ in range(len(test_data_input_gaps_bin))]
 	#import ipdb
 	#ipdb.set_trace()
-	for dec_idx in range(all_gaps_pred_simu.shape[1]):
+	for dec_idx in range(all_times_pred_comp.shape[1]):
 	#for dec_idx in range(4):
 
 		#if dec_idx == 0:
@@ -4335,7 +4335,7 @@ def run_rmtpp_optimizer_model_comp(
 
 	all_types_pred_flatten = []
 	for seq in all_types_pred:
-		seq = [s.tolist() for s in seq]
+		seq = [s.numpy().tolist() for s in seq]
 		all_types_pred_flatten.append(np.array(flatten(seq)))
 	all_types_pred = np.array(all_types_pred_flatten)
 
