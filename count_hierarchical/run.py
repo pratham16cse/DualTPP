@@ -1335,7 +1335,7 @@ def run_transformer(args, data, test_data):
 		print(model_name, 'time_reqd:', et-st)
 		
 		# Dev calculations
-		enc_out, (dev_gaps_pred, dev_types_pred) = model(dev_data_in_gaps, dev_data_in_feats, dev_data_in_types)
+		enc_out, (dev_logits_pred, dev_gaps_pred) = model(dev_data_in_gaps, dev_data_in_feats, dev_data_in_types)
 		dev_gaps_pred_unnorm = utils.denormalize_avg(dev_gaps_pred, 
 													 train_norm_a_gaps,
 													 train_norm_d_gaps)
