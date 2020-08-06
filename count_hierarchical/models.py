@@ -958,7 +958,8 @@ class Encoder(tf.keras.Model):
         result[:, :, 1::2] = np.cos(result[:, :, 1::2])
         result = tf.constant(result)
         non_pad_mask = tf.cast(tf.expand_dims(non_pad_mask, axis=-1), tf.float32)
-        return result * non_pad_mask
+        #return result * non_pad_mask
+        return result
 
     def call(self, event_type, event_time, event_feats, non_pad_mask):
         """ Encode event sequences via masked self-attention. """
@@ -999,7 +1000,7 @@ class Predictor(tf.keras.Model):
     def call(self, data, non_pad_mask):
         out = self.linear(data)
         non_pad_mask = tf.cast(tf.expand_dims(non_pad_mask, axis=-1), tf.float32)
-        out = out * non_pad_mask
+        #out = out * non_pad_mask
         return out
 
 class RNN_layers(tf.keras.Model):

@@ -1282,10 +1282,8 @@ def run_transformer(args, data, test_data):
 		for sm_step, (gaps_batch_in, feats_batch_in, types_batch_in,
 					  gaps_batch_out, feats_batch_out, types_batch_out) \
 						in enumerate(train_dataset_gaps):
-			#if sm_step>50:
-			#	break
 			with tf.GradientTape() as tape:
-				# TODO: Make sure to pass correct next_stat
+
 				enc_out, (types_pred, gaps_pred) = model(
 					gaps_batch_in, 
 					feats_batch_in,
@@ -1295,6 +1293,7 @@ def run_transformer(args, data, test_data):
 				# Compute the loss for this minibatch.
 				#TODO: type_loss_func not correctly mapped from torch to tf
 				if args.smooth > 0:
+					assert False, "LabelSmoothingLoss not well tested"
 					type_loss_func = transformer_utils.LabelSmoothingLoss(args.smooth, args.num_types, ignore_index=-1)
 				else:
 					type_loss_func = tf.keras.losses.CategoricalCrossentropy(reduction=tf.keras.losses.Reduction.NONE)
@@ -4617,9 +4616,28 @@ def run_transformer_simulation(args, models, data, test_data):
 		)
 	all_counts_pred = np.stack(all_counts_pred, axis=1)
 
-	all_times_pred = np.expand_dims(all_times_pred.numpy(), axis=-1)
+	#all_times_pred = np.expand_dims(all_times_pred.numpy(), axis=-1)
+	all_times_pred = all_times_pred.numpy()
 	all_types_pred = all_types_pred.numpy()
-	return all_counts_pred, all_times_pred, all_types_pred
+
+	all_means_pred = []
+	for seq, beg_time in zip(all_times_pred, test_end_hr_bins[:, 0] - args.bin_size):
+		all_means_pred.append(
+			utils.normalize_avg_given_param(
+				seq - np.concatenate([beg_time, seq[:-1]]),
+				test_gap_in_bin_norm_a, test_gap_in_bin_norm_d
+			)
+		)
+	all_means_pred = np.array(all_means_pred)
+
+	all_sigms_pred = []
+	for seq in all_means_pred:
+		all_sigms_pred.append(np.ones_like(seq)*1e-6)
+	all_sigms_pred = np.array(all_sigms_pred)
+
+	event_dist_params = (all_means_pred, all_sigms_pred)
+
+	return all_counts_pred, all_times_pred, all_types_pred, event_dist_params
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#:
 
 
@@ -5987,7 +6005,8 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 	
 				if inference_model_name=='transformer_simu' and run_model_flags[inference_model_name]:
 					(
-						all_counts_pred, all_times_pred, all_types_pred
+						all_counts_pred, all_times_pred, all_types_pred,
+						event_dist_params,
 					) = run_transformer_simulation(args, models, data, test_data)
 
 

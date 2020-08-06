@@ -21,9 +21,9 @@ class EncoderLayer(tf.keras.Model):
         non_pad_mask = tf.cast(tf.expand_dims(non_pad_mask, axis=-1), tf.float32)
 
         #enc_output = tf.concat([enc_output, feats], axis=-1)
-        enc_output *= non_pad_mask
+        #enc_output *= non_pad_mask
 
         enc_output = self.pos_ffn(enc_output)
-        enc_output *= non_pad_mask
+        #enc_output *= non_pad_mask
 
         return enc_output, enc_slf_attn

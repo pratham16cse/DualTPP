@@ -828,7 +828,7 @@ def get_processed_data(dataset_name, args):
 	gaps = timestamps[1:] - timestamps[:-1]
 	gaps = gaps.astype(np.float32)
 	args.num_types = len(np.unique(types))
-	types, _ = reset_indices(types)
+	types, _ = reset_indices(types) # Make sure type-indieces are in the range [Y]
 	data_bins, end_hr_bins, times_in_bin, types_in_bin = create_bin(timestamps, types, bin_size)
 	args.comp_bin_sz = set_comp_bin_sz(data_bins)
 	comp_bin_sz = args.comp_bin_sz

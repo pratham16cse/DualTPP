@@ -40,17 +40,19 @@ def compute_integral_unbiased(model, data, time, non_pad_mask, type_mask):
 
     num_samples = 100
 
-    diff_time = (time[:, 1:] - time[:, :-1]) * non_pad_mask[:, 1:]
+    #diff_time = (time[:, 1:] - time[:, :-1]) * non_pad_mask[:, 1:]
+    diff_time = (time) * non_pad_mask
     #temp_time = diff_time.unsqueeze(2) * \
     #            torch.rand([*diff_time.size(), num_samples], device=data.device)
     temp_time = tf.expand_dims(diff_time, axis=2) * \
                 tf.random.uniform([*(diff_time.shape.as_list()), num_samples])
     #temp_time /= (time[:, :-1] + 1).unsqueeze(2)
-    temp_time /= tf.expand_dims((time[:, :-1] + 1), axis=2)
+    #temp_time /= tf.expand_dims((time[:, :-1] + 1), axis=2)
+    temp_time /= tf.expand_dims((tf.cumsum(time, axis=-1) + 1), axis=2)
 
-    temp_hid = model.linear(data)[:, 1:, :]
+    temp_hid = model.linear(data)
     #temp_hid = torch.sum(temp_hid * type_mask[:, 1:, :], dim=2, keepdim=True)
-    temp_hid = tf.reduce_sum(temp_hid * type_mask[:, 1:, :], axis=2, keepdims=True)
+    temp_hid = tf.reduce_sum(temp_hid * type_mask, axis=2, keepdims=True)
 
     #all_lambda = F.softplus(temp_hid + model.alpha * temp_time, threshold=10)
     # No threshold parameter for tf.nn.softplus is available, (or not required).
