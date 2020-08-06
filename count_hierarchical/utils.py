@@ -831,6 +831,7 @@ def get_processed_data(dataset_name, args):
 	types, _ = reset_indices(types)
 	data_bins, end_hr_bins, times_in_bin, types_in_bin = create_bin(timestamps, types, bin_size)
 	args.comp_bin_sz = set_comp_bin_sz(data_bins)
+	comp_bin_sz = args.comp_bin_sz
 
 	timestamps_comp_full = list()
 	gaps_comp_full = list()
@@ -1302,9 +1303,9 @@ def get_processed_data(dataset_name, args):
 	# ----- Define dummy types for _comp datasets ----- #
 	dev_data_in_types_comp = np.array([np.ones_like(seq) for seq in dev_data_in_gaps_comp])
 	dev_data_out_types_comp = np.array([np.ones_like(seq) for seq in dev_data_out_gaps_comp])
-	test_data_in_types_bin_comp = np.array([np.ones_like(seq) for seq in test_data_in_gaps_bin_comp])
-	train_data_in_types_comp = np.array([np.ones_like(seq) for seq in train_data_in_gaps_comp])
-	train_data_out_types_comp = np.array([np.ones_like(seq) for seq in train_data_out_gaps_comp])
+	test_data_in_types_bin_comp = np.squeeze(np.array([np.ones_like(seq) for seq in test_data_in_gaps_bin_comp]), axis=-1)
+	train_data_in_types_comp = np.squeeze(np.array([np.ones_like(seq) for seq in train_data_in_gaps_comp]), axis=-1)
+	train_data_out_types_comp = np.squeeze(np.array([np.ones_like(seq) for seq in train_data_out_gaps_comp]), axis=-1)
 
 
 	dataset = {

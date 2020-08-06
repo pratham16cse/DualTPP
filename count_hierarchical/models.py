@@ -184,7 +184,12 @@ class RMTPP(tf.keras.Model):
         if self.num_types>1:
             self.types_logits = self.marks_output_layer(self.hidden_states)
         else:
-            self.types_logits = tf.ones_like(self.gaps_pred)
+            # Dummy logits
+            self.types_logits = tf.concat(
+                [tf.ones_like(self.gaps_pred),
+                 tf.zeros_like(self.gaps_pred)],
+                axis=-1,
+            )
         
         next_initial_state = self.hidden_states[:,next_state_sno-1]
         final_state = self.hidden_states[:,-1]
