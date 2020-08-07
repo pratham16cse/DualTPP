@@ -1296,7 +1296,7 @@ def run_transformer(args, data, test_data):
 					assert False, "LabelSmoothingLoss not well tested"
 					type_loss_func = transformer_utils.LabelSmoothingLoss(args.smooth, args.num_types, ignore_index=-1)
 				else:
-					type_loss_func = tf.keras.losses.CategoricalCrossentropy(reduction=tf.keras.losses.Reduction.NONE)
+					#type_loss_func = tf.keras.losses.CategoricalCrossentropy(reduction=tf.keras.losses.Reduction.NONE)
 					type_loss_func = tf.keras.losses.SparseCategoricalCrossentropy(
 						from_logits=True,
 						reduction=tf.keras.losses.Reduction.NONE
@@ -2017,6 +2017,9 @@ def simulate_transformer(model, times_in, gaps_in, feats_in, types_in,
 	simul_step = 0
 
 	while any(times_pred[-1]<t_b_plus):
+		print(np.sum(times_pred[-1]<t_b_plus), t_b_plus.shape)
+		#print(np.squeeze(t_b_plus-times_pred[-1], axis=-1))
+		#print(gaps_in[0, :, 0])
 		enc_out, (step_types_logits, step_gaps_pred) = model(gaps_in, feats_in, types_in)
 
 		step_types_pred = tf.argmax(step_types_logits, axis=-1) + 1
@@ -2027,6 +2030,7 @@ def simulate_transformer(model, times_in, gaps_in, feats_in, types_in,
 		types_in = tf.concat([types_in[:,1:], step_types_pred], axis=1)
 		step_gaps_pred = tf.squeeze(step_gaps_pred, axis=-1)
 		last_gaps_pred_unnorm = utils.denormalize_avg(step_gaps_pred, data_norm_a, data_norm_d)
+		#print(np.squeeze(last_gaps_pred_unnorm, axis=-1))
 		last_times_pred = times_pred[-1] + last_gaps_pred_unnorm
 		step_feats_pred = get_time_features(tf.expand_dims(last_times_pred, axis=-1))
 		feats_in = tf.concat([feats_in[:, 1:], step_feats_pred], axis=1)
@@ -5103,6 +5107,7 @@ def evaluate_query_2(
 	horizon_start, horizon_end,
 	interval_size, normalizers,
 	less_threshold, more_threshold,
+	use_poisson_binomial=True,
 ):
 	norm_a, norm_d = normalizers
 	num_intervals = 1000
@@ -5141,30 +5146,68 @@ def evaluate_query_2(
 		)
 
 		batch_means_shifted = np.cumsum(batch_means)
-		dist = tfd.Normal(loc=batch_means_shifted, scale=batch_sigms)
-		interval_begin_cdf = dist.cdf(all_intervals)
-		interval_end_cdf = dist.cdf(all_intervals + interval_size_norm)
-		pred_counts = np.sum(interval_end_cdf - interval_begin_cdf, axis=1)
+		if use_poisson_binomial:
+			dist = tfd.Normal(loc=batch_means_shifted, scale=np.ones_like(batch_sigms))
+			interval_begin_cdf = dist.cdf(all_intervals)
+			interval_end_cdf = dist.cdf(all_intervals + interval_size_norm)
+			success_prob = interval_end_cdf - interval_begin_cdf # num_intervals x num_events
+			pb_mean = tf.reduce_sum(success_prob, axis=1)
+			pb_var = tf.sqrt(tf.reduce_sum(success_prob*(1.-success_prob), axis=1))
+			pb_skew = tf.pow(pb_var, -1.5) * tf.reduce_sum(success_prob*(1.-success_prob)*(1.-2*success_prob), axis=1)
+			pb_threshold_cdf = utils.refined_normal_approx(pb_mean, pb_var, pb_skew, more_threshold[batch_idx]) 
+			more_pred_prob = (1.-pb_threshold_cdf) / tf.reduce_sum(1. - pb_threshold_cdf)
+			less_pred_prob = (pb_threshold_cdf) / tf.reduce_sum(pb_threshold_cdf)
 
-		#import ipdb
-		#ipdb.set_trace()
-		dist_true = tfd.Normal(
-			loc=batch_true_shifted,
-			scale=(np.ones_like(batch_true_shifted)*1e-6).astype(np.float64)
-		)
-		interval_begin_cdf = dist_true.cdf(all_intervals)
-		interval_end_cdf = dist_true.cdf(all_intervals + interval_size_norm)
-		true_counts = np.sum(interval_end_cdf - interval_begin_cdf, axis=1)
+			true_counts = np.sum(
+				np.logical_and(
+					(batch_true_shifted - all_intervals)>0.,
+					(batch_true_shifted - (all_intervals + interval_size_norm)<=0.)
+				),
+				axis=1
+			)
+			more_true = (true_counts >= more_threshold[batch_idx]).astype(np.float32)
+			more_true_prob = more_true * 1. / np.sum(more_true)
 
-		more_true = (true_counts >= more_threshold[batch_idx]).astype(np.float32)
-		more_pred = (pred_counts >= more_threshold[batch_idx]).astype(np.float32)
-		more_mismatch = np.sum(np.abs(more_true-more_pred))
-		more_mismatch_pe.append(more_mismatch)
+			more_mismatch = (1.-more_pred_prob)*more_true + more_pred_prob*(1.-more_true)
+			more_mismatch_pe.append(more_mismatch)
 
-		less_true = (true_counts <= less_threshold[batch_idx]).astype(np.float32)
-		less_pred = (pred_counts <= less_threshold[batch_idx]).astype(np.float32)
-		less_mismatch = np.sum(np.abs(less_true-less_pred))
-		less_mismatch_pe.append(less_mismatch)
+			#import ipdb
+			#ipdb.set_trace()
+
+			less_true = (true_counts <= less_threshold[batch_idx]).astype(np.float32)
+			less_true_prob = less_true * 1. / np.sum(less_true)
+
+			less_mismatch = (1.-less_pred_prob)*less_true + less_pred_prob*(1.-less_true)
+			less_mismatch_pe.append(less_mismatch)
+
+			#import ipdb
+			#ipdb.set_trace()
+
+		else:
+			dist = tfd.Normal(loc=batch_means_shifted, scale=batch_sigms)
+			interval_begin_cdf = dist.cdf(all_intervals)
+			interval_end_cdf = dist.cdf(all_intervals + interval_size_norm)
+			pred_counts = np.sum(interval_end_cdf - interval_begin_cdf, axis=1)
+	
+			#import ipdb
+			#ipdb.set_trace()
+			dist_true = tfd.Normal(
+				loc=batch_true_shifted,
+				scale=(np.ones_like(batch_true_shifted)*1e-6).astype(np.float64)
+			)
+			interval_begin_cdf = dist_true.cdf(all_intervals)
+			interval_end_cdf = dist_true.cdf(all_intervals + interval_size_norm)
+			true_counts = np.sum(interval_end_cdf - interval_begin_cdf, axis=1)
+	
+			more_true = (true_counts >= more_threshold[batch_idx]).astype(np.float32)
+			more_pred = (pred_counts >= more_threshold[batch_idx]).astype(np.float32)
+			more_mismatch = np.sum(np.abs(more_true-more_pred))
+			more_mismatch_pe.append(more_mismatch)
+	
+			less_true = (true_counts <= less_threshold[batch_idx]).astype(np.float32)
+			less_pred = (pred_counts <= less_threshold[batch_idx]).astype(np.float32)
+			less_mismatch = np.sum(np.abs(less_true-less_pred))
+			less_mismatch_pe.append(less_mismatch)
 
 	more_mismatch_pe = np.array(more_mismatch_pe)
 	less_mismatch_pe = np.array(less_mismatch_pe)
@@ -6063,6 +6106,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					args.interval_size,
 					(test_gap_in_bin_norm_a, test_gap_in_bin_norm_d),
 					less_threshold, more_threshold,
+					use_poisson_binomial=False,
 				)
 
 
