@@ -985,11 +985,11 @@ class Encoder(tf.keras.Model):
                 slf_attn_mask=slf_attn_mask)
         return enc_output
 
-class Predictor(tf.keras.Model):
+class TypePredictor(tf.keras.Model):
     """ Prediction of next event type. """
 
-    def __init__(self, dim, num_types, name='Predictor', **kwargs):
-        super(Predictor, self).__init__(name=name, **kwargs)
+    def __init__(self, dim, num_types, name='TypePredictor', **kwargs):
+        super(TypePredictor, self).__init__(name=name, **kwargs)
 
         #self.linear = nn.Linear(dim, num_types, bias=False)
         #nn.init.xavier_normal_(self.linear.weight)
@@ -1002,6 +1002,26 @@ class Predictor(tf.keras.Model):
         non_pad_mask = tf.cast(tf.expand_dims(non_pad_mask, axis=-1), tf.float32)
         #out = out * non_pad_mask
         return out
+
+class TimePredictor(tf.keras.Model):
+    """ Prediction of next event type. """
+
+    def __init__(self, dim, num_types, name='TimePredictor', **kwargs):
+        super(TimePredictor, self).__init__(name=name, **kwargs)
+
+        #self.linear = nn.Linear(dim, num_types, bias=False)
+        #nn.init.xavier_normal_(self.linear.weight)
+        self.linear = layers.Dense(
+            1, activation=tf.nn.softplus, use_bias=False,
+            kernel_initializer=tf.initializers.GlorotNormal()
+        )
+
+    def call(self, data, non_pad_mask):
+        out = self.linear(data)
+        non_pad_mask = tf.cast(tf.expand_dims(non_pad_mask, axis=-1), tf.float32)
+        #out = out * non_pad_mask
+        return out
+
 
 class RNN_layers(tf.keras.Model):
     """
@@ -1075,10 +1095,10 @@ class Transformer(tf.keras.Model):
         self.rnn = RNN_layers(d_model, d_rnn)
 
         # prediction of next time stamp
-        self.time_predictor = Predictor(d_model, 1)
+        self.time_predictor = TimePredictor(d_model, 1)
 
         # prediction of next event type
-        self.type_predictor = Predictor(d_model, num_types)
+        self.type_predictor = TypePredictor(d_model, num_types)
 
     def call(self, event_time, event_feats, event_type):
         """
