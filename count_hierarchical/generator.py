@@ -23,6 +23,27 @@ def downsampling_dataset(timestamps, dataset_name):
 	print('Down-sampling', dataset_name, 'dataset by', downsampling[dataset_name])
 	return timestamps[::downsampling[dataset_name]]
 
+def purge_duplicate_events(timestamps, types):
+	timestamps = timestamps.tolist()
+	types = types.tolist()
+	del_indices = []
+	events = [(ts, ty) for ts, ty in zip(timestamps, types)]
+	events_next = events[1:]
+	np.where([e[0]==en[0] and e[1]==en[1] for e, en in zip(events[:-1], events_next)])
+	for i in range(1, len(timestamps)):
+		if timestamps[i]==timestamps[i-1] and types[i]==types[i-1]:
+			del_indices.append(i)
+
+	import ipdb
+	ipdb.set_trace()
+
+	for ind in sorted(del_indices, reverse=True):
+		del timestamps[ind]
+		del types[ind]
+
+	return timestamps, types
+
+
 def hawkes_demo():
 	hk_model = hk.simulator().set_kernel('exp').set_baseline('const').set_parameter(para)
 	T = hk_model.simulate(demo_itv)
@@ -190,29 +211,35 @@ def generate_dataset():
 	if not os.path.isfile("sin.txt"):
 		print('Generating sin data')
 		gaps, timestamps, types = create_sin_data()
+		timestamps, types = purge_duplicate_events(timestamps, types)
 		np.savetxt('sin.txt', timestamps)
 		np.savetxt('sin_types.txt', types)
 	if not os.path.isfile("hawkes.txt"):
 		print('Generating hawkes data')
 		gaps, timestamps = create_hawkes_data()
+		timestamps, types = purge_duplicate_events(timestamps, types)
 		np.savetxt('hawkes.txt', timestamps)
 	if not os.path.isfile("sin_hawkes_overlay.txt"):
 		print('Generating sin_hawkes_overlay data')
 		gaps, timestamps = create_sin_hawkes_overlay_data()
+		timestamps, types = purge_duplicate_events(timestamps, types)
 		np.savetxt('sin_hawkes_overlay.txt', timestamps)
 	if not os.path.isfile("911_traffic.txt"):
 		print('Generating 911 data')
 		gaps, timestamps, types = create_911_traffic_data()
+		timestamps, types = purge_duplicate_events(timestamps, types)
 		np.savetxt('911_traffic.txt', timestamps)
 		np.savetxt('911_traffic_types.txt', types)
 	if not os.path.isfile("911_ems.txt"):
 		print('Generating 911 data')
 		gaps, timestamps, types = create_911_ems_data()
+		timestamps, types = purge_duplicate_events(timestamps, types)
 		np.savetxt('911_ems.txt', timestamps)
 		np.savetxt('911_ems_types.txt', types)
 	if not os.path.isfile("taxi.txt"):
 		print('Generating taxi data')
 		gaps, timestamps, types = create_taxi_data()
+		timestamps, types = purge_duplicate_events(timestamps, types)
 		np.savetxt('taxi.txt', timestamps)
 		np.savetxt('taxi_types.txt', types)
 	os.chdir('../')
@@ -263,6 +290,7 @@ def generate_twitter_dataset(twitter_dataset_names):
 		if not os.path.isfile(dataset_name+'.txt'):
 			print('Generating', dataset_name, 'data')
 			gaps, timestamps, types = create_twitter_data(dataset_name)
+			timestamps, types = purge_duplicate_events(timestamps, types)
 			np.savetxt(dataset_name+'.txt', timestamps)
 			np.savetxt(dataset_name+'_types.txt', types)
 	os.chdir('../')
