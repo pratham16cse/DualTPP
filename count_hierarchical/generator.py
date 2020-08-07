@@ -40,6 +40,18 @@ def purge_duplicate_events(timestamps, types):
 
 	return timestamps, types
 
+def keep_top_k_types(types, keep_classes=10):
+	types_counter = OrderedDict(sorted(Counter(types).items(), key=itemgetter(1), reverse=True))
+	type2supertype = OrderedDict()
+	for i, (type_, _) in enumerate(types_counter.items()):
+		if i > keep_classes:
+			type2supertype[type_] = keep_classes + 1
+		else:
+			type2supertype[type_] = i + 1
+
+	types_new = [type2supertype[ty] for ty in types]
+	return np.array(types_new)
+
 
 def hawkes_demo():
 	hk_model = hk.simulator().set_kernel('exp').set_baseline('const').set_parameter(para)
@@ -130,6 +142,7 @@ def create_taxi_data():
 	taxi_timestamps -= taxi_timestamps[0]
 	taxi_timestamps = taxi_timestamps[:-1]
 	taxi_types = taxi_types[:-1]
+	taxi_types = keep_top_k_types(taxi_types)
 	dataset_name = 'taxi'
 	if dataset_name in downsampling:
 		taxi_timestamps = downsampling_dataset(taxi_timestamps, dataset_name)
@@ -163,6 +176,7 @@ def create_911_traffic_data():
 	call_timestamps = np.array(call_timestamps)
 	call_timestamps -= call_timestamps[0]
 	call_types = call_data['zip'].values
+	call_types = keep_top_k_types(call_types)
 	dataset_name = 'call'
 	if dataset_name in downsampling:
 		call_timestamps = downsampling_dataset(call_timestamps, dataset_name)
@@ -190,6 +204,7 @@ def create_911_ems_data():
 	call_timestamps = np.array(call_timestamps)
 	call_timestamps -= call_timestamps[0]
 	call_types = call_data['zip'].values
+	call_types = keep_top_k_types(call_types)
 	dataset_name = 'call'
 	if dataset_name in downsampling:
 		call_timestamps = downsampling_dataset(call_timestamps, dataset_name)
