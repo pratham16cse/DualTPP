@@ -5147,14 +5147,17 @@ def evaluate_query_2(
 
 		batch_means_shifted = np.cumsum(batch_means)
 		if use_poisson_binomial:
-			dist = tfd.Normal(loc=batch_means_shifted, scale=np.ones_like(batch_sigms))
+			dist = tfd.Normal(loc=batch_means_shifted, scale=batch_sigms)
 			interval_begin_cdf = dist.cdf(all_intervals)
 			interval_end_cdf = dist.cdf(all_intervals + interval_size_norm)
 			success_prob = interval_end_cdf - interval_begin_cdf # num_intervals x num_events
 			pb_mean = tf.reduce_sum(success_prob, axis=1)
-			pb_var = tf.sqrt(tf.reduce_sum(success_prob*(1.-success_prob), axis=1))
+			pb_var = tf.maximum(tf.reduce_sum(success_prob*(1.-success_prob), axis=1), 1e-6)
 			pb_skew = tf.pow(pb_var, -1.5) * tf.reduce_sum(success_prob*(1.-success_prob)*(1.-2*success_prob), axis=1)
-			pb_threshold_cdf = utils.refined_normal_approx(pb_mean, pb_var, pb_skew, more_threshold[batch_idx]) 
+			#pb_threshold_cdf = utils.refined_normal_approx(pb_mean, pb_var, pb_skew, more_threshold[batch_idx]) 
+			pb_threshold_cdf = utils.normal_approx(pb_mean, pb_var, more_threshold[batch_idx]) 
+			#import ipdb
+			#ipdb.set_trace()
 			more_pred_prob = (1.-pb_threshold_cdf) / tf.reduce_sum(1. - pb_threshold_cdf)
 			less_pred_prob = (pb_threshold_cdf) / tf.reduce_sum(pb_threshold_cdf)
 

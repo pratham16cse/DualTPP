@@ -5,6 +5,10 @@ import matplotlib.pyplot as plt
 from bisect import bisect_right
 from modules import Hawkes as hk
 
+import tensorflow as tf
+import tensorflow_probability as tfp
+tfd = tfp.distributions
+
 class Intensity(object):
     __metaclass__ = abc.ABCMeta
 
@@ -153,6 +157,19 @@ def write_opt_losses_to_file(
 		output_path + '__' + 'count_losses',
 		count_losses,
 	)
+
+def normal_approx(pb_mean, pb_var, threshold):
+	unit_normal_dist = tfd.Normal(loc=tf.zeros_like(pb_mean), scale=tf.ones_like(pb_mean))
+	x = (threshold + 0.5 - pb_mean) / tf.sqrt(pb_var)
+	pb_threshold_cdf = (unit_normal_dist.cdf(x))
+	return pb_threshold_cdf
+
+def refined_normal_approx(pb_mean, pb_var, pb_skew, threshold):
+	unit_normal_dist = tfd.Normal(loc=tf.zeros_like(pb_mean), scale=tf.ones_like(pb_mean))
+	x = (threshold + 0.5 - pb_mean) / tf.sqrt(pb_var)
+	pb_threshold_cdf = (unit_normal_dist.prob(x)) + pb_skew * (1-x*x) * unit_normal_dist.prob(x) / 6.
+
+	return pb_threshold_cdf
 
 def normalize_data(data):
 	mean = np.mean(data)
