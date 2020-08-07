@@ -211,16 +211,16 @@ def generate_dataset():
 		timestamps, types = purge_duplicate_events(timestamps, types)
 		np.savetxt('sin.txt', timestamps)
 		np.savetxt('sin_types.txt', types)
-	if not os.path.isfile("hawkes.txt"):
-		print('Generating hawkes data')
-		gaps, timestamps = create_hawkes_data()
-		timestamps, types = purge_duplicate_events(timestamps, types)
-		np.savetxt('hawkes.txt', timestamps)
-	if not os.path.isfile("sin_hawkes_overlay.txt"):
-		print('Generating sin_hawkes_overlay data')
-		gaps, timestamps = create_sin_hawkes_overlay_data()
-		timestamps, types = purge_duplicate_events(timestamps, types)
-		np.savetxt('sin_hawkes_overlay.txt', timestamps)
+#	if not os.path.isfile("hawkes.txt"):
+#		print('Generating hawkes data')
+#		gaps, timestamps = create_hawkes_data()
+#		timestamps, types = purge_duplicate_events(timestamps, types)
+#		np.savetxt('hawkes.txt', timestamps)
+#	if not os.path.isfile("sin_hawkes_overlay.txt"):
+#		print('Generating sin_hawkes_overlay data')
+#		gaps, timestamps = create_sin_hawkes_overlay_data()
+#		timestamps, types = purge_duplicate_events(timestamps, types)
+#		np.savetxt('sin_hawkes_overlay.txt', timestamps)
 	if not os.path.isfile("911_traffic.txt"):
 		print('Generating 911 data')
 		gaps, timestamps, types = create_911_traffic_data()
@@ -236,6 +236,8 @@ def generate_dataset():
 	if not os.path.isfile("taxi.txt"):
 		print('Generating taxi data')
 		gaps, timestamps, types = create_taxi_data()
+		timestamps = np.array(timestamps).astype(np.float32)
+		types = np.array(types).astype(np.float32)
 		timestamps, types = purge_duplicate_events(timestamps, types)
 		np.savetxt('taxi.txt', timestamps)
 		np.savetxt('taxi_types.txt', types)
@@ -287,7 +289,7 @@ def generate_twitter_dataset(twitter_dataset_names):
 		if not os.path.isfile(dataset_name+'.txt'):
 			print('Generating', dataset_name, 'data')
 			gaps, timestamps, types = create_twitter_data(dataset_name)
-			timestamps, types = purge_duplicate_events(timestamps, types)
+			timestamps, types = purge_duplicate_events(np.array(timestamps), np.array(types))
 			np.savetxt(dataset_name+'.txt', timestamps)
 			np.savetxt(dataset_name+'_types.txt', types)
 	os.chdir('../')
