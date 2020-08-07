@@ -34,9 +34,6 @@ def purge_duplicate_events(timestamps, types):
 		if timestamps[i]==timestamps[i-1] and types[i]==types[i-1]:
 			del_indices.append(i)
 
-	import ipdb
-	ipdb.set_trace()
-
 	for ind in sorted(del_indices, reverse=True):
 		del timestamps[ind]
 		del types[ind]
