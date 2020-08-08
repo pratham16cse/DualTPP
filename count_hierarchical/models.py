@@ -768,8 +768,8 @@ class Seq2Seq(tf.keras.Model):
                                          return_state=True, stateful=False,
                                          name='g_lstm_layer')
 
-        self.d_layer_1 = tf.keras.layers.Conv1D(3, 3, activation='relu')
-        self.d_layer_2 = tf.keras.layers.Conv1D(5, 3, activation='relu')
+        self.d_layer_1 = tf.keras.layers.Conv1D(3, 10, activation='relu')
+        self.d_layer_2 = tf.keras.layers.Conv1D(5, 20, activation='relu')
         #TODO How to add skip-connection?
 
 
@@ -800,6 +800,7 @@ class Seq2Seq(tf.keras.Model):
 
     def generator(self,
                   dec_inputs, #dims batch_size x num_steps x input_size
+                  dec_feats,
                   enc_inputs=None,
                   enc_feats=None,
                   dec_init_state=None):
@@ -826,8 +827,9 @@ class Seq2Seq(tf.keras.Model):
 
         # rnn_outputs, self.g_h_state, self.g_c_state \
         #         = self.g_rnn_layer(g_inputs)
+        dec_inputs = tf.concat([dec_inputs, dec_feats/24.], axis=-1)
         rnn_outputs, self.g_h_state, self.g_c_state \
-                = self.dec_rnn_layer(dec_inputs,
+                = self.enc_rnn_layer(dec_inputs,
                                      initial_state=dec_init_state)
 
         # Add dropout

@@ -1121,6 +1121,7 @@ def run_seq2seq(args, data, test_data):
 			feats_batch_out = feats_batch[:, wgan_enc_len:]
 			with tf.GradientTape() as g_tape, tf.GradientTape() as d_tape:
 				gaps_pred = model.generator(gaps_batch_out,
+											feats_batch_out,
 											enc_inputs=gaps_batch_in,
 											enc_feats=feats_batch_in)
 
@@ -1135,7 +1136,7 @@ def run_seq2seq(args, data, test_data):
 					D_true = model.discriminator(gaps_batch_in, gaps_batch_out)
 
 					D_loss = tf.reduce_sum(D_pred) - tf.reduce_sum(D_true)
-					G_loss = 0.01 * G_mse_loss + (-tf.reduce_sum(D_pred))
+					G_loss = 10. * G_mse_loss + (-tf.reduce_sum(D_pred))
 	
 					# Adding Lipschitz Constraint
 					length_ = tf.minimum(tf.shape(gaps_batch_out)[1],tf.shape(gaps_pred)[1])
@@ -1176,7 +1177,9 @@ def run_seq2seq(args, data, test_data):
 		dev_data_in_gaps = dev_data_gaps[:, :wgan_enc_len]
 		dev_data_in_feats = dev_data_feats[:, :wgan_enc_len]
 		dev_data_out_gaps = dev_data_gaps[:, wgan_enc_len:]
+		dev_data_out_feats = dev_data_feats[:, wgan_enc_len:]
 		dev_gaps_pred = model.generator(dev_data_out_gaps,
+										dev_data_out_feats,
 										enc_inputs=dev_data_in_gaps,
 										enc_feats=dev_data_in_feats)
 		dev_gaps_pred_unnorm = utils.denormalize_avg(dev_gaps_pred, 
@@ -1212,7 +1215,9 @@ def run_seq2seq(args, data, test_data):
 	dev_data_in_gaps = dev_data_gaps[:, :wgan_enc_len]
 	dev_data_in_feats = dev_data_feats[:, :wgan_enc_len]
 	dev_data_out_gaps = dev_data_gaps[:, wgan_enc_len:]
+	dev_data_out_feats = dev_data_feats[:, wgan_enc_len:]
 	dev_gaps_pred = model.generator(dev_data_out_gaps,
+									dev_data_out_feats,
 									enc_inputs=dev_data_in_gaps,
 									enc_feats=dev_data_in_feats)
 	dev_gaps_pred_unnorm = utils.denormalize_avg(dev_gaps_pred, 
@@ -1967,15 +1972,21 @@ def simulate_seq2seq(model, times_in, gaps_in, feats_in,
 		enc_inputs = gaps_in
 	step_gaps_pred ,_, g_init_state = model.run_encoder(enc_inputs)
 	gaps_in = step_gaps_pred[:, -1:]
+	last_gaps_pred_unnorm = utils.denormalize_avg(gaps_in, data_norm_a, data_norm_d)
+	feats_in = get_time_features(tf.expand_dims(times_pred[-1], axis=-1)+last_gaps_pred_unnorm)
 
 	while any(times_pred[-1]<t_b_plus):
 
 		step_gaps_pred \
-				= model.generator(gaps_in, dec_init_state=g_init_state)
+				= model.generator(gaps_in, feats_in, dec_init_state=g_init_state)
 
 		gaps_in = step_gaps_pred.numpy()
 		step_gaps_pred = tf.squeeze(step_gaps_pred, axis=-1)
 		last_gaps_pred_unnorm = utils.denormalize_avg(step_gaps_pred, data_norm_a, data_norm_d)
+		feats_in = get_time_features(
+			tf.expand_dims(times_pred[-1], axis=-1)
+			+ tf.expand_dims(last_gaps_pred_unnorm, axis=-1)
+		)
 		last_times_pred = times_pred[-1] + last_gaps_pred_unnorm
 		gaps_pred.append(last_gaps_pred_unnorm)
 		times_pred.append(last_times_pred)
