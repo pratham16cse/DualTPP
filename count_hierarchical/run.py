@@ -821,7 +821,13 @@ def run_count_model(args, data, test_data):
 	test_bin_count_pred_norm, test_distribution_params = model(test_data_in_bin, test_data_in_bin_feats)		
 	test_bin_count_pred = utils.denormalize_data(test_bin_count_pred_norm, test_mean_bin, test_std_bin)
 	test_distribution_params[1] = utils.denormalize_data_stddev(test_distribution_params[1], test_mean_bin, test_std_bin)
-	return model, {"count_preds": test_bin_count_pred.numpy(), "count_var": test_distribution_params[1]}
+	return (
+		model,
+		{
+			"count_all_means_pred": test_bin_count_pred.numpy(),
+			"count_all_sigms_pred": test_distribution_params[1]
+		}
+	)
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
@@ -2309,8 +2315,12 @@ def run_rmtpp_rescaling_model(args, models, data, test_data, rmtpp_type):
 	all_sigms_pred = np.array(all_sigms_pred_flatten)
 
 	event_dist_params = [all_means_pred, all_sigms_pred]
+	count_dist_params = [event_count_preds_cnt, None]
 
-	return event_count_preds_cnt, all_times_pred, all_types_pred, event_dist_params
+	return (
+		event_count_preds_cnt, all_times_pred, all_types_pred,
+		event_dist_params, count_dist_params,
+	)
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 
 
@@ -2496,8 +2506,12 @@ def run_rmtpp_rescaling_model_comp(args, models, data, test_data, test_data_comp
 	all_sigms_pred = np.array(all_sigms_pred_flatten)
 
 	event_dist_params = [all_means_pred, all_sigms_pred]
+	count_dist_params = [all_counts_pred, None]
 
-	return all_counts_pred, all_times_pred, all_types_pred, event_dist_params
+	return (
+		all_counts_pred, all_times_pred, all_types_pred,
+		event_dist_params, count_dist_params,
+	)
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 
 
@@ -2581,9 +2595,12 @@ def run_count_only_model(args, models, data, test_data):
 
 	test_predictions_norm_cnt = model_cnt(test_data_in_bin, test_data_in_bin_feats)
 	if len(test_predictions_norm_cnt) == 2:
-		test_predictions_norm_cnt = test_predictions_norm_cnt[0]
+		count_all_means_pred = test_predictions_norm_cnt[0]
+		count_all_sigms_pred = test_predictions_norm_cnt[1][1]
 
-	test_predictions_cnt = utils.denormalize_data(test_predictions_norm_cnt, test_mean_bin, test_std_bin)
+
+	test_predictions_cnt = utils.denormalize_data(count_all_means_pred, test_mean_bin, test_std_bin)
+	count_all_sigms_pred = utils.denormalize_data_stddev(count_all_sigms_pred, test_mean_bin, test_std_bin)
 	event_count_preds_cnt = np.clip(np.round(test_predictions_cnt), 1.0, np.inf).astype(np.int32)
 
 	#event_count_preds_cnt = test_data_out_bin.astype(np.int32)
@@ -2646,7 +2663,11 @@ def run_count_only_model(args, models, data, test_data):
 	all_sigms_pred = np.array(all_sigms_pred)
 
 	event_dist_params = [all_means_pred, all_sigms_pred]
-	return event_count_preds_cnt, all_times_pred, all_types_pred, event_dist_params
+	count_dist_params = [event_count_preds_cnt, count_all_sigms_pred]
+	return (
+		event_count_preds_cnt, all_times_pred, all_types_pred,
+		event_dist_params, count_dist_params,
+	)
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
@@ -4086,9 +4107,11 @@ def run_rmtpp_optimizer_model(
 	all_sigms_pred = np.array(all_sigms_pred_flatten)
 
 	event_dist_params = [all_means_pred, all_sigms_pred]
+	count_dist_params = [all_counts_pred, None]
 
 	return (
-		all_times_pred, all_types_pred, all_counts_pred, event_dist_params,
+		all_times_pred, all_types_pred, all_counts_pred,
+		event_dist_params, count_dist_params,
 		all_best_opt_nc_losses, all_best_cont_nc_losses, all_best_nc_count_losses
 	)
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
@@ -4409,8 +4432,12 @@ def run_rmtpp_optimizer_model_comp(
 	all_sigms_pred = np.array(all_sigms_pred_flatten)
 
 	event_dist_params = [all_means_pred, all_sigms_pred]
+	count_dist_params = [all_counts_pred, None]
 
-	return all_times_pred, all_types_pred, all_counts_pred, event_dist_params
+	return (
+		all_times_pred, all_types_pred, all_counts_pred,
+		event_dist_params, count_dist_params,
+	)
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 
 
@@ -4472,7 +4499,11 @@ def run_rmtpp_simulation(args, models, data, test_data, rmtpp_type=None):
 	all_types_pred = all_types_pred.numpy()
 
 	event_dist_params = (D_pred, WT_pred)
-	return all_counts_pred, all_times_pred, all_types_pred, event_dist_params
+	count_dist_params = [all_counts_pred, None]
+	return (
+		all_counts_pred, all_times_pred, all_types_pred,
+		event_dist_params, count_dist_params,
+	)
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
@@ -4640,8 +4671,12 @@ def run_transformer_simulation(args, models, data, test_data):
 	all_sigms_pred = np.array(all_sigms_pred)
 
 	event_dist_params = (all_means_pred, all_sigms_pred)
+	count_dist_params = [all_counts_pred, None]
 
-	return all_counts_pred, all_times_pred, all_types_pred, event_dist_params
+	return (
+		all_counts_pred, all_times_pred, all_types_pred,
+		event_dist_params, count_dist_params,
+	)
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#:
 
 
@@ -5512,6 +5547,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 	batch_size = args.batch_size
 	model=None
 	result=None
+	count_dist_params = {}
 
 
 	if model_name == 'hierarchical':
@@ -5542,8 +5578,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 		data = [train_data_in_bin, train_data_in_bin_feats, train_data_out_bin]
 		test_data = [test_data_in_bin, test_data_in_bin_feats,
 					 test_data_out_bin, test_mean_bin, test_std_bin]
-		event_count_preds_cnt = run_count_model(args, data, test_data)
-		model, result = event_count_preds_cnt
+		model, count_dist_params = run_count_model(args, data, test_data)
 
 	if model_name in ['rmtpp_nll', 'rmtpp_mse', 'rmtpp_mse_var', 
 					  'rmtpp_nll_comp', 'rmtpp_mse_comp', 'rmtpp_mse_var_comp',
@@ -5937,7 +5972,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 				print("")
 			# ----- End: Variants of Hierarchical model ----- #
 
-
+			dist_params_dict = dict()
 			for inference_model_name in run_model_flags.keys():
 				print("Running Inference Model: "+inference_model_name)
 				test_data_out_gaps_bin = dataset['test_data_out_gaps_bin']
@@ -5953,6 +5988,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 						all_types_pred,
 						all_counts_pred,
 						event_dist_params,
+						count_dist_params,
 						all_best_opt_nc_losses,
 						all_best_cont_nc_losses,
 						all_best_nc_count_losses,
@@ -5972,7 +6008,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					and run_model_flags[inference_model_name]:
 					(
 						all_counts_pred, all_times_pred, all_types_pred,
-						event_dist_params,
+						event_dist_params, count_dist_params,
 					) = run_rmtpp_rescaling_model(
 						args, models, data, test_data,
 						rmtpp_type=run_model_flags[inference_model_name]['rmtpp_type']
@@ -5994,7 +6030,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					test_data_out_gaps_bin_comp = None
 					(
 						all_times_pred, all_types_pred, all_counts_pred,
-						event_dist_params,
+						event_dist_params, count_dist_params,
 					) = run_rmtpp_optimizer_model_comp(
 						args,
 						models,
@@ -6012,7 +6048,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					and run_model_flags[inference_model_name]:
 					(
 						all_counts_pred, all_times_pred, all_types_pred,
-						event_dist_params,
+						event_dist_params, count_dist_params,
 					) = run_rmtpp_rescaling_model_comp(
 						args,
 						models,
@@ -6030,14 +6066,14 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 				if inference_model_name=='count_only' and run_model_flags['count_only']:
 					(
 						all_counts_pred, all_times_pred, all_types_pred,
-						event_dist_params,
+						event_dist_params, count_dist_params,
 					) = run_count_only_model(args, models, data, test_data)
 
 				if inference_model_name in ['rmtpp_nll_simu', 'rmtpp_mse_simu', 'rmtpp_mse_var_simu'] \
 					and run_model_flags[inference_model_name]:
 					(
 						all_counts_pred, all_times_pred, all_types_pred,
-						event_dist_params,
+						event_dist_params, count_dist_params,
 					) = run_rmtpp_simulation(
 						args, models, data, test_data,
 						rmtpp_type=run_model_flags[inference_model_name]['rmtpp_type']
@@ -6052,7 +6088,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 				if inference_model_name=='transformer_simu' and run_model_flags[inference_model_name]:
 					(
 						all_counts_pred, all_times_pred, all_types_pred,
-						event_dist_params,
+						event_dist_params, count_dist_params,
 					) = run_transformer_simulation(args, models, data, test_data)
 
 
@@ -6198,6 +6234,9 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 				print("____________________________________________________________________")
 				print("")
 
+				# Save count_dist_params for bin-count plots
+				dist_params_dict[inference_model_name] = {'count_dist_params':count_dist_params}
+
 
 			print("")
 
@@ -6232,10 +6271,38 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 			#sys.stdout.close()
 			#sys.stdout = old_stdout
 
+			# ----- Start: Plot bin-counts ----- # 
+			in_bin_sz_plt = 10
+			for idx in range(10):
+				inp_count = utils.denormalize_data(
+					test_data_in_bin[idx, -in_bin_sz_plt:, 0],
+					test_mean_bin, test_std_bin
+				)
+				x_range = np.arange(1, in_bin_sz_plt+args.out_bin_sz+1)
+				out_count = test_data_out_bin[idx]
+				plt.plot(x_range, np.concatenate([inp_count, out_count]), 'ko-', label='true counts')
+				for inference_model_name in run_model_flags.keys():
+					if inference_model_name not in ['transformer_simu']:
+						out_mean = dist_params_dict[inference_model_name]['count_dist_params'][0][idx]
+						plt.plot(x_range[in_bin_sz_plt:], out_mean, '*-', label=inference_model_name)
+	
+						out_std = dist_params_dict[inference_model_name]['count_dist_params'][1]
+						if out_std is not None:
+							out_std = out_std[idx]
+							out_std_down = out_mean - out_std
+							out_std_up = out_mean + out_std
+							plt.fill_between(x_range[in_bin_sz_plt:], out_std_down, out_std_up, color='gray', alpha=0.5)
+				
+				plt.axvline(x=in_bin_sz_plt+.5, color='k', linestyle='--')
+				plt.legend(loc='upper left')
+				plt.savefig('Outputs/'+dataset_name+'_'+str(idx)+'.svg', format='svg', dpi=1200)
+				plt.close()
+			# ----- End: Plot bin-counts ----- # 
+
 	if model_name != 'rmtpp_mse':
 		rmtpp_var_model = None
 
-	return model, result, rmtpp_var_model, results
+	return model, count_dist_params, rmtpp_var_model, results
 
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 

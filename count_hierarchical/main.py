@@ -307,7 +307,7 @@ for dataset_name in dataset_names:
         args.current_model = model_name
         print("Running", model_name, "Model\n")
 
-        model, result, rmtpp_var_model, results \
+        model, count_dist_params, rmtpp_var_model, results \
             = run.run_model(dataset_name,
                             model_name,
                             dataset,
@@ -316,15 +316,15 @@ for dataset_name in dataset_names:
                             prev_models=per_model_save,
                             run_model_flags=run_model_flags)
 
-        if model_name == 'count_model':
-            count_var = result['count_var'].numpy()
-            result = result['count_preds']
+        #if model_name == 'count_model':
+        #    count_all_means_pred = count_dist_params['count_all_means_pred']
+        #    count_all_sigms_pred = count_dist_params['count_all_sigms_pred']
 
-        per_model_count[model_name] = result
+        #per_model_count[model_name] = count_all_means_pred
         per_model_save[model_name] = model
-        if model_name == 'rmtpp_mse' and args.extra_var_model:
-            per_model_save['rmtpp_var_model'] = rmtpp_var_model
-        print("Finished Running", model_name, "Model\n")
+        #if model_name == 'rmtpp_mse' and args.extra_var_model:
+        #    per_model_save['rmtpp_var_model'] = rmtpp_var_model
+        #print("Finished Running", model_name, "Model\n")
 
         #if model_name != 'inference_models' and per_model_count[model_name] is not None:
         #    old_stdout = sys.stdout
@@ -342,7 +342,7 @@ for dataset_name in dataset_names:
     #for idx in range(10):
     #    utils.generate_plots(args, dataset_name, dataset, per_model_count, test_sample_idx=idx, count_var=count_var)
 
-    event_count_result[dataset_name] = per_model_count
+    #event_count_result[dataset_name] = per_model_count
     print("####################################################################")
 
 
