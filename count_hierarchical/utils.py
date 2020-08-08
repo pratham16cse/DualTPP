@@ -92,6 +92,20 @@ def add_metrics_to_dict(
 	metrics_dict[model_name]['cont_loss'] = cont_loss
 	metrics_dict[model_name]['count_loss'] = count_loss
 
+	print(model_name, 'count_mae_fh', count_mae_fh)
+	print(model_name, 'wass_dist_fh', wass_dist_fh)
+	print(model_name, 'bleu_score_fh', bleu_score_fh)
+
+	print(model_name, 'count_mae_rh', count_mae_rh)
+	print(model_name, 'wass_dist_rh', wass_dist_rh)
+	print(model_name, 'bleu_score_rh', bleu_score_rh)
+
+	for i in range(len(count_mae_fh_per_bin)):
+		print(model_name, 'count_mae_fh_bin_'+str(i), count_mae_fh_per_bin[i])
+
+	print(model_name, 'more_metric', more_metric)
+	print(model_name, 'less_metric', less_metric)
+
 	return metrics_dict
 
 def write_arr_to_file(output_path, arr_true, arr_pred, types_true, types_pred):
