@@ -872,7 +872,7 @@ def run_wgan(args, data, test_data):
 	# intensityPoisson = IntensityHomogenuosPoisson(lambda0)
 	# fake_sequences = generate_sample(intensityPoisson, T, 20000)
 	train_z_seqs = list()
-	for (gaps_batch, _, _, _) in train_dataset_gaps:
+	for (gaps_batch, _, _, _, _, _) in train_dataset_gaps:
 		wgan_dec_len = gaps_batch.shape[1] - wgan_enc_len
 		times_batch = tf.cumsum(gaps_batch, axis=1)
 		span_batch = times_batch[:, -1] - times_batch[:, 0]
@@ -937,7 +937,7 @@ def run_wgan(args, data, test_data):
 		step_train_loss = 0.0
 		step_cnt = 0
 		next_initial_state = None
-		for sm_step, (gaps_batch, feats_batch, _, _) \
+		for sm_step, (gaps_batch, feats_batch, _, _, _, _) \
 				in enumerate(train_dataset_gaps):
 			gaps_batch_in = gaps_batch[:, :wgan_enc_len]
 			feats_batch_in = feats_batch[:, :wgan_enc_len]
@@ -984,6 +984,7 @@ def run_wgan(args, data, test_data):
 
 			# print(float(train_gap_mae), float(train_gap_mse))
 			# print('Training loss (for one batch) at step %s: %s' %(sm_step, float(loss)))
+			print('Training loss (for one batch) at step %s: %s' %(sm_step, float(G_loss)))
 			step_cnt += 1
 		
 		# Dev calculations
@@ -4551,8 +4552,32 @@ def run_wgan_simulation(args, models, data, test_data):
 		)
 	all_counts_pred = np.stack(all_counts_pred, axis=1)
 
-	all_times_pred = np.expand_dims(all_times_pred.numpy(), axis=-1)
-	return all_counts_pred, all_times_pred
+	all_times_pred = all_times_pred.numpy()
+
+	all_types_pred = np.ones_like(all_times_pred)
+
+	all_means_pred = []
+	for seq, beg_time in zip(all_times_pred, test_end_hr_bins[:, 0] - args.bin_size):
+		all_means_pred.append(
+			utils.normalize_avg_given_param(
+				seq - np.concatenate([beg_time, seq[:-1]]),
+				test_gap_in_bin_norm_a, test_gap_in_bin_norm_d
+			)
+		)
+	all_means_pred = np.array(all_means_pred)
+
+	all_sigms_pred = []
+	for seq in all_means_pred:
+		all_sigms_pred.append(np.ones_like(seq)*1e-6)
+	all_sigms_pred = np.array(all_sigms_pred)
+
+	event_dist_params = (all_means_pred, all_sigms_pred)
+	count_dist_params = [all_counts_pred, None]
+
+	return (
+		all_counts_pred, all_times_pred, all_types_pred,
+		event_dist_params, count_dist_params,
+	)
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
@@ -6104,7 +6129,10 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					)
 
 				if inference_model_name=='wgan_simu' and run_model_flags[inference_model_name]:
-					result, all_times_pred = run_wgan_simulation(args, models, data, test_data)
+					(
+						all_counts_pred, all_times_pred, all_types_pred,
+						event_dist_params, count_dist_params,
+					) = run_wgan_simulation(args, models, data, test_data)
 	
 				if inference_model_name=='seq2seq_simu' and run_model_flags[inference_model_name]:
 					(
