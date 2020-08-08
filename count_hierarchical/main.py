@@ -82,6 +82,10 @@ parser.add_argument('--wgan_enc_len', type=int, default=60,
 parser.add_argument('--use_wgan_d', action='store_true', default=False,
                     help='Whether to use WGAN discriminator or not')
 
+# Seq2Seq / CWE parameters
+parser.add_argument('--use_cwe_d', action='store_true', default=False,
+                    help='Whether to use CWE/Seq2Seq discriminator or not')
+
 # interval_size = 360  # For RMTPP
 parser.add_argument('--interval_size', type=int, default=360,
                     help='Interval size for threshold query')

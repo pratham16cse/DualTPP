@@ -1102,7 +1102,7 @@ def run_seq2seq(args, data, test_data):
 	print('pre-training started')
 	bch_cnt = 0
 
-	if args.use_wgan_d:
+	if args.use_cwe_d:
 		print(' Training with discriminator')
 	else:
 		print(' Training without discriminator')
@@ -1130,7 +1130,7 @@ def run_seq2seq(args, data, test_data):
 						gaps_batch_out[:,:length_,:]-gaps_pred[:,:length_,:]
 					)
 				)
-				if args.use_wgan_d:
+				if args.use_cwe_d:
 					D_pred = model.discriminator(gaps_batch_in, gaps_pred)
 					D_true = model.discriminator(gaps_batch_in, gaps_batch_out)
 
@@ -1157,7 +1157,7 @@ def run_seq2seq(args, data, test_data):
 				
 			G_grads = g_tape.gradient(G_loss, model.trainable_weights)
 			G_optimizer.apply_gradients(zip(G_grads, model.trainable_weights))
-			if args.use_wgan_d:
+			if args.use_cwe_d:
 				D_grads = d_tape.gradient(D_loss, model.trainable_weights)
 				D_optimizer.apply_gradients(zip(D_grads, model.trainable_weights))
 
