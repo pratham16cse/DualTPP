@@ -285,8 +285,10 @@ for dataset_name in dataset_names:
     if dataset_name == 'Trump':
         args.comp_enc_len = 25
     if automate_bin_sz:
-        #args.bin_size = utils.get_optimal_bin_size(dataset_name)
-        args.bin_size = utils.find_best_bin_size(dataset_name)
+        if dataset_name in ['Trump', 'sin']:
+            args.bin_size = utils.get_optimal_bin_size(dataset_name)
+        else:
+            args.bin_size = utils.find_best_bin_size(dataset_name)
         print('New bin size is', args.bin_size, 'sec')
     dataset = utils.get_processed_data(dataset_name, args)
 
