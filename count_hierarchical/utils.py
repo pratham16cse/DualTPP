@@ -1344,6 +1344,23 @@ def get_processed_data(dataset_name, args):
 	comp_train_out_types = np.squeeze(np.array([np.ones_like(seq) for seq in comp_train_out_gaps]), axis=-1)
 
 
+	# ----- Start: Data Augmentation to counter skewness in the data ----- #
+	event_train_in_times = np.cumsum(event_train_in_gaps[:,:,0], axis=1)
+	span = event_train_in_times[:,-1]-event_train_in_times[:,0]
+	ge_100 = np.sum(span>100.)
+	indices_l = np.random.choice(np.where(span<100)[0], size=ge_100)
+	indices_g = np.where(span>100.)[0]
+	indices = np.array(sorted(np.concatenate([indices_l, indices_g])))
+
+	event_train_in_gaps = event_train_in_gaps[indices]
+	event_train_out_gaps = event_train_out_gaps[indices]
+	event_train_in_feats = event_train_in_feats[indices]
+	event_train_out_feats = event_train_out_feats[indices]
+	event_train_in_types = event_train_in_types[indices]
+	event_train_out_types = event_train_out_types[indices]
+	# ----- End: Data Augmentation to counter skewness in the data ----- #
+
+
 	dataset = {
 		'event_train_in_gaps': event_train_in_gaps,
 		'event_train_out_gaps': event_train_out_gaps,
