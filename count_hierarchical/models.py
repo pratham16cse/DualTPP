@@ -132,7 +132,7 @@ class RMTPP(tf.keras.Model):
                                                    activation='softmax',
                                                    name='marks_output_layer')
 
-    def call(self, gaps, feats, types, initial_state=None, next_state_sno=1):
+    def call(self, gaps, feats, types, initial_state=None):
         ''' Forward pass of the RMTPP model'''
 
         self.gaps = gaps
@@ -191,9 +191,8 @@ class RMTPP(tf.keras.Model):
                 axis=-1,
             )
         
-        next_initial_state = self.hidden_states[:,next_state_sno-1]
         final_state = self.hidden_states[:,-1]
-        return self.gaps_pred, self.types_logits, self.D, self.WT, next_initial_state, final_state
+        return self.gaps_pred, self.types_logits, self.D, self.WT, final_state
 
 def build_rmtpp_model(args, use_intensity, use_var_model, num_types):
     hidden_layer_size = args.hidden_layer_size

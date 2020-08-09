@@ -177,8 +177,8 @@ args.dataset_name = dataset_names
 model_names = list()
 if args.model_name == 'all':
     #model_names.append('hawkes_model')
-    #model_names.append('wgan')
-    #model_names.append('seq2seq')
+    model_names.append('wgan')
+    model_names.append('seq2seq')
     model_names.append('transformer')
     model_names.append('count_model')
     # model_names.append('hierarchical')
@@ -285,12 +285,13 @@ for dataset_name in dataset_names:
     if dataset_name == 'Trump':
         args.comp_enc_len = 25
     if automate_bin_sz:
-        args.bin_size = utils.get_optimal_bin_size(dataset_name)
+        #args.bin_size = utils.get_optimal_bin_size(dataset_name)
+        args.bin_size = utils.find_best_bin_size(dataset_name)
         print('New bin size is', args.bin_size, 'sec')
     dataset = utils.get_processed_data(dataset_name, args)
 
-    test_data_out_bin = dataset['test_data_out_bin']
-    event_count_preds_true = test_data_out_bin
+    count_test_out_counts = dataset['count_test_out_counts']
+    event_count_preds_true = count_test_out_counts
     count_var = None
 
     per_model_count = dict()

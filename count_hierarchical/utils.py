@@ -211,6 +211,21 @@ def normalize_avg_given_param(data, norm_a, norm_d):
 def denormalize_avg(data, norm_a, norm_d):
 	return data*norm_d
 
+def get_bins(timestamps, binsize):
+   	cnt=0
+   	bincounts=[]
+   	t_b=0
+   	t_e=t_b+binsize
+   	for ts in timestamps:
+   	    if ts<=t_e:
+   	        cnt += 1
+   	    else:
+   	        bincounts.append(cnt)
+   	        cnt=0
+   	        t_b = t_e
+   	        t_e = t_b + binsize
+   	return np.array(bincounts)
+
 def get_optimal_bin_size(dataset_name):
 	timestamps = np.loadtxt('data/'+dataset_name+'.txt')
 	time_interval = timestamps[-1]-timestamps[0]
@@ -238,6 +253,23 @@ def get_optimal_bin_size(dataset_name):
 		print('Bins are at cycle of', day_scale, 'days')
 		opt_bin_sz = day_scale * (3600*24)
 	return opt_bin_sz
+
+def find_best_bin_size(dataset_name):
+	'''
+		Find smallest bin s.t. each bin contains at least one event
+		and each consecutive in_bin_sz bins contains at least 80 events
+	'''
+	timestamps = np.loadtxt('data/'+dataset_name+'.txt')
+	#for bin_size in np.arange(1, 24+1)*3600.:
+	for bin_size in np.array([1., 2, 3, 4., 6, 8, 12, 24.])*3600.:
+		bincounts = get_bins(timestamps, bin_size)
+		#import ipdb
+		#ipdb.set_trace()
+		print(bin_size, np.sum(bincounts==0.), bincounts.shape)
+		if np.sum(bincounts==0) == 0:
+			return bin_size
+
+
 
 def generate_plots(args, dataset_name, dataset, per_model_count, test_sample_idx=1, count_var=None):
 	inp_seq_len_plot = 10
@@ -429,18 +461,19 @@ def make_seq_from_data(data, enc_len, in_bin_sz, out_bin_sz, batch_size,
 	out_end_hr_bins = list()
 	inp_types_lst = list()
 	oup_types_lst = list()
-	count_strid_len = 1
-	rmtpp_strid_len = 1
-	if dataset_name in ['taxi', '911_traffic', '911_ems']:
-		rmtpp_strid_len = stride_len
-		count_strid_len = 1
+	#count_strid_len = 1
+	#rmtpp_strid_len = 1
+	#if dataset_name in ['taxi', '911_traffic', '911_ems']:
+	#	rmtpp_strid_len = stride_len
+	#	count_strid_len = 1
 	#if dataset_name in ['taxi', '911_traffic', '911_ems', 'Trump'] \
 	#		and times_in_bin is not None:
 	#	count_strid_len = count_strid_len
 	
 
 	iter_range = len(data)-enc_len-out_bin_sz
-	strid_len = rmtpp_strid_len
+	#strid_len = rmtpp_strid_len
+	strid_len = stride_len
 	if is_it_bins:
 		strid_len = count_strid_len
 		iter_range = len(data)-in_bin_sz-out_bin_sz
@@ -1345,19 +1378,20 @@ def get_processed_data(dataset_name, args):
 
 
 	# ----- Start: Data Augmentation to counter skewness in the data ----- #
-	event_train_in_times = np.cumsum(event_train_in_gaps[:,:,0], axis=1)
-	span = event_train_in_times[:,-1]-event_train_in_times[:,0]
-	ge_100 = np.sum(span>100.)
-	indices_l = np.random.choice(np.where(span<100)[0], size=ge_100)
-	indices_g = np.where(span>100.)[0]
-	indices = np.array(sorted(np.concatenate([indices_l, indices_g])))
-
-	event_train_in_gaps = event_train_in_gaps[indices]
-	event_train_out_gaps = event_train_out_gaps[indices]
-	event_train_in_feats = event_train_in_feats[indices]
-	event_train_out_feats = event_train_out_feats[indices]
-	event_train_in_types = event_train_in_types[indices]
-	event_train_out_types = event_train_out_types[indices]
+	if dataset_name in ['taxi']:
+		event_train_in_times = np.cumsum(event_train_in_gaps[:,:,0], axis=1)
+		span = event_train_in_times[:,-1]-event_train_in_times[:,0]
+		ge_100 = np.sum(span>100.)
+		indices_l = np.random.choice(np.where(span<100)[0], size=ge_100)
+		indices_g = np.where(span>100.)[0]
+		indices = np.array(sorted(np.concatenate([indices_l, indices_g])))
+	
+		event_train_in_gaps = event_train_in_gaps[indices]
+		event_train_out_gaps = event_train_out_gaps[indices]
+		event_train_in_feats = event_train_in_feats[indices]
+		event_train_out_feats = event_train_out_feats[indices]
+		event_train_in_types = event_train_in_types[indices]
+		event_train_out_types = event_train_out_types[indices]
 	# ----- End: Data Augmentation to counter skewness in the data ----- #
 
 

@@ -293,21 +293,10 @@ def run_rmtpp(args, model, optimizer, data, var_data, NLL_loss,
 					  gaps_batch_out, feats_batch_out, types_batch_out) \
 						in enumerate(train_dataset_gaps):
 			with tf.GradientTape() as tape:
-				# TODO: Make sure to pass correct next_stat
-				if stride_move > 0:
-					gaps_pred, types_logits_pred, D, WT, next_initial_state, _ = model(
-						gaps_batch_in, 
-						feats_batch_in,
-						types_batch_in,
-						initial_state=next_initial_state, 
-						next_state_sno=stride_move)
-				else:
-					gaps_pred, types_logits_pred, D, WT, next_initial_state, _ = model(
-						gaps_batch_in,
-						feats_batch_in,
-						types_batch_in,
-						initial_state=None, 
-						next_state_sno=1)
+				gaps_pred, types_logits_pred, D, WT, _ = model(
+					gaps_batch_in,
+					feats_batch_in,
+					types_batch_in)
 
 				# Compute the loss for this minibatch.
 				if use_var_model:
@@ -341,7 +330,7 @@ def run_rmtpp(args, model, optimizer, data, var_data, NLL_loss,
 		print(model_name, 'time_reqd:', et-st)
 		
 		# Dev calculations
-		dev_gaps_pred, dev_logits_pred, _, _, _, _ = model(event_dev_in_gaps, event_dev_in_feats, event_dev_in_types)
+		dev_gaps_pred, dev_logits_pred, _, _, _ = model(event_dev_in_gaps, event_dev_in_feats, event_dev_in_types)
 		dev_gaps_pred_unnorm = utils.denormalize_avg(dev_gaps_pred, 
 													 event_train_norma,
 													 event_train_normd)
@@ -422,7 +411,7 @@ def run_rmtpp(args, model, optimizer, data, var_data, NLL_loss,
 
 	print("Loading best model from epoch", best_dev_epoch)
 	model.load_weights(checkpoint_path)
-	dev_gaps_pred, dev_logits_pred, _, _, _, _ = model(event_dev_in_gaps, event_dev_in_feats, event_dev_in_types)
+	dev_gaps_pred, dev_logits_pred, _, _, _ = model(event_dev_in_gaps, event_dev_in_feats, event_dev_in_types)
 	dev_gaps_pred_unnorm = utils.denormalize_avg(dev_gaps_pred, 
 												 event_train_norma,
 												 event_train_normd)
@@ -1500,7 +1489,7 @@ def simulate_v2(model, times_in, gaps_in, bins_end_hrs, normalizers,
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 # Simulate model until t_b_plus
 def simulate_rmtpp(model, times_in, gaps_in, feats_in, types_in,
-			 	   t_b_plus, normalizers, prev_hidden_state=None):
+			 	   t_b_plus, normalizers):
 	#TODO: Check for this modification in functions which calls this def
 	gaps_pred = list()
 	types_pred = list()
@@ -1509,20 +1498,20 @@ def simulate_rmtpp(model, times_in, gaps_in, feats_in, types_in,
 	data_norm_a, data_norm_d = normalizers
 	
 	# step_gaps_pred = gaps_in[:, -1]
-	step_gaps_pred, step_types_logits, D, WT, prev_hidden_state, _ \
-			= model(gaps_in, feats_in, types_in, initial_state=prev_hidden_state)
+	step_gaps_pred, step_types_logits, D, WT, prev_hidden_state \
+			= model(gaps_in, feats_in, types_in)
 
 	step_types_pred = tf.argmax(step_types_logits, axis=-1) + 1
 
 	step_gaps_pred = step_gaps_pred[:,-1:]
 	step_types_pred = step_types_pred[:,-1:]
-	gaps_in = tf.concat([gaps_in[:,1:], step_gaps_pred], axis=1)
-	types_in = tf.concat([types_in[:,1:], step_types_pred], axis=1)
+	gaps_in = step_gaps_pred
+	types_in = step_types_pred
 	step_gaps_pred = tf.squeeze(step_gaps_pred, axis=-1)
 	last_gaps_pred_unnorm = utils.denormalize_avg(step_gaps_pred, data_norm_a, data_norm_d)
 	last_times_pred = times_in + last_gaps_pred_unnorm
 	step_feats_pred = get_time_features(tf.expand_dims(last_times_pred, axis=-1))
-	feats_in = tf.concat([feats_in[:, 1:], step_feats_pred], axis=1)
+	feats_in = step_feats_pred
 	gaps_pred.append(last_gaps_pred_unnorm)
 	types_pred.append(step_types_pred)
 	times_pred.append(last_times_pred)
@@ -1532,20 +1521,20 @@ def simulate_rmtpp(model, times_in, gaps_in, feats_in, types_in,
 	simul_step = 0
 
 	while any(times_pred[-1]<t_b_plus):
-		step_gaps_pred, step_types_logits, D, WT, prev_hidden_state, _ \
+		step_gaps_pred, step_types_logits, D, WT, prev_hidden_state \
 				= model(gaps_in, feats_in, types_in, initial_state=prev_hidden_state)
 
 		step_types_pred = tf.argmax(step_types_logits, axis=-1) + 1
 
 		step_gaps_pred = step_gaps_pred[:,-1:]
 		step_types_pred = step_types_pred[:,-1:]
-		gaps_in = tf.concat([gaps_in[:,1:], step_gaps_pred], axis=1)
-		types_in = tf.concat([types_in[:,1:], step_types_pred], axis=1)
+		gaps_in = step_gaps_pred
+		types_in = step_types_pred
 		step_gaps_pred = tf.squeeze(step_gaps_pred, axis=-1)
 		last_gaps_pred_unnorm = utils.denormalize_avg(step_gaps_pred, data_norm_a, data_norm_d)
 		last_times_pred = times_pred[-1] + last_gaps_pred_unnorm
 		step_feats_pred = get_time_features(tf.expand_dims(last_times_pred, axis=-1))
-		feats_in = tf.concat([feats_in[:, 1:], step_feats_pred], axis=1)
+		feats_in = step_feats_pred
 		gaps_pred.append(last_gaps_pred_unnorm)
 		types_pred.append(step_types_pred)
 		times_pred.append(last_times_pred)
@@ -1661,7 +1650,7 @@ def simulate_hierarchical(model, times_in, gaps_in, feats_in,
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 # Simulate model until t_b_plus
 def simulate_for_D_WT(model, times_in, gaps_in, feats_in, types_in,
-					  t_b_plus, normalizers, prev_hidden_state=None):
+					  t_b_plus, normalizers):
 	##### WARNING: This function ignores the types_in and hence can only be used
 	##### for hierarchical mdoel
 
@@ -1678,36 +1667,36 @@ def simulate_for_D_WT(model, times_in, gaps_in, feats_in, types_in,
 	data_norm_a, data_norm_d = normalizers
 	
 	# step_gaps_pred = gaps_in[:, -1]
-	step_gaps_pred, step_types_logits, step_D_pred, step_WT_pred, prev_hidden_state, _ \
-			= model(gaps_in, feats_in, types_in, initial_state=prev_hidden_state)
+	step_gaps_pred, step_types_logits, step_D_pred, step_WT_pred, prev_hidden_state \
+			= model(gaps_in, feats_in, types_in)
 
 	step_gaps_pred = step_gaps_pred[:,-1:]
 	D_pred.append(step_D_pred[:,-1:])
 	WT_pred.append(step_WT_pred[:,-1:])
-	gaps_in = tf.concat([gaps_in[:,1:], step_gaps_pred], axis=1)
+	gaps_in = step_gaps_pred
 	step_gaps_pred = tf.squeeze(step_gaps_pred, axis=-1)
 	last_gaps_pred_unnorm = utils.denormalize_avg(step_gaps_pred, data_norm_a, data_norm_d)
 	last_times_pred = times_in + last_gaps_pred_unnorm
 	step_feats_pred = get_time_features(tf.expand_dims(last_times_pred, axis=-1))
-	feats_in = tf.concat([feats_in[:, 1:], step_feats_pred], axis=1)
+	feats_in = step_feats_pred
 	gaps_pred.append(last_gaps_pred_unnorm)
 	times_pred.append(last_times_pred)
 
 	simul_step = 0
 
 	while any(times_pred[-1]<t_b_plus):
-		step_gaps_pred, step_types_logits, step_D_pred, step_WT_pred, prev_hidden_state, _ \
+		step_gaps_pred, step_types_logits, step_D_pred, step_WT_pred, prev_hidden_state \
 				= model(gaps_in, feats_in, types_in, initial_state=prev_hidden_state)
 
 		step_gaps_pred = step_gaps_pred[:,-1:]
 		D_pred.append(step_D_pred[:,-1:])
 		WT_pred.append(step_WT_pred[:,-1:])
-		gaps_in = tf.concat([gaps_in[:,1:], step_gaps_pred], axis=1)
+		gaps_in = step_gaps_pred
 		step_gaps_pred = tf.squeeze(step_gaps_pred, axis=-1)
 		last_gaps_pred_unnorm = utils.denormalize_avg(step_gaps_pred, data_norm_a, data_norm_d)
 		last_times_pred = times_pred[-1] + last_gaps_pred_unnorm
 		step_feats_pred = get_time_features(tf.expand_dims(last_times_pred, axis=-1))
-		feats_in = tf.concat([feats_in[:, 1:], step_feats_pred], axis=1)
+		feats_in = step_feats_pred
 		gaps_pred.append(last_gaps_pred_unnorm)
 		times_pred.append(last_times_pred)
 
@@ -1790,7 +1779,7 @@ def simulate_count_for_D_WT(model, times_in, gaps_in, out_gaps_count, normalizer
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 # Simulate model out_gaps_count times
 def simulate_with_counter(model, times_in, gaps_in, feats_in, types_in,
-						  out_gaps_count, normalizers, prev_hidden_state=None):
+						  out_gaps_count, normalizers):
 	gaps_pred = list()
 	D_pred = list()
 	WT_pred = list()
@@ -1799,8 +1788,8 @@ def simulate_with_counter(model, times_in, gaps_in, feats_in, types_in,
 	data_norm_a, data_norm_d = normalizers
 	
 	# step_gaps_pred = gaps_in[:, -1]
-	step_gaps_pred, step_types_logits, D, WT, prev_hidden_state, _ \
-			= model(gaps_in, feats_in, types_in, initial_state=prev_hidden_state)
+	step_gaps_pred, step_types_logits, D, WT, prev_hidden_state \
+			= model(gaps_in, feats_in, types_in)
 
 	step_types_pred = tf.argmax(step_types_logits, axis=-1) + 1
 
@@ -1808,51 +1797,46 @@ def simulate_with_counter(model, times_in, gaps_in, feats_in, types_in,
 	step_types_pred = step_types_pred[:,-1:]
 	D_pred.append(D[:, -1:])
 	WT_pred.append(WT[:, -1:])
-	gaps_in = tf.concat([gaps_in[:,1:], step_gaps_pred], axis=1)
-	types_in = tf.concat([types_in[:,1:], step_types_pred], axis=1)
+	gaps_in = step_gaps_pred
+	types_in = step_types_pred
 	step_gaps_pred = tf.squeeze(step_gaps_pred, axis=-1)
 	last_gaps_pred_unnorm = utils.denormalize_avg(step_gaps_pred, data_norm_a, data_norm_d)
 	last_times_pred = times_in + last_gaps_pred_unnorm
 	step_feats_pred = get_time_features(tf.expand_dims(last_times_pred, axis=-1))
-	feats_in = tf.concat([feats_in[:, 1:], step_feats_pred], axis=1)
+	feats_in = step_feats_pred
 	gaps_pred.append(last_gaps_pred_unnorm)
 	types_pred.append(step_types_pred)
 	times_pred.append(last_times_pred)
 
 	simul_step = 0
-	old_hidden_state = None
 
+	start_time = time.time()
 	while any(simul_step < out_gaps_count):
-		print(simul_step, np.sum(simul_step<out_gaps_count))
-		step_gaps_pred, step_types_logits, D, WT, prev_hidden_state, _ \
+		print(simul_step, np.sum(simul_step<out_gaps_count), out_gaps_count[0])
+		step_gaps_pred, step_types_logits, D, WT, prev_hidden_state \
 				= model(gaps_in, feats_in, types_in, initial_state=prev_hidden_state)
 
 		step_types_pred = tf.argmax(step_types_logits, axis=-1) + 1
-		
-		if old_hidden_state is not None:
-			prev_hidden_state = (simul_step < out_gaps_count) * prev_hidden_state + \
-								(simul_step >= out_gaps_count) * old_hidden_state
-			step_gaps_pred = np.expand_dims((simul_step < out_gaps_count), axis=-1) * step_gaps_pred
-			step_types_pred = (simul_step < out_gaps_count) * step_types_pred
 			
-		old_hidden_state = prev_hidden_state
 		step_gaps_pred = step_gaps_pred[:,-1:]
 		step_types_pred = step_types_pred[:,-1:]
 		D_pred.append(D[:, -1:])
 		WT_pred.append(WT[:, -1:])
-		gaps_in = tf.concat([gaps_in[:,1:], step_gaps_pred], axis=1)
-		types_in = tf.concat([types_in[:,1:], step_types_pred], axis=1)
+		gaps_in = step_gaps_pred
+		types_in = step_types_pred
 		step_gaps_pred = tf.squeeze(step_gaps_pred, axis=-1)
 		last_gaps_pred_unnorm = utils.denormalize_avg(step_gaps_pred, data_norm_a, data_norm_d)
 		last_times_pred = times_pred[-1] + last_gaps_pred_unnorm
 		last_times_pred = (simul_step < out_gaps_count) * last_times_pred
 		step_feats_pred = get_time_features(tf.expand_dims(last_times_pred, axis=-1))
-		feats_in = tf.concat([feats_in[:, 1:], step_feats_pred], axis=1)
+		feats_in = step_feats_pred
 		gaps_pred.append(last_gaps_pred_unnorm)
 		types_pred.append(step_types_pred)
 		times_pred.append(last_times_pred)
 		
 		simul_step += 1
+	end_time = time.time()
+	print('Time Reqd in simulate_with_counter:', end_time-start_time)
 
 	gaps_pred = tf.stack(gaps_pred, axis=1)
 	types_pred = tf.squeeze(tf.stack(types_pred, axis=1), axis=2)
@@ -1863,7 +1847,7 @@ def simulate_with_counter(model, times_in, gaps_in, feats_in, types_in,
 	times_pred = tf.squeeze(tf.stack(times_pred, axis=1), axis=2)
 	all_times_pred = times_pred
 
-	return all_gaps_pred, all_times_pred, types_pred, prev_hidden_state, D_pred, WT_pred
+	return all_gaps_pred, all_times_pred, types_pred, D_pred, WT_pred
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
@@ -2121,8 +2105,7 @@ def run_rmtpp_count_reinit(args, models, data, test_data, rmtpp_type):
 												event_test_in_feats,
 												output_event_count_pred[:,dec_idx],
 												(event_test_norma, 
-												event_test_normd),
-												prev_hidden_state=next_hidden_state)
+												event_test_normd),)
 
 		bin_start = bin_end
 		if bin_start is None:
@@ -2232,7 +2215,7 @@ def run_rmtpp_rescaling_model(args, models, data, test_data, rmtpp_type):
 	full_cnt_event_all_bins_pred = np.expand_dims(full_cnt_event_all_bins_pred, axis=-1)
 
 	(
-		all_gaps_pred, all_times_pred, all_types_pred, _, D_pred, WT_pred,
+		all_gaps_pred, all_times_pred, all_types_pred, D_pred, WT_pred,
 	) = simulate_with_counter(
 		model_rmtpp, 
 		test_data_init_time, 
@@ -2242,7 +2225,6 @@ def run_rmtpp_rescaling_model(args, models, data, test_data, rmtpp_type):
 		full_cnt_event_all_bins_pred,
 		(event_test_norma, 
 		event_test_normd),
-		prev_hidden_state=next_hidden_state
 	)
 	
 	all_times_pred_lst = list()
@@ -2400,12 +2382,11 @@ def run_rmtpp_rescaling_model_comp(args, models, data, test_data, test_data_comp
 		t_e_plus,
 		(comp_test_norma,
 		comp_test_normd),
-		prev_hidden_state=next_hidden_state
 	)
 	event_count_preds_cnt_comp = np.ones_like(test_data_init_time) * all_times_pred_comp.shape[1] + 1
 	(
 		all_gaps_pred_comp, all_times_pred_comp, all_types_pred_comp,
-		_, all_D_pred_comp, all_WT_pred_comp
+		all_D_pred_comp, all_WT_pred_comp
 	) = simulate_with_counter(
 		model_rmtpp_comp,
 		test_data_init_time,
@@ -2415,14 +2396,13 @@ def run_rmtpp_rescaling_model_comp(args, models, data, test_data, test_data_comp
 		event_count_preds_cnt_comp,
 		(comp_test_norma,
 		comp_test_normd),
-		prev_hidden_state=next_hidden_state
 	)
 
 	event_count_preds_cnt = np.ones_like(test_data_init_time) * all_times_pred_comp.shape[1] * comp_bin_sz
 	event_count_preds_true = count_test_out_counts
 	(
 		all_gaps_pred, all_times_pred, all_types_pred,
-		_, D_pred, WT_pred,
+		D_pred, WT_pred,
 	) = simulate_with_counter(
 		model_rmtpp, 
 		test_data_init_time, 
@@ -2432,7 +2412,6 @@ def run_rmtpp_rescaling_model_comp(args, models, data, test_data, test_data_comp
 		event_count_preds_cnt,
 		(event_test_norma, 
 		event_test_normd),
-		prev_hidden_state=next_hidden_state
 	)
 	
 	all_times_pred_lst = list()
@@ -2768,8 +2747,7 @@ def run_rmtpp_count_with_optimization(args, query_models, data, test_data):
 											event_test_in_feats,
 											full_cnt_event_all_bins_pred,
 											(event_test_norma, 
-											event_test_normd),
-											prev_hidden_state=next_hidden_state)
+											event_test_normd),)
 	
 	for batch_idx in range(len(all_gaps_pred)):
 		event_past_cnt=0
@@ -3252,8 +3230,7 @@ def run_rmtpp_with_optimization_fixed_cnt(args, query_models, data, test_data):
 											event_test_in_feats,
 											full_cnt_event_all_bins_pred,
 											(event_test_norma, 
-											event_test_normd),
-											prev_hidden_state=next_hidden_state)
+											event_test_normd),)
 	
 	all_times_pred_simu = all_times_pred
 	count2loss = dict()
@@ -3537,6 +3514,7 @@ def run_rmtpp_optimizer_model(
 		#if gaps.value is None:
 		#	import ipdb
 		#	ipdb.set_trace()
+		#loss = rmtpp_loss + count_loss
 		loss = rmtpp_loss + count_loss
 
 		all_bins_gaps_pred = gaps.value[0:1, :nc]
@@ -3586,24 +3564,16 @@ def run_rmtpp_optimizer_model(
 	output_event_count_pred = tf.expand_dims(event_count_preds_cnt, axis=-1).numpy()
 	
 	#output_event_count_pred_cumm = tf.reduce_sum(event_count_preds_true, axis=-1).numpy() + 2.
-	output_event_count_pred_cumm = tf.reduce_sum(event_count_preds_cnt, axis=-1).numpy() + tf.reduce_sum(event_count_preds_stddev, axis=-1).numpy()
+	output_event_count_pred_cumm = event_count_preds_cnt[:, 0] + event_count_preds_stddev[:, 0]
+	#output_event_count_pred_cumm = tf.reduce_sum(event_count_preds_cnt, axis=-1).numpy() + tf.reduce_sum(event_count_preds_stddev, axis=-1).numpy()
+
+	#import ipdb
+	#ipdb.set_trace()
 
 	full_cnt_event_all_bins_pred = max(output_event_count_pred_cumm) * np.ones_like(output_event_count_pred_cumm)
 	full_cnt_event_all_bins_pred = np.expand_dims(full_cnt_event_all_bins_pred, axis=-1)
 	#full_cnt_event_all_bins_pred += num_counts
 	#full_cnt_event_all_bins_pred += event_count_preds_stddev
-
-	#all_gaps_pred_simu, all_times_pred_simu, _, D_pred, WT_pred \
-	#	= simulate_with_counter(
-	#		model_rmtpp, 
-	#		test_data_init_time, 
-	#		test_data_input_gaps_bin,
-	#		event_test_in_feats,
-	#		full_cnt_event_all_bins_pred,
-	#		(event_test_norma, 
-	#		event_test_normd),
-	#		prev_hidden_state=next_hidden_state
-	#	)
 
 
 	def get_optimized_gaps(
@@ -3768,6 +3738,7 @@ def run_rmtpp_optimizer_model(
 		model_rmtpp, test_data_init_time, test_data_input_gaps_bin,
 		all_times_pred, all_types_pred, normalizers, all_best_cnt, dec_idx,
 	):
+		print('In resimulate dec_idx:', dec_idx)
 		(event_test_norma, event_test_normd) = normalizers
 		input_gaps = []
 		input_feats = []
@@ -3805,7 +3776,7 @@ def run_rmtpp_optimizer_model(
 
 		(
 			all_gaps_pred_simu, all_times_pred_simu, all_types_pred_simu,
-			_, D_pred, WT_pred
+			D_pred, WT_pred
 		) = simulate_with_counter(
 			model_rmtpp, 
 			init_time, 
@@ -3815,7 +3786,6 @@ def run_rmtpp_optimizer_model(
 			full_cnt_event_all_bins_pred,
 			(event_test_norma,
 			event_test_normd),
-			prev_hidden_state=next_hidden_state
 		)
 		#all_types_pred_simu = [np.squeeze(seq, axis=-1) for seq in all_types_pred_simu]
 
@@ -3873,7 +3843,7 @@ def run_rmtpp_optimizer_model(
 		if dec_idx == 0:
 			(
 				all_gaps_pred_simu, all_times_pred_simu, all_types_pred_simu,
-				_, D_pred, WT_pred
+				D_pred, WT_pred
 			) = simulate_with_counter(
 				model_rmtpp, 
 				test_data_init_time, 
@@ -3883,7 +3853,6 @@ def run_rmtpp_optimizer_model(
 				full_cnt_event_all_bins_pred,
 				(event_test_norma,
 				event_test_normd),
-				prev_hidden_state=next_hidden_state
 			)
 		else:
 			all_times_pred_simu, all_types_pred_simu, D_pred, WT_pred = resimulate(
@@ -4298,12 +4267,11 @@ def run_rmtpp_optimizer_model_comp(
 		t_e_plus,
 		(comp_test_norma,
 		comp_test_normd),
-		prev_hidden_state=next_hidden_state
 	)
 	event_count_preds_cnt_comp = np.ones_like(test_data_init_time) * all_times_pred_comp.shape[1] + 1
 	(
 		all_gaps_pred_comp, all_times_pred_comp, all_types_pred_comp,
-		_, all_D_pred_comp, all_WT_pred_comp,
+		all_D_pred_comp, all_WT_pred_comp,
 	) = simulate_with_counter(
 		model_rmtpp_comp, 
 		test_data_init_time, 
@@ -4313,14 +4281,13 @@ def run_rmtpp_optimizer_model_comp(
 		event_count_preds_cnt_comp,
 		(comp_test_norma, 
 		comp_test_normd),
-		prev_hidden_state=next_hidden_state
 	)
 
 	event_count_preds_cnt = np.ones_like(test_data_init_time) * all_times_pred_comp.shape[1] * comp_bin_sz
 	event_count_preds_true = count_test_out_counts
 	(
 		all_gaps_pred_simu, all_times_pred_simu, all_types_pred_simu,
-		_, D_pred, WT_pred
+		D_pred, WT_pred
 	) = simulate_with_counter(
 		model_rmtpp, 
 		test_data_init_time, 
@@ -4330,7 +4297,6 @@ def run_rmtpp_optimizer_model_comp(
 		event_count_preds_cnt,
 		(event_test_norma, 
 		event_test_normd),
-		prev_hidden_state=next_hidden_state
 	)
 
 	all_times_pred = [[] for _ in range(len(test_data_input_gaps_bin))]
@@ -4372,8 +4338,8 @@ def run_rmtpp_optimizer_model_comp(
 				if dec_idx == 0:
 					test_data_init_time_batch = test_data_init_time[batch_idx:batch_idx+1]
 				else:
-					test_data_init_time_batch = batch_times_pred[-1][-1:]
-	
+					test_data_init_time_batch = np.array(flatten(batch_times_pred)[-1:])
+
 				#import ipdb
 				#ipdb.set_trace()
 	
@@ -4495,7 +4461,6 @@ def run_rmtpp_simulation(args, models, data, test_data, rmtpp_type=None):
 		t_e_plus,
 		(event_test_norma,
 		event_test_normd),
-		prev_hidden_state=next_hidden_state
 	)
 	all_counts_pred = []
 	for dec_idx in range(dec_len):
@@ -5202,7 +5167,7 @@ def evaluate_query_2(
 	horizon_start, horizon_end,
 	interval_size, normalizers,
 	less_threshold, more_threshold,
-	use_poisson_binomial=True,
+	use_dist=None,
 ):
 	norm_a, norm_d = normalizers
 	num_intervals = 1000
@@ -5241,7 +5206,7 @@ def evaluate_query_2(
 		)
 
 		batch_means_shifted = np.cumsum(batch_means)
-		if use_poisson_binomial:
+		if use_dist in ['poisson_binomial']:
 			dist = tfd.Normal(loc=batch_means_shifted, scale=batch_sigms)
 			interval_begin_cdf = dist.cdf(all_intervals)
 			interval_end_cdf = dist.cdf(all_intervals + interval_size_norm)
@@ -5250,7 +5215,57 @@ def evaluate_query_2(
 			pb_var = tf.maximum(tf.reduce_sum(success_prob*(1.-success_prob), axis=1), 1e-6)
 			pb_skew = tf.pow(pb_var, -1.5) * tf.reduce_sum(success_prob*(1.-success_prob)*(1.-2*success_prob), axis=1)
 			#pb_threshold_cdf = utils.refined_normal_approx(pb_mean, pb_var, pb_skew, more_threshold[batch_idx]) 
-			pb_threshold_cdf = utils.normal_approx(pb_mean, pb_var, more_threshold[batch_idx]) 
+			#pb_threshold_cdf = utils.normal_approx(pb_mean, pb_var, more_threshold[batch_idx]) 
+			pb_threshold_cdf = tfd.Normal(loc=pb_mean, scale=pb_var).cdf(more_threshold[batch_idx])
+			#import ipdb
+			#ipdb.set_trace()
+			if np.sum(1.-pb_threshold_cdf) > 0.:
+				more_pred_prob = (1.-pb_threshold_cdf) / tf.reduce_sum(1. - pb_threshold_cdf)
+			else:
+				more_pred_prob = (1.-pb_threshold_cdf)
+			if np.sum(pb_threshold_cdf) > 0.:
+				less_pred_prob = (pb_threshold_cdf) / tf.reduce_sum(pb_threshold_cdf)
+			else:
+				less_pred_prob = (pb_threshold_cdf)
+
+			#import ipdb
+			#ipdb.set_trace()
+
+			true_counts = np.sum(
+				np.logical_and(
+					(batch_true_shifted - all_intervals)>0.,
+					(batch_true_shifted - (all_intervals + interval_size_norm)<=0.)
+				),
+				axis=1
+			)
+			more_true = (true_counts >= more_threshold[batch_idx]).astype(np.float32)
+			more_true_prob = more_true * 1. / np.sum(more_true)
+
+			more_mismatch = (1.-more_pred_prob)*more_true + more_pred_prob*(1.-more_true)
+			more_mismatch_pe.append(more_mismatch)
+
+
+			less_true = (true_counts <= less_threshold[batch_idx]).astype(np.float32)
+			less_true_prob = less_true * 1. / np.sum(less_true)
+
+			less_mismatch = (1.-less_pred_prob)*less_true + less_pred_prob*(1.-less_true)
+			less_mismatch_pe.append(less_mismatch)
+
+			#if np.isnan(np.sum(more_mismatch_pe[-1])) or np.isnan(np.sum(less_mismatch_pe[-1])):
+			#	import ipdb
+			#	ipdb.set_trace()
+
+		elif use_dist in ['binomial']:
+			dist = tfd.Normal(loc=batch_means_shifted, scale=batch_sigms)
+			interval_begin_cdf = dist.cdf(all_intervals)
+			interval_end_cdf = dist.cdf(all_intervals + interval_size_norm)
+			success_prob = interval_end_cdf - interval_begin_cdf # num_intervals x num_events
+			success_prob = success_prob.numpy()
+			success_prob[success_prob==1.] = 0.999999
+			import ipdb
+			ipdb.set_trace()
+			bino_dist = tfd.inomial(total_count=4., probs=success_prob)
+			pb_threshold_cdf = utils.normal_approx(pb_mean, pb_var, more_threshold[batch_idx])
 			#import ipdb
 			#ipdb.set_trace()
 			more_pred_prob = (1.-pb_threshold_cdf) / tf.reduce_sum(1. - pb_threshold_cdf)
@@ -5277,9 +5292,6 @@ def evaluate_query_2(
 
 			less_mismatch = (1.-less_pred_prob)*less_true + less_pred_prob*(1.-less_true)
 			less_mismatch_pe.append(less_mismatch)
-
-			#import ipdb
-			#ipdb.set_trace()
 
 		else:
 			dist = tfd.Normal(loc=batch_means_shifted, scale=batch_sigms)
@@ -6214,7 +6226,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					args.interval_size,
 					(event_test_norma, event_test_normd),
 					less_threshold, more_threshold,
-					use_poisson_binomial=False,
+					use_dist='poisson_binomial',
 				)
 
 
