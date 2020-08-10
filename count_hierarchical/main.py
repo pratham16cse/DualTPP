@@ -177,17 +177,17 @@ args.dataset_name = dataset_names
 model_names = list()
 if args.model_name == 'all':
     #model_names.append('hawkes_model')
-    model_names.append('wgan')
-    model_names.append('seq2seq')
-    model_names.append('transformer')
+    #model_names.append('wgan')
+    #model_names.append('seq2seq')
+    #model_names.append('transformer')
     model_names.append('count_model')
     # model_names.append('hierarchical')
     #model_names.append('rmtpp_nll')
     model_names.append('rmtpp_mse')
-    model_names.append('rmtpp_mse_var')
+    #model_names.append('rmtpp_mse_var')
     #model_names.append('rmtpp_nll_comp')
     model_names.append('rmtpp_mse_comp')
-    model_names.append('rmtpp_mse_var_comp')
+    #model_names.append('rmtpp_mse_var_comp')
     #model_names.append('pure_hierarchical_nll')
     #model_names.append('pure_hierarchical_mse')
     model_names.append('inference_models')
@@ -352,9 +352,6 @@ for dataset_name in dataset_names:
     #event_count_result[dataset_name] = per_model_count
     print("####################################################################")
 
-import json
-with open('Outputs/results_'+dataset_name+'.json', 'w') as fp:
-    json.dump(results, fp)
 
 with open('Outputs/results_'+dataset_name+'.txt', 'w') as fp:
 
@@ -441,6 +438,13 @@ with open('Outputs/results_'+dataset_name+'.txt', 'w') as fp:
             fp.write('\n {}: {:.3f}'.format(metric, val))
         fp.write('\n')
 
+
+for model_name, metrics_dict in results.items():
+    for metric, metric_val in metrics_dict.items():
+        results[model_name][metric] = str(metric_val)
+import json
+with open('Outputs/results_'+dataset_name+'.json', 'w') as fp:
+    json.dump(results, fp)
 
 #with open('Outputs/results_'+dataset_name+'.json', 'w') as fp:
 #    json.dump(results, fp)
