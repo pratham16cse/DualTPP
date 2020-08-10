@@ -1310,7 +1310,7 @@ def run_transformer(args, data, test_data):
 					types_batch_out)
 				#gap_loss = -torch.sum(event_ll - non_event_ll)
 				se = transformer_utils.time_loss(gaps_pred, gaps_batch_out)
-				scale_se_loss = 100 # SE is usually large, scale it to stabilize training
+				scale_se_loss = 10 # SE is usually large, scale it to stabilize training
 				gap_loss = -tf.reduce_sum(event_ll - non_event_ll) + se / scale_se_loss
 				type_loss, _ = transformer_utils.type_loss(types_pred, types_batch_out, type_loss_func)
 				#import ipdb
@@ -4853,14 +4853,16 @@ def compute_full_horizon_metrics(
 	all_types_pred,
 	all_counts_true,
 	all_counts_pred,
-	t_b_plus, t_e_plus,
+	count_test_out_binend, bin_size,
 ):
 	count_mae_fh = np.mean(np.abs(all_counts_true - all_counts_pred))
 	count_mae_fh_pe = np.mean(np.abs(all_counts_true - all_counts_pred), axis=1)
 	count_mae_fh_per_bin = np.mean(np.abs(all_counts_true - all_counts_pred), axis=0)
 
 	wass_dist_fh, wass_dist_fh_pe = compute_wasserstein_dist(
-		all_times_pred, all_times_true, t_b_plus, t_e_plus,
+		all_times_pred, all_times_true,
+		count_test_out_binend[:, 0] - bin_size,
+		count_test_out_binend[:, -1],
 	)
 
 	#true_types = all_types_true
@@ -4876,8 +4878,28 @@ def compute_full_horizon_metrics(
 	bleu_score_fh, bleu_score_fh_pe = compute_bleu_score(
 		all_times_true, all_times_pred,
 		all_types_true, all_types_pred,
-		t_b_plus, t_e_plus,
+		count_test_out_binend[:, 0] - bin_size,
+		count_test_out_binend[:, -1],
 	)
+
+	wass_dist_fh_per_bin = []
+	bleu_score_fh_per_bin = []
+	for dec_idx in range(all_counts_true.shape[1]):
+		t_b_plus = count_test_out_binend[:, dec_idx] - bin_size
+		t_e_plus = count_test_out_binend[:, dec_idx]
+
+		wass_dist_fh_dec_idx, _ = compute_wasserstein_dist(
+			all_times_pred, all_times_true,
+			t_b_plus, t_e_plus,
+		)
+		wass_dist_fh_per_bin.append(wass_dist_fh_dec_idx)
+
+		bleu_score_fh_dec_idx, _ = compute_bleu_score(
+			all_times_true, all_times_pred,
+			all_types_true, all_types_pred,
+			t_b_plus, t_e_plus,
+		)
+		bleu_score_fh_per_bin.append(bleu_score_fh_dec_idx)
 
 	return (
 		count_mae_fh,
@@ -4887,6 +4909,8 @@ def compute_full_horizon_metrics(
 		wass_dist_fh_pe,
 		bleu_score_fh_pe,
 		count_mae_fh_per_bin,
+		np.array(wass_dist_fh_per_bin),
+		np.array(bleu_score_fh_per_bin),
 	)
 
 
@@ -6049,6 +6073,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 
 			dist_params_dict = dict()
 			for inference_model_name in run_model_flags.keys():
+				start_time = time.time()
 				print("Running Inference Model: "+inference_model_name)
 				test_data_out_gaps_bin = dataset['test_data_out_gaps_bin']
 				#if 'rmtpp_mse_opt' in run_model_flags and run_model_flags['rmtpp_mse_opt']:
@@ -6057,7 +6082,6 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 				all_best_nc_count_losses = 0.
 				if inference_model_name in ['rmtpp_nll_opt', 'rmtpp_mse_opt', 'rmtpp_mse_var_opt'] \
 					and run_model_flags[inference_model_name]:
-					start_time = time.time()
 					(
 						all_times_pred,
 						all_types_pred,
@@ -6076,8 +6100,6 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 						dataset,
 						rmtpp_type=run_model_flags[inference_model_name]['rmtpp_type']
 					)
-					end_time = time.time()
-					print('Time Required For Optimization:', end_time - start_time)
 
 				if inference_model_name in ['rmtpp_nll_cont', 'rmtpp_mse_cont', 'rmtpp_mse_var_cont'] \
 					and run_model_flags[inference_model_name]:
@@ -6171,6 +6193,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 						all_counts_pred, all_times_pred, all_types_pred,
 						event_dist_params, count_dist_params,
 					) = run_transformer_simulation(args, models, data, test_data)
+				end_time = time.time()
 
 
 				all_counts_true = count_test_out_counts
@@ -6184,6 +6207,8 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					wass_dist_fh_pe,
 					bleu_score_fh_pe,
 					count_mae_fh_per_bin,
+					wass_dist_fh_per_bin,
+					bleu_score_fh_per_bin,
 				) = compute_full_horizon_metrics(
 					all_times_true,
 					all_times_pred,
@@ -6191,8 +6216,8 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					all_types_pred,
 					all_counts_true,
 					all_counts_pred,
-					count_test_out_binend[:, 0] - args.bin_size,
-					count_test_out_binend[:, -1],
+					count_test_out_binend,
+					args.bin_size,
 				)
 
 				(
@@ -6278,8 +6303,11 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					wass_dist_rh,
 					bleu_score_rh,
 					count_mae_fh_per_bin,
+					wass_dist_fh_per_bin,
+					bleu_score_fh_per_bin,
 					more_metric,
 					less_metric,
+					end_time - start_time,
 					np.mean(all_best_opt_nc_losses),
 					np.mean(all_best_cont_nc_losses),
 					np.mean(all_best_nc_count_losses),

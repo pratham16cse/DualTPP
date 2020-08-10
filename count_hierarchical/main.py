@@ -352,6 +352,9 @@ for dataset_name in dataset_names:
     #event_count_result[dataset_name] = per_model_count
     print("####################################################################")
 
+import json
+with open('Outputs/results_'+dataset_name+'.json', 'w') as fp:
+    json.dump(results, fp)
 
 with open('Outputs/results_'+dataset_name+'.txt', 'w') as fp:
 

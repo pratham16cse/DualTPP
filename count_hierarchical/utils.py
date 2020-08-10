@@ -67,8 +67,11 @@ def add_metrics_to_dict(
 	wass_dist_rh,
 	bleu_score_rh,
 	count_mae_fh_per_bin,
+	wass_dist_fh_per_bin,
+	bleu_score_fh_per_bin,
 	more_metric,
 	less_metric,
+	reqd_time,
 	opt_loss=0.,
 	cont_loss=0.,
 	count_loss=0.,
@@ -85,6 +88,8 @@ def add_metrics_to_dict(
 
 	for i in range(len(count_mae_fh_per_bin)):
 		metrics_dict[model_name]['count_mae_fh_bin_'+str(i)] = count_mae_fh_per_bin[i]
+		metrics_dict[model_name]['wass_dist_fh_per_bin'+str(i)] = wass_dist_fh_per_bin[i]
+		metrics_dict[model_name]['bleu_score_fh_per_bin'+str(i)] = bleu_score_fh_per_bin[i]
 
 	metrics_dict[model_name]['more_metric'] = more_metric
 	metrics_dict[model_name]['less_metric'] = less_metric
@@ -92,6 +97,8 @@ def add_metrics_to_dict(
 	metrics_dict[model_name]['opt_loss'] = opt_loss
 	metrics_dict[model_name]['cont_loss'] = cont_loss
 	metrics_dict[model_name]['count_loss'] = count_loss
+
+	metrics_dict[model_name]['reqd_time'] = reqd_time
 
 	print(model_name, 'count_mae_fh', count_mae_fh)
 	print(model_name, 'wass_dist_fh', wass_dist_fh)
@@ -103,9 +110,13 @@ def add_metrics_to_dict(
 
 	for i in range(len(count_mae_fh_per_bin)):
 		print(model_name, 'count_mae_fh_bin_'+str(i), count_mae_fh_per_bin[i])
+		print(model_name, 'wass_dist_fh_per_bin'+str(i), wass_dist_fh_per_bin[i])
+		print(model_name, 'bleu_score_fh_per_bin'+str(i), bleu_score_fh_per_bin[i])
 
 	print(model_name, 'more_metric', more_metric)
 	print(model_name, 'less_metric', less_metric)
+
+	print('Time required for ', model_name, ':', reqd_time)
 
 	return metrics_dict
 
