@@ -368,7 +368,7 @@ def generate_plots(args, dataset_name, dataset, per_model_count, test_sample_idx
 	plt.savefig('Outputs/'+dataset_name+'_'+str(test_sample_idx)+'.svg', format='svg', dpi=1200)
 	plt.close()
 
-def create_bin(times, types, bin_size):
+def create_bin(times, types, bin_size, num_bins):
 	"""
 
 	Args:
@@ -387,26 +387,35 @@ def create_bin(times, types, bin_size):
 	bintogaps = []
 	bintotypes = []
 	last_ind= [0]
-	ind=0
-	while ind<len(times):
+	ind = 0
+	bin_id = 0
+	while bin_id < num_bins:
+
 		end_hr = end_hr + bin_size
 		times_saver, gaps_saver, types_saver = [], [], []
-		while ind<len(times) and times[ind]<=end_hr:
+
+		while times[ind]<=end_hr:
 			if ind>0:
 				gaps_saver.append(times[ind]-times[ind-1])
-				times_saver.append(times[ind])
-				types_saver.append(types[ind])
-			ind+=1
-		if ind<len(times):
+			else:
+				gaps_saver.append(0.)
+			times_saver.append(times[ind])
+			types_saver.append(types[ind])
+			ind += 1
+			if ind>=len(times):
+				break
+
+		if bin_id < num_bins:
 			cnt_bin.append(ind-last_ind[-1])
 			last_ind.append(ind)
 			end_hr_bin.append(end_hr)
 			bintotimes.append(times_saver)
 			bintogaps.append(gaps_saver)
 			bintotypes.append(types_saver)
+			bin_id += 1
 
 
-	print('Total bins generated', len(cnt_bin))
+	print('Total bins generated', len(bintotimes))
 	print('Each bin has Average', int(round(np.mean(cnt_bin))), 'timestamps')
 	return cnt_bin, end_hr_bin, bintotimes, bintogaps, bintotypes
 
@@ -435,8 +444,8 @@ def generate_train_dev_test_data(
 
 	if bintotypes is not None:
 		bintotypes_train = bintotypes[:int(train_per*data_sz)]
-		bintotypes_dev = bintotypes[int(train_per*data_sz):int((train_per+dev_per)*data_sz)]
-		bintotypes_test = bintotypes[int((train_per+dev_per)*data_sz):]
+		bintotypes_dev = bintotypes[int(train_per*data_sz)-in_bin_sz:int((train_per+dev_per)*data_sz)]
+		bintotypes_test = bintotypes[int((train_per+dev_per)*data_sz)-in_bin_sz:]
 	else:
 		bintotypes_train, bintotypes_dev, bintotypes_test = None, None, None
 
@@ -907,7 +916,12 @@ def reset_indices(types):
 	return types_new, type2id
 
 def set_comp_bin_sz(bin_counts):
-	return int(np.round(np.mean(bin_counts)))
+	return int(np.round(np.mean(bin_counts))/2)
+
+def get_num_bins(timestamps, bin_size):
+	num_bins = (timestamps[-1] - timestamps[0]) // bin_size
+	return num_bins
+
 
 def get_processed_data(dataset_name, args):
 
@@ -931,7 +945,9 @@ def get_processed_data(dataset_name, args):
 	gaps = gaps.astype(np.float32)
 	args.num_types = len(np.unique(types))
 	types, _ = reset_indices(types) # Make sure type-indieces are in the range [Y]
-	count_counts, count_binend, bintotimes, bintogaps, bintotypes = create_bin(timestamps, types, bin_size)
+	num_bins = get_num_bins(timestamps, bin_size)
+	count_counts, count_binend, bintotimes, bintogaps, bintotypes = create_bin(timestamps, types, bin_size, num_bins)
+
 	args.comp_bin_sz = set_comp_bin_sz(count_counts)
 	comp_bin_sz = args.comp_bin_sz
 
@@ -946,7 +962,9 @@ def get_processed_data(dataset_name, args):
 	timestamps_comp = timestamps[::comp_bin_sz]
 	gaps_comp = timestamps_comp[1:] - timestamps_comp[:-1]
 	gaps_comp = gaps_comp.astype(np.float32)
-	_, _, bintotimes_comp, bintogaps_comp, bintotypes_comp = create_bin(timestamps_comp, types, bin_size)
+	types_comp = np.ones_like(types)
+	_, _, bintotimes_comp, bintogaps_comp, bintotypes_comp = create_bin(timestamps_comp, types_comp, bin_size, num_bins)
+
 
 	#TODO Resolve these plots
 #	os.makedirs('data/plots', exist_ok=True)
@@ -1152,17 +1170,15 @@ def get_processed_data(dataset_name, args):
 	#comp_test_in_gaps = np.array(pad_sequences([flatten(seq) for seq in comp_test_in_gaps], padding='post'))
 	#comp_test_in_types = np.array(pad_sequences([flatten(seq) for seq in comp_test_in_types], padding='post'))
 	#comp_test_in_times = np.array(pad_sequences([flatten(seq) for seq in comp_test_in_times], padding='post'))
-	import ipdb
-	ipdb.set_trace()
-	mx_enc_len = min([len(x) for x in event_test_out_times])
-	mx_enc_len = min(comp_enc_len, ((mx_enc_len-1)//comp_bin_sz))
-	# concat train, dev in put and then get the input
+	mx_enc_len = min([len(flatten(x)) for x in comp_test_in_gaps])
+	#mx_enc_len = min(comp_enc_len, ((mx_enc_len-1)//comp_bin_sz))
 	comp_test_in_gaps = np.array([flatten(seq)[-mx_enc_len:] for seq in comp_test_in_gaps])
 	comp_test_in_types = np.array([flatten(seq)[-mx_enc_len:] for seq in comp_test_in_types])
 	comp_test_in_times = np.array([flatten(seq)[-mx_enc_len:] for seq in comp_test_in_times])
 	comp_test_out_gaps = np.array([flatten(seq) for seq in comp_test_out_gaps])
 	comp_test_out_types = np.array([flatten(seq) for seq in comp_test_out_types])
 	comp_test_out_times = np.array([flatten(seq) for seq in comp_test_out_times])
+
 
 	comp_test_in_gaps, comp_test_norma, comp_test_normd = normalize_avg(comp_test_in_gaps)
 
