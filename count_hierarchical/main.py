@@ -177,17 +177,17 @@ args.dataset_name = dataset_names
 model_names = list()
 if args.model_name == 'all':
     #model_names.append('hawkes_model')
-    #model_names.append('wgan')
-    #model_names.append('seq2seq')
-    #model_names.append('transformer')
+    model_names.append('wgan')
+    model_names.append('seq2seq')
+    model_names.append('transformer')
     model_names.append('count_model')
     # model_names.append('hierarchical')
     #model_names.append('rmtpp_nll')
     model_names.append('rmtpp_mse')
-    #model_names.append('rmtpp_mse_var')
+    model_names.append('rmtpp_mse_var')
     #model_names.append('rmtpp_nll_comp')
     model_names.append('rmtpp_mse_comp')
-    #model_names.append('rmtpp_mse_var_comp')
+    model_names.append('rmtpp_mse_var_comp')
     #model_names.append('pure_hierarchical_nll')
     #model_names.append('pure_hierarchical_mse')
     model_names.append('inference_models')
@@ -215,6 +215,7 @@ if 'rmtpp_mse' in model_names:
     run_model_flags['rmtpp_mse_cont'] = {'rmtpp_type':'mse'}
     #run_model_flags['rmtpp_mse_reinit'] = True
     run_model_flags['rmtpp_mse_simu'] = {'rmtpp_type':'mse'}
+    run_model_flags['rmtpp_mse_simu_nc'] = {'rmtpp_type':'mse'}
 if 'rmtpp_mse_var' in model_names:
     run_model_flags['rmtpp_mse_var_opt'] = {'rmtpp_type':'mse_var'}
     run_model_flags['rmtpp_mse_var_cont'] = {'rmtpp_type':'mse_var'}
@@ -244,6 +245,7 @@ if 'seq2seq' in model_names:
     run_model_flags['seq2seq_simu'] = True
 if 'transformer' in model_names:
     run_model_flags['transformer_simu'] = True
+    run_model_flags['transformer_simu_nc'] = True
 if 'hawkes_model' in model_names:
     run_model_flags['hawkes_simu'] = True
 

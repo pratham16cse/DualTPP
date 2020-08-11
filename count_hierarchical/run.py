@@ -2026,8 +2026,11 @@ def simulate_seq2seq(model, times_in, gaps_in, feats_in,
 
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 # Simulate model until t_b_plus
-def simulate_transformer(model, times_in, gaps_in, feats_in, types_in,
-			 			 t_b_plus, normalizers, prev_hidden_state=None):
+def simulate_transformer(
+	model, times_in, gaps_in, feats_in, types_in,
+	t_b_plus, normalizers, use_nowcast=False,
+	nc_gaps_in=None, nc_feats_in=None, nc_types_in=None,
+):
 	#TODO: Check for this modification in functions which calls this def
 	gaps_pred = list()
 	types_pred = list()
@@ -2041,13 +2044,20 @@ def simulate_transformer(model, times_in, gaps_in, feats_in, types_in,
 
 	step_gaps_pred = step_gaps_pred[:,-1:]
 	step_types_pred = step_types_pred[:,-1:]
-	gaps_in = tf.concat([gaps_in[:,1:], step_gaps_pred], axis=1)
-	types_in = tf.concat([types_in[:,1:], step_types_pred], axis=1)
+	if not use_nowcast:
+		gaps_in = step_gaps_pred
+		types_in = step_types_pred
+	else:
+		gaps_in = nc_gaps_in[:, 0:1]
+		types_in = nc_types_in[:, 0:1]
 	step_gaps_pred = tf.squeeze(step_gaps_pred, axis=-1)
 	last_gaps_pred_unnorm = utils.denormalize_avg(step_gaps_pred, data_norm_a, data_norm_d)
 	last_times_pred = times_in + last_gaps_pred_unnorm
 	step_feats_pred = get_time_features(tf.expand_dims(last_times_pred, axis=-1))
-	feats_in = tf.concat([feats_in[:, 1:], step_feats_pred], axis=1)
+	if not use_nowcast:
+		feats_in = step_feats_pred
+	else:
+		feats_in = nc_feats_in[:, 0:1]
 	gaps_pred.append(last_gaps_pred_unnorm)
 	types_pred.append(step_types_pred)
 	times_pred.append(last_times_pred)
@@ -2055,7 +2065,9 @@ def simulate_transformer(model, times_in, gaps_in, feats_in, types_in,
 	simul_step = 0
 
 	while any(times_pred[-1]<t_b_plus):
-		print(np.sum(times_pred[-1]<t_b_plus), t_b_plus.shape)
+		simul_step += 1
+
+		#print(np.sum(times_pred[-1]<t_b_plus), t_b_plus.shape)
 		#print(np.squeeze(t_b_plus-times_pred[-1], axis=-1))
 		#print(gaps_in[0, :, 0])
 		enc_out, (step_types_logits, step_gaps_pred) = model(gaps_in, feats_in, types_in)
@@ -2064,19 +2076,27 @@ def simulate_transformer(model, times_in, gaps_in, feats_in, types_in,
 
 		step_gaps_pred = step_gaps_pred[:,-1:]
 		step_types_pred = step_types_pred[:,-1:]
-		gaps_in = tf.concat([gaps_in[:,1:], step_gaps_pred], axis=1)
-		types_in = tf.concat([types_in[:,1:], step_types_pred], axis=1)
+		if not use_nowcast:
+			gaps_in = step_gaps_pred
+			types_in = step_types_pred
+		else:
+			if simul_step>=nc_gaps_in.shape[1]:
+				break
+			gaps_in = nc_gaps_in[:, simul_step:simul_step+1]
+			types_in = nc_types_in[:, simul_step:simul_step+1]
 		step_gaps_pred = tf.squeeze(step_gaps_pred, axis=-1)
 		last_gaps_pred_unnorm = utils.denormalize_avg(step_gaps_pred, data_norm_a, data_norm_d)
 		#print(np.squeeze(last_gaps_pred_unnorm, axis=-1))
 		last_times_pred = times_pred[-1] + last_gaps_pred_unnorm
 		step_feats_pred = get_time_features(tf.expand_dims(last_times_pred, axis=-1))
-		feats_in = tf.concat([feats_in[:, 1:], step_feats_pred], axis=1)
+		if not use_nowcast:
+			feats_in = step_feats_pred
+		else:
+			feats_in = nc_feats_in[:, simul_step:simul_step+1]
 		gaps_pred.append(last_gaps_pred_unnorm)
 		types_pred.append(step_types_pred)
 		times_pred.append(last_times_pred)
 		
-		simul_step += 1
 
 	gaps_pred = tf.stack(gaps_pred, axis=1)
 	types_pred = tf.squeeze(tf.stack(types_pred, axis=1), axis=2)
@@ -2085,7 +2105,7 @@ def simulate_transformer(model, times_in, gaps_in, feats_in, types_in,
 	times_pred = tf.squeeze(tf.stack(times_pred, axis=1), axis=2)
 	all_times_pred = times_pred
 
-	return all_gaps_pred, all_times_pred, types_pred, prev_hidden_state
+	return all_gaps_pred, all_times_pred, types_pred
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
@@ -4673,7 +4693,11 @@ def run_seq2seq_simulation(args, models, data, test_data):
 
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 # Plain transformer model to generate events independent of bin boundary
-def run_transformer_simulation(args, models, data, test_data):
+def run_transformer_simulation(
+	args, models, data, test_data, use_nowcast=False,
+	nc_gaps_in=None, nc_feats_in=None, nc_types_in=None,
+):
+
 	model_transformer = models['transformer']
 	model_check = (model_transformer is not None)
 	assert model_check, "run_transformer_simulation requires transformer^ model"
@@ -4688,15 +4712,13 @@ def run_transformer_simulation(args, models, data, test_data):
 	dec_len = args.out_bin_sz
 	bin_size = args.bin_size
 
-	next_hidden_state = None
-
 	test_data_init_time = event_test_in_lasttime.astype(np.float32)
 	test_data_input_gaps_bin = event_test_in_gaps.astype(np.float32)
 
 	t_b_plus = count_test_out_binend[:, 0] - bin_size
 	t_e_plus = count_test_out_binend[:, -1]
 
-	_, all_times_pred, all_types_pred, _ = simulate_transformer(
+	_, all_times_pred, all_types_pred, = simulate_transformer(
 		model_transformer,
 		test_data_init_time,
 		test_data_input_gaps_bin,
@@ -4705,7 +4727,10 @@ def run_transformer_simulation(args, models, data, test_data):
 		t_e_plus,
 		(event_test_norma,
 		event_test_normd),
-		prev_hidden_state=next_hidden_state
+		use_nowcast=use_nowcast,
+		nc_gaps_in=nc_gaps_in,
+		nc_feats_in=nc_feats_in,
+		nc_types_in=nc_types_in,
 	)
 
 	all_counts_pred = []
@@ -6256,6 +6281,21 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 						all_counts_pred, all_times_pred, all_types_pred,
 						event_dist_params, count_dist_params,
 					) = run_transformer_simulation(args, models, data, test_data)
+				if inference_model_name=='transformer_simu_nc' and run_model_flags[inference_model_name]:
+					nc_gaps_in = np.expand_dims(pad_sequences(event_test_out_gaps, padding='post'), axis=-1).astype(np.float32)
+					nc_types_in = pad_sequences(event_test_out_types, padding='post').astype(np.int64)
+					nc_feats_in = np.expand_dims(get_time_features(pad_sequences(event_test_out_times, padding='post')), axis=-1).astype(np.float32)
+					#nc_times_in = pad_sequences(event_test_out_times, padding='post').astype(np.float32)
+					(
+						all_counts_pred, all_times_pred, all_types_pred,
+						event_dist_params, count_dist_params,
+					) = run_transformer_simulation(
+						args, models, data, test_data,
+						use_nowcast=True,
+						nc_gaps_in=nc_gaps_in,
+						nc_feats_in=nc_feats_in,
+						nc_types_in=nc_types_in,
+					)
 				end_time = time.time()
 
 				all_counts_true = count_test_out_counts
