@@ -409,47 +409,39 @@ def create_bin(times, types, bin_size):
 	print('Each bin has Average', int(round(np.mean(cnt_bin))), 'timestamps')
 	return cnt_bin, end_hr_bin, bintotimes, bintogaps, bintotypes
 
-def generate_train_test_data(count_counts, count_binend, bintotimes, bintogaps, bintotypes=None):
+def generate_train_dev_test_data(count_counts, count_binend, bintotimes, bintogaps, bintotypes=None):
 	train_per = 0.8
+	dev_per = 0.16
 	data_sz = len(count_counts)
 
 	count_train_counts = count_counts[:int(train_per*data_sz)]
-	count_test_counts = count_counts[int(train_per*data_sz):]
 	count_train_binend = count_binend[:int(train_per*data_sz)]
-	count_test_binend = count_binend[int(train_per*data_sz):]
 	bintotimes_train = bintotimes[:int(train_per*data_sz)]
-	bintotimes_test = bintotimes[int(train_per*data_sz):]
 	bintogaps_train = bintogaps[:int(train_per*data_sz)]
-	bintogaps_test = bintogaps[int(train_per*data_sz):]
+
+	count_dev_counts = count_counts[int(train_per*data_sz):int((train_per+dev_per)*data_sz)]
+	count_dev_binend = count_binend[int(train_per*data_sz):int((train_per+dev_per)*data_sz)]
+	bintotimes_dev = bintotimes[int(train_per*data_sz):int((train_per+dev_per)*data_sz)]
+	bintogaps_dev = bintogaps[int(train_per*data_sz):int((train_per+dev_per)*data_sz)]
+
+	count_test_counts = count_counts[int((train_per+dev_per)*data_sz):]
+	count_test_binend = count_binend[int((train_per+dev_per)*data_sz):]
+	bintotimes_test = bintotimes[int((train_per+dev_per)*data_sz):]
+	bintogaps_test = bintogaps[int((train_per+dev_per)*data_sz):]
 
 	if bintotypes is not None:
 		bintotypes_train = bintotypes[:int(train_per*data_sz)]
-		bintotypes_test = bintotypes[int(train_per*data_sz):]
+		bintotypes_dev = bintotypes[int(train_per*data_sz):int((train_per+dev_per)*data_sz)]
+		bintotypes_test = bintotypes[int((train_per+dev_per)*data_sz)]
 	else:
-		bintotypes_train, bintotypes_test = None, None
+		bintotypes_train, bintotypes_dev, bintotypes_test = None, None, None
 
 
-	data_sz = np.sum(count_counts)
-	event_train_gaps = flatten(bintogaps_train)[:int(train_per*data_sz)]
-	event_test_gaps = flatten(bintogaps_test)[int(train_per*data_sz):]
-	event_train_times = flatten(bintotimes_train)[:int(train_per*data_sz)]
-	event_test_times = flatten(bintotimes_test)[int(train_per*data_sz):]
-
-
-	print("Length of train and test bins", \
-			len(count_train_counts), len(count_test_counts))
-	print("Length of train and test gaps", \
-			len(event_train_gaps), len(event_test_gaps))
-	print("Length of train and test timestamps", \
-			len(event_train_times), len(event_test_times))
-
-
-	return  (count_train_counts, count_test_counts,
-			 count_train_binend, count_test_binend,
-			 bintotimes_train, bintotimes_test,
-			 event_train_gaps, event_test_gaps,
-			 event_train_times, event_test_times,
-			 bintotypes_train, bintotypes_test)
+	return  (count_train_counts, count_dev_counts, count_test_counts,
+			 count_train_binend, count_dev_binend, count_test_binend,
+			 bintogaps_train, bintogaps_dev, bintogaps_test,
+			 bintotimes_train, bintotimes_dev, bintotimes_test,
+			 bintotypes_train, bintotypes_dev, bintotypes_test)
 
 def get_data_in_next_n_bins(n, inp, out, bin_size):
 	out_n_bins = []
@@ -458,6 +450,28 @@ def get_data_in_next_n_bins(n, inp, out, bin_size):
 			break
 		out_n_bins.append(out[i])
 	return out_n_bins
+
+def create_nowcast_io_seqs(data, chunk_len, stride):
+
+	data_in, data_out = [], []
+	for idx in range(0, len(data)-len(data)%chunk_len, stride):
+		data_in.append(data[idx:idx+chunk_len])
+		data_out.append(data[idx+1:idx+1+chunk_len])
+
+	return data_in, data_out
+
+def create_forecast_io_seqs(data, enc_len, dec_len, stride):
+
+	data_in, data_out = [], []
+	for idx in range(0, len(data)-len(data)%(enc_len+dec_len), stride):
+		data_in.append(data[idx:idx+enc_len])
+		data_out.append(data[idx+enc_len:idx+enc_len+dec_len])
+
+	data_in = np.array(data_in)
+	data_out = np.array(data_out)
+	return data_in, data_out
+
+
 
 def make_seq_from_data(data, enc_len, in_bin_sz, out_bin_sz, batch_size,
 					   types=None,
@@ -947,18 +961,17 @@ def get_processed_data(dataset_name, args):
 #	plt.close()
 
 
-	[count_train_counts, count_test_counts,
-	 count_train_binend, count_test_binend,
-	 bintotimes_train, bintotimes_test,
-	 event_train_gaps, event_test_gaps,
-	 event_train_times, event_test_times,
-	 bintotypes_train, bintotypes_test] \
-	 	= generate_train_test_data(count_counts, count_binend, bintotimes, bintogaps,
-	 							   bintotypes=bintotypes)
+	(
+		count_train_counts, count_dev_counts, count_test_counts,
+		count_train_binend, count_dev_binend, count_test_binend,
+		bintogaps_train, bintogaps_dev, bintogaps_test,
+		bintotimes_train, bintotimes_dev, bintotimes_test,
+		bintotypes_train, bintotypes_dev, bintotypes_test
+	) = generate_train_dev_test_data(
+	 	count_counts, count_binend, bintotimes, bintogaps, bintotypes=bintotypes
+	 )
 
-	print("Length of train and test bins", len(count_train_counts), len(count_test_counts))
-	print("Length of train and test gaps", len(event_train_gaps), len(event_test_gaps))
-	print("Length of train and test timestamps", len(event_train_times), len(event_test_times))
+
 	[_, _,
 	 _, _,
 	 _, _,
@@ -968,14 +981,6 @@ def get_processed_data(dataset_name, args):
 	 	= generate_train_test_data(count_counts, count_binend, bintotimes_comp, bintogaps_comp,
 	 							   bintotypes=bintotypes_comp)
 
-	#[_, _,
-	# _, _,
-	# _, _,
-	# comp_train_gaps_full ,test_times_gaps_comp_full,
-	# train_times_timestamps_comp_full ,test_times_timestamps_comp_full,
-	# _, _, _, _] \
-	#	= generate_train_test_data(timestamps_comp_full, gaps_comp_full, count_counts,
-	#							   count_binend, bintotimes)
 
 	hawkes_timestamps_pred = event_test_times
 	train_times_gaps_norm, gaps_norm_a, gaps_norm_d \
@@ -1033,6 +1038,7 @@ def get_processed_data(dataset_name, args):
 	 						 count_binend=count_train_binend,
 							 dataset_name=dataset_name)
 
+
 	[count_test_in_counts, count_test_out_counts,
 	 event_test_in_times, event_test_out_times, 
 	 count_test_in_binend, count_test_out_binend,
@@ -1047,6 +1053,43 @@ def get_processed_data(dataset_name, args):
 	 						 bintotypes=bintotypes_test,
 	 						 count_binend=count_test_binend,
 	 						 dataset_name=dataset_name)
+
+
+	count_train_in_counts, count_train_out_counts = create_forecast_io_seqs(
+		count_train_counts, args.in_bin_sz, args.out_bin_sz, args.count_strid_len,
+	)
+	count_dev_in_counts, count_dev_out_counts = create_forecast_io_seqs(
+		count_dev_counts, args.in_bin_sz, args.out_bin_sz, args.count_strid_len,
+	)
+
+	nc_event_train_in_gaps, nc_event_train_out_gaps = create_nowcast_io_seqs(
+		flatten(bintogaps_train), enc_len, args.stride_len,
+	)
+	nc_event_train_in_types, nc_event_train_out_types = create_nowcast_io_seqs(
+		flatten(bintotypes_train), enc_len, args.stride_len,
+	)
+	nc_event_train_in_times, nc_event_train_out_times = create_nowcast_io_seqs(
+		flatten(bintotimes_train), enc_len, args.stride_len,
+	)
+	nc_event_dev_in_gaps, nc_event_dev_out_gaps = create_nowcast_io_seqs(
+		flatten(bintogaps_dev), enc_len, args.stride_len,
+	)
+	nc_event_dev_in_types, nc_event_dev_out_types = create_nowcast_io_seqs(
+		flatten(bintotypes_dev), enc_len, args.stride_len,
+	)
+	nc_event_dev_in_times, nc_event_dev_out_times = create_nowcast_io_seqs(
+		flatten(bintotimes_dev), enc_len, args.stride_len,
+	)
+
+	event_test_in_gaps, event_test_out_gaps = create_forecast_io_seqs(
+		bintogaps_test, args.in_bin_sz, args.out_bin_sz, args.out_bin_sz,
+	)
+	event_test_in_types, event_test_out_types = create_forecast_io_seqs(
+		bintotypes_test, args.in_bin_sz, args.out_bin_sz, args.out_bin_sz,
+	)
+	event_test_in_times, event_test_out_times = create_forecast_io_seqs(
+		bintotimes_test, args.in_bin_sz, args.out_bin_sz, args.out_bin_sz,
+	)
 
 	count_train_in_counts, count_train_normm, count_train_norms \
 		= normalize_data(count_train_in_counts)
@@ -1093,17 +1136,7 @@ def get_processed_data(dataset_name, args):
 					   		 stride_len=args.stride_len,
 					   		 dataset_name=dataset_name)
 
-#	(_, _,
-#	 train_inp_times_in_bin, train_out_times_in_bin,
-#	 _, train_end_hr_bins_relative,
-#	 _, _, _, _) \
-#		= make_seq_from_data(event_train_times, enc_len, in_bin_sz, out_bin_sz,
-#							 batch_size,
-#							 is_it_bins=False,
-#							 is_it_var=True,
-#							 stride_len=int(enc_len/4),
-#							 dataset_name=dataset_name,
-#							 bin_size=args.bin_size)
+
 
 	nc_event_train_in_gaps, event_train_norma, event_train_normd \
 		= normalize_avg(nc_event_train_in_gaps)
@@ -1113,42 +1146,6 @@ def get_processed_data(dataset_name, args):
 	test_data_in_gaps, test_norm_a_gaps, test_norm_d_gaps \
 		= normalize_avg(test_data_in_gaps)
 
-
-	[nc_event_train_in_gaps, nc_event_train_out_gaps,
-	 nc_event_dev_in_gaps, nc_event_dev_out_gaps,
-	 train_data_in_timestamps, train_data_out_timestamps,
-	 dev_data_in_timestamps, dev_data_out_timestamps,
-	 nc_event_train_in_types, nc_event_train_out_types,
-	 nc_event_dev_in_types, nc_event_dev_out_types] \
-	 	= generate_dev_data(nc_event_train_in_gaps, nc_event_train_out_gaps,
-	 						train_data_in_timestamps, train_data_out_timestamps,
-	 						event_train_norma, event_train_normd,
-	 						nc_event_train_in_types, nc_event_train_out_types)
-
-
-	[nc_event_train_in_gaps, nc_event_train_out_gaps,
-	 train_data_in_timestamps, train_data_out_timestamps,
-	 nc_event_train_in_types, nc_event_train_out_types] \
-	 	= stabalize_data(nc_event_train_in_gaps, nc_event_train_out_gaps,
-	 				  	 train_data_in_timestamps, train_data_out_timestamps,
-	 				  	 batch_size,
-	 				  	 nc_event_train_in_types, nc_event_train_out_types)
-
-	[nc_event_dev_in_gaps, nc_event_dev_out_gaps,
-	 dev_data_in_timestamps, dev_data_out_timestamps,
-	 nc_event_dev_in_types, nc_event_dev_out_types] \
-	 	= stabalize_data(nc_event_dev_in_gaps, nc_event_dev_out_gaps,
-	 					 dev_data_in_timestamps, dev_data_out_timestamps,
-	 					 batch_size,
-	 					 nc_event_dev_in_types, nc_event_dev_out_types)
-
-	[test_data_in_gaps, test_data_out_gaps,
-	 test_data_in_timestamps, test_data_out_timestamps,
-	 event_test_in_types, test_data_out_types] \
-	 	= stabalize_data(test_data_in_gaps, test_data_out_gaps, 
-						 test_data_in_timestamps, test_data_out_timestamps,
-						 batch_size,
-						 event_test_in_types, test_data_out_types)
 
 	nc_event_train_in_feats = get_time_features(train_data_in_timestamps)
 	nc_event_train_out_feats = get_time_features(train_data_out_timestamps)
@@ -1168,18 +1165,6 @@ def get_processed_data(dataset_name, args):
 							 stride_len=1,
 							 dataset_name=dataset_name)
 
-#	train_data_in_gaps_comp_full, train_data_out_gaps_comp_full, _, _, _, _, _, _, _, _ \
-#		= make_seq_from_data(comp_train_gaps_full, comp_enc_len, in_bin_sz, out_bin_sz,
-#							 batch_size,
-#							 is_it_bins=False,
-#							 stride_len=1,
-#							 dataset_name=dataset_name)
-#	train_data_in_timestamps_comp_full, train_data_out_timestamps_comp_full, _, _, _, _, _, _, _, _ \
-#		= make_seq_from_data(train_times_timestamps_comp_full, comp_enc_len, in_bin_sz, out_bin_sz,
-#							 batch_size,
-#							 is_it_bins=False,
-#							 stride_len=1,
-#							 dataset_name=dataset_name)
 
 	nc_comp_train_in_gaps, comp_train_norma, comp_train_normd \
 		= normalize_avg(nc_comp_train_in_gaps)
@@ -1196,22 +1181,6 @@ def get_processed_data(dataset_name, args):
 	 						train_data_in_timestamps_comp, train_data_out_timestamps_comp,
 	 						comp_train_norma, comp_train_normd)
 
-#	train_data_in_gaps_comp_full, train_norm_a_gaps_comp_full, train_norm_d_gaps_comp_full \
-#		= normalize_avg(train_data_in_gaps_comp_full)
-#	train_data_out_gaps_comp_full = normalize_avg_given_param(train_data_out_gaps_comp_full,
-#															  train_norm_a_gaps_comp_full,
-#															  train_norm_d_gaps_comp_full)
-#
-#	[train_data_in_gaps_comp_full, train_data_out_gaps_comp_full,
-#	 dev_data_in_gaps_comp_full, dev_data_out_gaps_comp_full,
-#	 train_data_in_timestamps_comp_full, train_data_out_timestamps_comp_full,
-#	 dev_data_in_timestamps_comp_full, dev_data_out_timestamps_comp_full,
-#	 _, _, _, _] \
-#	 	= generate_dev_data(train_data_in_gaps_comp_full, train_data_out_gaps_comp_full,
-#	 						train_data_in_timestamps_comp_full, train_data_out_timestamps_comp_full,
-#	 						train_norm_a_gaps_comp_full, train_norm_d_gaps_comp_full)
-
-#>>>>>>> hierarchical_count_model
 
 	[nc_comp_train_in_gaps, nc_comp_train_out_gaps,
 	 train_data_in_timestamps_comp, train_data_out_timestamps_comp,
@@ -1227,27 +1196,10 @@ def get_processed_data(dataset_name, args):
 						 dev_data_in_timestamps_comp, dev_data_out_timestamps_comp,
 						 batch_size)
 
-#	[train_data_in_gaps_comp_full, train_data_out_gaps_comp_full,
-#	 train_data_in_timestamps_comp_full, train_data_out_timestamps_comp_full,
-#	 _, _] \
-#	 	= stabalize_data(train_data_in_gaps_comp_full, train_data_out_gaps_comp_full,
-#	 					 train_data_in_timestamps_comp_full, train_data_out_timestamps_comp_full,
-#	 					 batch_size)
-#
-#	[dev_data_in_gaps_comp_full, dev_data_out_gaps_comp_full,
-#	 dev_data_in_timestamps_comp_full, dev_data_out_timestamps_comp_full,
-#	 _, _] \
-#	 	= stabalize_data(dev_data_in_gaps_comp_full, dev_data_out_gaps_comp_full,
-#	 					 dev_data_in_timestamps_comp_full, dev_data_out_timestamps_comp_full,
-#	 					 batch_size)
 
 	nc_comp_train_in_feats = get_time_features(train_data_in_timestamps_comp)
 	nc_comp_train_out_feats = get_time_features(train_data_out_timestamps_comp)
 	nc_comp_dev_in_feats = get_time_features(dev_data_in_timestamps_comp)
-
-#	train_data_in_feats_comp_full = get_time_features(train_data_in_timestamps_comp_full)
-#	train_data_out_feats_comp_full = get_time_features(train_data_out_timestamps_comp_full)
-#	nc_comp_dev_in_feats_full = get_time_features(dev_data_in_timestamps_comp_full)
 
 
 	print('')
@@ -1268,26 +1220,6 @@ def get_processed_data(dataset_name, args):
 	# print('Test out', test_data_out_gaps.shape)
 
 
-#	[train_data_in_gaps_bin, train_data_out_gaps_bin,
-#	 train_data_in_times_bin, train_data_out_times_bin,
-#	 train_data_in_time_end_bin, train_end_hr_bins_relative,
-#	 train_gap_in_bin_norm_a, train_gap_in_bin_norm_d,
-#	 _, _,] \
-#		= get_end_time_from_bins(train_inp_times_in_bin, train_out_times_in_bin,
-#								 train_end_hr_bins_relative, enc_len)
-#	train_data_out_gaps_bin = normalize_avg_given_param(train_data_out_gaps_bin,
-#									  					event_train_norma,
-#									  					event_train_normd)
-
-
-	[event_test_in_gaps, test_data_out_gaps_bin,
-	 test_data_in_times_bin, test_data_out_times_bin,
-	 event_test_in_lasttime, count_test_out_binend,
-	 event_test_norma, event_test_normd,
-	 event_test_in_types, test_data_out_types_bin] \
-		= get_end_time_from_bins(event_test_in_times, event_test_out_times,
-								 count_test_out_binend, enc_len,
-								 test_inp_types_in_bin, event_test_out_types)
 
 	event_test_in_feats = get_time_features(test_data_in_times_bin)
 
@@ -1303,14 +1235,6 @@ def get_processed_data(dataset_name, args):
 
 	comp_test_in_feats = get_time_features(test_data_in_times_bin_comp)
 
-#	#TODO What should be the first argument to get_end_time_from_bins_comp_full(..)?
-#	[test_data_in_gaps_bin_comp_full,
-#	 test_data_in_times_bin_comp_full,
-#	 test_gap_in_bin_norm_a_comp_full, test_gap_in_bin_norm_d_comp_full] \
-#		= get_end_time_from_bins_comp_full(event_test_in_times, count_test_out_binend,
-#										   mx_enc_len, comp_bin_sz)
-#
-#	test_data_in_feats_bin_comp_full = get_time_features(test_data_in_times_bin_comp)
 
 	print('Test in', event_test_in_gaps.shape)
 	print('')
@@ -1351,9 +1275,6 @@ def get_processed_data(dataset_name, args):
 	#event_test_in_types = np.expand_dims(event_test_in_types, axis=-1)
 #<<<<<<< HEAD
 	event_test_in_feats = np.expand_dims(event_test_in_feats, axis=-1)
-	#train_end_hr_bins_relative = np.expand_dims(train_end_hr_bins_relative, axis=-1)
-	#train_data_in_time_end_bin = np.expand_dims(train_data_in_time_end_bin, axis=-1)
-	#train_data_in_gaps_bin = np.expand_dims(train_data_in_gaps_bin, axis=-1)
 
 
 	train_out_end_hr_bins = train_end_hr_bins
