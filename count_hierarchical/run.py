@@ -3543,9 +3543,9 @@ def run_rmtpp_optimizer_model(
 		#ipdb.set_trace()
 
 
-		#if gaps.value is None:
-		#	import ipdb
-		#	ipdb.set_trace()
+		if gaps.value is None:
+			import ipdb
+			ipdb.set_trace()
 		#loss = rmtpp_loss + count_loss
 		loss = rmtpp_loss + count_loss
 
@@ -3708,7 +3708,6 @@ def run_rmtpp_optimizer_model(
 
 		test_data_out_gaps_bin_batch \
 			= test_data_out_gaps_bin[batch_idx][best_past_cnt:best_past_cnt+int(curr_cnt)]
-
 
 		(
 			batch_bin_curr_cnt_opt_gaps_pred,
@@ -6108,7 +6107,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 			for inference_model_name in run_model_flags.keys():
 				start_time = time.time()
 				print("Running Inference Model: "+inference_model_name)
-				test_data_out_gaps_bin = dataset['test_data_out_gaps_bin']
+				test_data_out_gaps_bin = dataset['event_test_out_gaps']
 				#if 'rmtpp_mse_opt' in run_model_flags and run_model_flags['rmtpp_mse_opt']:
 				all_best_opt_nc_losses = 0.
 				all_best_cont_nc_losses = 0.
