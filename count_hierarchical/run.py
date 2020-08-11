@@ -111,14 +111,14 @@ class Gaussian_MSE(tf.keras.losses.Loss):
 def run_rmtpp_var(args, data, test_data, trained_rmtpp_model):
 	model = models.RMTPP_VAR(args.hidden_layer_size)
 
-	[train_dataset_gaps, event_dev_in_gaps, event_dev_out_gaps, train_norm_gaps] = data
+	[train_dataset_gaps, nc_event_dev_in_gaps, nc_event_dev_out_gaps, train_norm_gaps] = data
 	[event_train_norma, event_train_normd] = train_norm_gaps
 	model_name = args.current_model
 	optimizer = keras.optimizers.Adam(args.learning_rate)
 
 	enc_len = args.enc_len
 
-	dev_data_gaps = event_dev_in_gaps
+	dev_data_gaps = nc_event_dev_in_gaps
 
 	os.makedirs('saved_models/training_'+model_name+'_'+args.current_dataset+'/', exist_ok=True)
 	checkpoint_path = "saved_models/training_"+model_name+"_"+args.current_dataset+"/cp_"+args.current_dataset+".ckpt"
@@ -169,21 +169,21 @@ def run_rmtpp_var(args, data, test_data, trained_rmtpp_model):
 			step_cnt += 1
 		
 		# Dev calculations
-		event_dev_in_gaps = dev_data_gaps[:, :int(enc_len/2)]
-		event_dev_out_gaps = dev_data_gaps[:, int(enc_len/2):]
+		nc_event_dev_in_gaps = dev_data_gaps[:, :int(enc_len/2)]
+		nc_event_dev_out_gaps = dev_data_gaps[:, int(enc_len/2):]
 		dev_gaps_pred = simulate_fixed_cnt(trained_rmtpp_model,
-										   event_dev_in_gaps,
+										   nc_event_dev_in_gaps,
 										   int(enc_len)/2,
 										   prev_hidden_state=next)
 		model_dev_inputs = tf.cumsum(dev_gaps_pred, axis=1)
 		dev_var_pred = model(model_dev_inputs)
 		dev_loss_fn = Gaussian_MSE(dev_gaps_pred, dev_var_pred)
-		dev_loss = dev_loss_fn(event_dev_out_gaps, None)
+		dev_loss = dev_loss_fn(nc_event_dev_out_gaps, None)
 		dev_gaps_pred_unnorm = utils.denormalize_avg(dev_gaps_pred,
 										event_train_norma, event_train_normd)
 		
-		dev_gap_metric_mae(event_dev_out_gaps, dev_gaps_pred_unnorm)
-		dev_gap_metric_mse(event_dev_out_gaps, dev_gaps_pred_unnorm)
+		dev_gap_metric_mae(nc_event_dev_out_gaps, dev_gaps_pred_unnorm)
+		dev_gap_metric_mse(nc_event_dev_out_gaps, dev_gaps_pred_unnorm)
 		dev_gap_mae = dev_gap_metric_mae.result()
 		dev_gap_mse = dev_gap_metric_mse.result()
 		dev_gap_metric_mae.reset_states()
@@ -207,12 +207,12 @@ def run_rmtpp_var(args, data, test_data, trained_rmtpp_model):
 	print("Loading best model from epoch", best_dev_epoch)
 	model.load_weights(checkpoint_path)
 
-	dev_gaps_pred, _, _, _, _ = model(event_dev_in_gaps)
+	dev_gaps_pred, _, _, _, _ = model(nc_event_dev_in_gaps)
 	dev_gaps_pred_unnorm = utils.denormalize_avg(dev_gaps_pred, 
 									event_train_norma, event_train_normd)
 	
-	dev_gap_metric_mae(event_dev_out_gaps, dev_gaps_pred_unnorm)
-	dev_gap_metric_mse(event_dev_out_gaps, dev_gaps_pred_unnorm)
+	dev_gap_metric_mae(nc_event_dev_out_gaps, dev_gaps_pred_unnorm)
+	dev_gap_metric_mse(nc_event_dev_out_gaps, dev_gaps_pred_unnorm)
 	dev_gap_mae = dev_gap_metric_mae.result()
 	dev_gap_mse = dev_gap_metric_mse.result()
 	dev_gap_metric_mae.reset_states()
@@ -230,8 +230,8 @@ def run_rmtpp(args, model, optimizer, data, var_data, NLL_loss,
 			  rmtpp_epochs=10, use_var_model=False, comp_model=False,
 			  rmtpp_type=None):
 	[train_dataset_gaps,
-	 event_dev_in_gaps, event_dev_in_feats, event_dev_in_types,
-	 event_dev_out_gaps, event_dev_out_types,
+	 nc_event_dev_in_gaps, nc_event_dev_in_feats, nc_event_dev_in_types,
+	 nc_event_dev_out_gaps, nc_event_dev_out_types,
 	 train_norm_gaps] = data
 	[event_train_norma, event_train_normd] = train_norm_gaps
 	#[var_dataset_gaps, train_end_hr_bins_relative,
@@ -330,19 +330,19 @@ def run_rmtpp(args, model, optimizer, data, var_data, NLL_loss,
 		print(model_name, 'time_reqd:', et-st)
 		
 		# Dev calculations
-		dev_gaps_pred, dev_logits_pred, _, _, _ = model(event_dev_in_gaps, event_dev_in_feats, event_dev_in_types)
+		dev_gaps_pred, dev_logits_pred, _, _, _ = model(nc_event_dev_in_gaps, nc_event_dev_in_feats, nc_event_dev_in_types)
 		dev_gaps_pred_unnorm = utils.denormalize_avg(dev_gaps_pred, 
 													 event_train_norma,
 													 event_train_normd)
 		
-		dev_gap_metric_mae(event_dev_out_gaps, dev_gaps_pred_unnorm)
-		dev_gap_metric_mse(event_dev_out_gaps, dev_gaps_pred_unnorm)
+		dev_gap_metric_mae(nc_event_dev_out_gaps, dev_gaps_pred_unnorm)
+		dev_gap_metric_mse(nc_event_dev_out_gaps, dev_gaps_pred_unnorm)
 		dev_gap_mae = dev_gap_metric_mae.result()
 		dev_gap_mse = dev_gap_metric_mse.result()
 		dev_gap_metric_mae.reset_states()
 		dev_gap_metric_mse.reset_states()
 
-		dev_types_acc = types_metric(event_dev_out_types-1, dev_logits_pred)
+		dev_types_acc = types_metric(nc_event_dev_out_types-1, dev_logits_pred)
 		types_metric.reset_states()
 
 		if best_dev_gap_mse > dev_gap_mse:
@@ -411,18 +411,18 @@ def run_rmtpp(args, model, optimizer, data, var_data, NLL_loss,
 
 	print("Loading best model from epoch", best_dev_epoch)
 	model.load_weights(checkpoint_path)
-	dev_gaps_pred, dev_logits_pred, _, _, _ = model(event_dev_in_gaps, event_dev_in_feats, event_dev_in_types)
+	dev_gaps_pred, dev_logits_pred, _, _, _ = model(nc_event_dev_in_gaps, nc_event_dev_in_feats, nc_event_dev_in_types)
 	dev_gaps_pred_unnorm = utils.denormalize_avg(dev_gaps_pred, 
 												 event_train_norma,
 												 event_train_normd)
 
-	dev_gap_metric_mae(event_dev_out_gaps, dev_gaps_pred_unnorm)
-	dev_gap_metric_mse(event_dev_out_gaps, dev_gaps_pred_unnorm)
+	dev_gap_metric_mae(nc_event_dev_out_gaps, dev_gaps_pred_unnorm)
+	dev_gap_metric_mse(nc_event_dev_out_gaps, dev_gaps_pred_unnorm)
 	dev_gap_mae = dev_gap_metric_mae.result()
 	dev_gap_mse = dev_gap_metric_mse.result()
 	dev_gap_metric_mae.reset_states()
 	dev_gap_metric_mse.reset_states()
-	dev_types_acc = types_metric(event_dev_out_types-1, dev_logits_pred)
+	dev_types_acc = types_metric(nc_event_dev_out_types-1, dev_logits_pred)
 	types_metric.reset_states()
 	print('Best MAE, MSE, type_acc of Dev data: %s, %s, %s' \
 		%(float(dev_gap_mae), float(dev_gap_mse), float(dev_types_acc)))
@@ -470,7 +470,7 @@ def run_rmtpp_init(args, data, test_data, var_data,
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 # Pure Hierarchical model
 def run_pure_hierarchical(args, model, optimizer, data, NLL_loss, rmtpp_epochs=10):
-	[train_dataset_gaps, event_dev_in_gaps, event_dev_out_gaps, train_norm_gaps] = data
+	[train_dataset_gaps, nc_event_dev_in_gaps, nc_event_dev_out_gaps, train_norm_gaps] = data
 	[event_train_norma, event_train_normd] = train_norm_gaps
 	model_name = args.current_model
 
@@ -533,12 +533,12 @@ def run_pure_hierarchical(args, model, optimizer, data, NLL_loss, rmtpp_epochs=1
 			step_cnt += 1
 		
 		# Dev calculations
-		dev_gaps_pred_l2, _,_, dev_gaps_pred, _,_,_,_ = model(event_dev_in_gaps)
+		dev_gaps_pred_l2, _,_, dev_gaps_pred, _,_,_,_ = model(nc_event_dev_in_gaps)
 		dev_gaps_pred_unnorm = utils.denormalize_avg(dev_gaps_pred, 
 										event_train_norma, event_train_normd)
 		
-		dev_gap_metric_mae(event_dev_out_gaps, dev_gaps_pred_unnorm)
-		dev_gap_metric_mse(event_dev_out_gaps, dev_gaps_pred_unnorm)
+		dev_gap_metric_mae(nc_event_dev_out_gaps, dev_gaps_pred_unnorm)
+		dev_gap_metric_mse(nc_event_dev_out_gaps, dev_gaps_pred_unnorm)
 		dev_gap_mae = dev_gap_metric_mae.result()
 		dev_gap_mse = dev_gap_metric_mse.result()
 		dev_gap_metric_mae.reset_states()
@@ -562,12 +562,12 @@ def run_pure_hierarchical(args, model, optimizer, data, NLL_loss, rmtpp_epochs=1
 
 	print("Loading best model from epoch", best_dev_epoch)
 	model.load_weights(checkpoint_path)
-	dev_gaps_pred_l2, _,_, dev_gaps_pred, _,_,_,_ = model(event_dev_in_gaps)
+	dev_gaps_pred_l2, _,_, dev_gaps_pred, _,_,_,_ = model(nc_event_dev_in_gaps)
 	dev_gaps_pred_unnorm = utils.denormalize_avg(dev_gaps_pred, 
 									event_train_norma, event_train_normd)
 	
-	dev_gap_metric_mae(event_dev_out_gaps, dev_gaps_pred_unnorm)
-	dev_gap_metric_mse(event_dev_out_gaps, dev_gaps_pred_unnorm)
+	dev_gap_metric_mae(nc_event_dev_out_gaps, dev_gaps_pred_unnorm)
+	dev_gap_metric_mse(nc_event_dev_out_gaps, dev_gaps_pred_unnorm)
 	dev_gap_mae = dev_gap_metric_mae.result()
 	dev_gap_mse = dev_gap_metric_mse.result()
 	dev_gap_metric_mae.reset_states()
@@ -842,8 +842,8 @@ def run_wgan(args, data, test_data):
 	pre_train_optimizer = keras.optimizers.Adam(args.learning_rate)
 
 	[train_dataset_gaps,
-	 event_dev_in_gaps, event_dev_in_feats, event_dev_in_types,
-	 event_dev_out_gaps, event_dev_out_types,
+	 nc_event_dev_in_gaps, nc_event_dev_in_feats, nc_event_dev_in_types,
+	 nc_event_dev_out_gaps, nc_event_dev_out_types,
 	 train_norm_gaps] = data
 	[event_train_norma, event_train_normd] = train_norm_gaps
 
@@ -873,8 +873,8 @@ def run_wgan(args, data, test_data):
 	train_z_seqs = tf.convert_to_tensor(train_z_seqs)
 
 	dev_z_seqs = list()
-	dev_data_gaps = event_dev_in_gaps
-	dev_data_feats = event_dev_in_feats
+	dev_data_gaps = nc_event_dev_in_gaps
+	dev_data_feats = nc_event_dev_in_feats
 	wgan_dec_len = dev_data_gaps.shape[1] - wgan_enc_len
 	dev_data_times = tf.cumsum(dev_data_gaps, axis=1)
 	dev_span = dev_data_times[:, wgan_enc_len-1] - dev_data_times[:, 0]
@@ -977,15 +977,15 @@ def run_wgan(args, data, test_data):
 			step_cnt += 1
 		
 		# Dev calculations
-		event_dev_in_gaps = dev_data_gaps[:, :wgan_enc_len]
-		event_dev_in_feats = dev_data_feats[:, :wgan_enc_len]
-		event_dev_out_gaps = dev_data_gaps[:, wgan_enc_len:]
+		nc_event_dev_in_gaps = dev_data_gaps[:, :wgan_enc_len]
+		nc_event_dev_in_feats = dev_data_feats[:, :wgan_enc_len]
+		nc_event_dev_out_gaps = dev_data_gaps[:, wgan_enc_len:]
 		dev_gaps_pred = model.generator(dev_z_seqs,
-										enc_inputs=event_dev_in_gaps,
-										enc_feats=event_dev_in_feats)
+										enc_inputs=nc_event_dev_in_gaps,
+										enc_feats=nc_event_dev_in_feats)
 		dev_gaps_pred_unnorm = utils.denormalize_avg(dev_gaps_pred, 
 										event_train_norma, event_train_normd)
-		dev_data_out_gaps_unnorm = utils.denormalize_avg(event_dev_out_gaps, 
+		dev_data_out_gaps_unnorm = utils.denormalize_avg(nc_event_dev_out_gaps, 
 										event_train_norma, event_train_normd)
 		
 		dev_gap_metric_mae(dev_data_out_gaps_unnorm, dev_gaps_pred_unnorm)
@@ -1013,16 +1013,16 @@ def run_wgan(args, data, test_data):
 
 	print("Loading best model from epoch", best_dev_epoch)
 	model.load_weights(checkpoint_path)
-	event_dev_in_gaps = dev_data_gaps[:, :wgan_enc_len]
-	event_dev_in_feats = dev_data_feats[:, :wgan_enc_len]
-	event_dev_out_gaps = dev_data_gaps[:, wgan_enc_len:]
+	nc_event_dev_in_gaps = dev_data_gaps[:, :wgan_enc_len]
+	nc_event_dev_in_feats = dev_data_feats[:, :wgan_enc_len]
+	nc_event_dev_out_gaps = dev_data_gaps[:, wgan_enc_len:]
 	dev_gaps_pred = model.generator(dev_z_seqs,
-									enc_inputs=event_dev_in_gaps,
-									enc_feats=event_dev_in_feats)
+									enc_inputs=nc_event_dev_in_gaps,
+									enc_feats=nc_event_dev_in_feats)
 	dev_gaps_pred_unnorm = utils.denormalize_avg(dev_gaps_pred, 
 									event_train_norma, event_train_normd)
 	
-	dev_data_out_gaps_unnorm = utils.denormalize_avg(event_dev_out_gaps, 
+	dev_data_out_gaps_unnorm = utils.denormalize_avg(nc_event_dev_out_gaps, 
 									event_train_norma, event_train_normd)
 
 	dev_gap_metric_mae(dev_data_out_gaps_unnorm, dev_gaps_pred_unnorm)
@@ -1058,8 +1058,8 @@ def run_seq2seq(args, data, test_data):
 	pre_train_optimizer = keras.optimizers.Adam(args.learning_rate)
 
 	[train_dataset_gaps,
-	 event_dev_in_gaps, event_dev_in_feats, event_dev_in_types,
-	 event_dev_out_gaps,event_dev_out_types,
+	 nc_event_dev_in_gaps, nc_event_dev_in_feats, nc_event_dev_in_types,
+	 nc_event_dev_out_gaps,nc_event_dev_out_types,
 	 train_norm_gaps] = data
 	[event_train_norma, event_train_normd] = train_norm_gaps
 
@@ -1075,8 +1075,8 @@ def run_seq2seq(args, data, test_data):
 
 
 
-	dev_data_gaps = event_dev_in_gaps
-	dev_data_feats = event_dev_in_feats
+	dev_data_gaps = nc_event_dev_in_gaps
+	dev_data_feats = nc_event_dev_in_feats
 	wgan_dec_len = dev_data_gaps.shape[1] - wgan_enc_len
 	dev_data_times = tf.cumsum(dev_data_gaps, axis=1)
 
@@ -1163,17 +1163,17 @@ def run_seq2seq(args, data, test_data):
 			step_cnt += 1
 		
 		# Dev calculations
-		event_dev_in_gaps = dev_data_gaps[:, :wgan_enc_len]
-		event_dev_in_feats = dev_data_feats[:, :wgan_enc_len]
-		event_dev_out_gaps = dev_data_gaps[:, wgan_enc_len:]
+		nc_event_dev_in_gaps = dev_data_gaps[:, :wgan_enc_len]
+		nc_event_dev_in_feats = dev_data_feats[:, :wgan_enc_len]
+		nc_event_dev_out_gaps = dev_data_gaps[:, wgan_enc_len:]
 		dev_data_out_feats = dev_data_feats[:, wgan_enc_len:]
-		dev_gaps_pred = model.generator(event_dev_out_gaps,
+		dev_gaps_pred = model.generator(nc_event_dev_out_gaps,
 										dev_data_out_feats,
-										enc_inputs=event_dev_in_gaps,
-										enc_feats=event_dev_in_feats)
+										enc_inputs=nc_event_dev_in_gaps,
+										enc_feats=nc_event_dev_in_feats)
 		dev_gaps_pred_unnorm = utils.denormalize_avg(dev_gaps_pred, 
 										event_train_norma, event_train_normd)
-		dev_data_out_gaps_unnorm = utils.denormalize_avg(event_dev_out_gaps, 
+		dev_data_out_gaps_unnorm = utils.denormalize_avg(nc_event_dev_out_gaps, 
 										event_train_norma, event_train_normd)
 		
 		dev_gap_metric_mae(dev_data_out_gaps_unnorm, dev_gaps_pred_unnorm)
@@ -1201,18 +1201,18 @@ def run_seq2seq(args, data, test_data):
 
 	print("Loading best model from epoch", best_dev_epoch)
 	model.load_weights(checkpoint_path)
-	event_dev_in_gaps = dev_data_gaps[:, :wgan_enc_len]
-	event_dev_in_feats = dev_data_feats[:, :wgan_enc_len]
-	event_dev_out_gaps = dev_data_gaps[:, wgan_enc_len:]
+	nc_event_dev_in_gaps = dev_data_gaps[:, :wgan_enc_len]
+	nc_event_dev_in_feats = dev_data_feats[:, :wgan_enc_len]
+	nc_event_dev_out_gaps = dev_data_gaps[:, wgan_enc_len:]
 	dev_data_out_feats = dev_data_feats[:, wgan_enc_len:]
-	dev_gaps_pred = model.generator(event_dev_out_gaps,
+	dev_gaps_pred = model.generator(nc_event_dev_out_gaps,
 									dev_data_out_feats,
-									enc_inputs=event_dev_in_gaps,
-									enc_feats=event_dev_in_feats)
+									enc_inputs=nc_event_dev_in_gaps,
+									enc_feats=nc_event_dev_in_feats)
 	dev_gaps_pred_unnorm = utils.denormalize_avg(dev_gaps_pred, 
 									event_train_norma, event_train_normd)
 	
-	dev_data_out_gaps_unnorm = utils.denormalize_avg(event_dev_out_gaps, 
+	dev_data_out_gaps_unnorm = utils.denormalize_avg(nc_event_dev_out_gaps, 
 									event_train_norma, event_train_normd)
 
 	dev_gap_metric_mae(dev_data_out_gaps_unnorm, dev_gaps_pred_unnorm)
@@ -1248,8 +1248,8 @@ def run_transformer(args, data, test_data):
 	optimizer = keras.optimizers.Adam(args.learning_rate)
 
 	[train_dataset_gaps,
-	 event_dev_in_gaps, event_dev_in_feats, event_dev_in_types,
-	 event_dev_out_gaps, event_dev_out_types,
+	 nc_event_dev_in_gaps, nc_event_dev_in_feats, nc_event_dev_in_types,
+	 nc_event_dev_out_gaps, nc_event_dev_out_types,
 	 train_norm_gaps] = data
 	[event_train_norma, event_train_normd] = train_norm_gaps
 
@@ -1336,13 +1336,13 @@ def run_transformer(args, data, test_data):
 		print(model_name, 'time_reqd:', et-st)
 		
 		# Dev calculations
-		enc_out, (dev_logits_pred, dev_gaps_pred) = model(event_dev_in_gaps, event_dev_in_feats, event_dev_in_types)
+		enc_out, (dev_logits_pred, dev_gaps_pred) = model(nc_event_dev_in_gaps, nc_event_dev_in_feats, nc_event_dev_in_types)
 		dev_gaps_pred_unnorm = utils.denormalize_avg(dev_gaps_pred, 
 													 event_train_norma,
 													 event_train_normd)
 		
-		dev_gap_metric_mae(event_dev_out_gaps, dev_gaps_pred_unnorm)
-		dev_gap_metric_mse(event_dev_out_gaps, dev_gaps_pred_unnorm)
+		dev_gap_metric_mae(nc_event_dev_out_gaps, dev_gaps_pred_unnorm)
+		dev_gap_metric_mse(nc_event_dev_out_gaps, dev_gaps_pred_unnorm)
 		dev_gap_mae = dev_gap_metric_mae.result()
 		dev_gap_mse = dev_gap_metric_mse.result()
 		dev_gap_metric_mae.reset_states()
@@ -1366,18 +1366,18 @@ def run_transformer(args, data, test_data):
 
 	print("Loading best model from epoch", best_dev_epoch)
 	model.load_weights(checkpoint_path)
-	_, (dev_logits_pred, dev_gaps_pred) = model(event_dev_in_gaps, event_dev_in_feats, event_dev_in_types)
+	_, (dev_logits_pred, dev_gaps_pred) = model(nc_event_dev_in_gaps, nc_event_dev_in_feats, nc_event_dev_in_types)
 	dev_gaps_pred_unnorm = utils.denormalize_avg(dev_gaps_pred, 
 												 event_train_norma,
 												 event_train_normd)
 
-	dev_gap_metric_mae(event_dev_out_gaps, dev_gaps_pred_unnorm)
-	dev_gap_metric_mse(event_dev_out_gaps, dev_gaps_pred_unnorm)
+	dev_gap_metric_mae(nc_event_dev_out_gaps, dev_gaps_pred_unnorm)
+	dev_gap_metric_mse(nc_event_dev_out_gaps, dev_gaps_pred_unnorm)
 	dev_gap_mae = dev_gap_metric_mae.result()
 	dev_gap_mse = dev_gap_metric_mse.result()
 	dev_gap_metric_mae.reset_states()
 	dev_gap_metric_mse.reset_states()
-	dev_types_acc = types_metric(event_dev_out_types-1, dev_logits_pred)
+	dev_types_acc = types_metric(nc_event_dev_out_types-1, dev_logits_pred)
 	types_metric.reset_states()
 	print('Best MAE, MSE, type_acc of Dev data: %s, %s, %s' \
 		%(float(dev_gap_mae), float(dev_gap_mse), float(dev_types_acc)))
@@ -1489,7 +1489,8 @@ def simulate_v2(model, times_in, gaps_in, bins_end_hrs, normalizers,
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 # Simulate model until t_b_plus
 def simulate_rmtpp(model, times_in, gaps_in, feats_in, types_in,
-			 	   t_b_plus, normalizers):
+			 	   t_b_plus, normalizers, use_nowcast=False,
+				   nc_gaps_in=None, nc_feats_in=None, nc_types_in=None,):
 	#TODO: Check for this modification in functions which calls this def
 	gaps_pred = list()
 	types_pred = list()
@@ -1505,13 +1506,20 @@ def simulate_rmtpp(model, times_in, gaps_in, feats_in, types_in,
 
 	step_gaps_pred = step_gaps_pred[:,-1:]
 	step_types_pred = step_types_pred[:,-1:]
-	gaps_in = step_gaps_pred
-	types_in = step_types_pred
+	if not use_nowcast:
+		gaps_in = step_gaps_pred
+		types_in = step_types_pred
+	else:
+		gaps_in = nc_gaps_in[:, 0:1]
+		types_in = nc_types_in[:, 0:1]
 	step_gaps_pred = tf.squeeze(step_gaps_pred, axis=-1)
 	last_gaps_pred_unnorm = utils.denormalize_avg(step_gaps_pred, data_norm_a, data_norm_d)
 	last_times_pred = times_in + last_gaps_pred_unnorm
 	step_feats_pred = get_time_features(tf.expand_dims(last_times_pred, axis=-1))
-	feats_in = step_feats_pred
+	if not use_nowcast:
+		feats_in = step_feats_pred
+	else:
+		feats_in = nc_feats_in[:, 0:1]
 	gaps_pred.append(last_gaps_pred_unnorm)
 	types_pred.append(step_types_pred)
 	times_pred.append(last_times_pred)
@@ -1521,6 +1529,8 @@ def simulate_rmtpp(model, times_in, gaps_in, feats_in, types_in,
 	simul_step = 0
 
 	while any(times_pred[-1]<t_b_plus):
+		simul_step += 1
+
 		step_gaps_pred, step_types_logits, D, WT, prev_hidden_state \
 				= model(gaps_in, feats_in, types_in, initial_state=prev_hidden_state)
 
@@ -1528,20 +1538,26 @@ def simulate_rmtpp(model, times_in, gaps_in, feats_in, types_in,
 
 		step_gaps_pred = step_gaps_pred[:,-1:]
 		step_types_pred = step_types_pred[:,-1:]
-		gaps_in = step_gaps_pred
-		types_in = step_types_pred
+		if not use_nowcast:
+			gaps_in = step_gaps_pred
+			types_in = step_types_pred
+		else:
+			gaps_in = nc_gaps_in[:, simul_step:simul_step+1]
+			types_in = nc_types_in[:, simul_step:simul_step+1]
 		step_gaps_pred = tf.squeeze(step_gaps_pred, axis=-1)
 		last_gaps_pred_unnorm = utils.denormalize_avg(step_gaps_pred, data_norm_a, data_norm_d)
 		last_times_pred = times_pred[-1] + last_gaps_pred_unnorm
 		step_feats_pred = get_time_features(tf.expand_dims(last_times_pred, axis=-1))
-		feats_in = step_feats_pred
+		if not use_nowcast:
+			feats_in = step_feats_pred
+		else:
+			feats_in = nc_feats_in[:, simul_step:simul_step+1]
 		gaps_pred.append(last_gaps_pred_unnorm)
 		types_pred.append(step_types_pred)
 		times_pred.append(last_times_pred)
 		D_pred.append(D[:, -1:])
 		WT_pred.append(WT[:, -1:])
 		
-		simul_step += 1
 
 	gaps_pred = tf.stack(gaps_pred, axis=1)
 	types_pred = tf.squeeze(tf.stack(types_pred, axis=1), axis=2)
@@ -1779,7 +1795,8 @@ def simulate_count_for_D_WT(model, times_in, gaps_in, out_gaps_count, normalizer
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 # Simulate model out_gaps_count times
 def simulate_with_counter(model, times_in, gaps_in, feats_in, types_in,
-						  out_gaps_count, normalizers):
+						  out_gaps_count, normalizers, use_nowcast=False,
+						  nc_gaps_in=None, nc_feats_in=None, nc_types_in=None,):
 	gaps_pred = list()
 	D_pred = list()
 	WT_pred = list()
@@ -1797,13 +1814,20 @@ def simulate_with_counter(model, times_in, gaps_in, feats_in, types_in,
 	step_types_pred = step_types_pred[:,-1:]
 	D_pred.append(D[:, -1:])
 	WT_pred.append(WT[:, -1:])
-	gaps_in = step_gaps_pred
-	types_in = step_types_pred
+	if not use_nowcast:
+		gaps_in = step_gaps_pred
+		types_in = step_types_pred
+	else:
+		gaps_in = nc_gaps_in[:, 0:1]
+		types_in = nc_types_in[:, 0:1]
 	step_gaps_pred = tf.squeeze(step_gaps_pred, axis=-1)
 	last_gaps_pred_unnorm = utils.denormalize_avg(step_gaps_pred, data_norm_a, data_norm_d)
 	last_times_pred = times_in + last_gaps_pred_unnorm
 	step_feats_pred = get_time_features(tf.expand_dims(last_times_pred, axis=-1))
-	feats_in = step_feats_pred
+	if not use_nowcast:
+		feats_in = step_feats_pred
+	else:
+		feats_in = nc_feats_in[:, 0:1]
 	gaps_pred.append(last_gaps_pred_unnorm)
 	types_pred.append(step_types_pred)
 	times_pred.append(last_times_pred)
@@ -1812,6 +1836,8 @@ def simulate_with_counter(model, times_in, gaps_in, feats_in, types_in,
 
 	start_time = time.time()
 	while any(simul_step < out_gaps_count):
+		simul_step += 1
+
 		print(simul_step, np.sum(simul_step<out_gaps_count), out_gaps_count[0])
 		step_gaps_pred, step_types_logits, D, WT, prev_hidden_state \
 				= model(gaps_in, feats_in, types_in, initial_state=prev_hidden_state)
@@ -1822,19 +1848,25 @@ def simulate_with_counter(model, times_in, gaps_in, feats_in, types_in,
 		step_types_pred = step_types_pred[:,-1:]
 		D_pred.append(D[:, -1:])
 		WT_pred.append(WT[:, -1:])
-		gaps_in = step_gaps_pred
-		types_in = step_types_pred
+		if not use_nowcast:
+			gaps_in = step_gaps_pred
+			types_in = step_types_pred
+		else:
+			gaps_in = nc_gaps_in[:, simul_step:simul_step+1]
+			types_in = nc_types_in[:, simul_step:simul_step+1]
 		step_gaps_pred = tf.squeeze(step_gaps_pred, axis=-1)
 		last_gaps_pred_unnorm = utils.denormalize_avg(step_gaps_pred, data_norm_a, data_norm_d)
 		last_times_pred = times_pred[-1] + last_gaps_pred_unnorm
-		last_times_pred = (simul_step < out_gaps_count) * last_times_pred
+		last_times_pred = (simul_step <= out_gaps_count) * last_times_pred
 		step_feats_pred = get_time_features(tf.expand_dims(last_times_pred, axis=-1))
-		feats_in = step_feats_pred
+		if not use_nowcast:
+			feats_in = step_feats_pred
+		else:
+			feats_in = nc_feats_in[:, simul_step:simul_step+1]
 		gaps_pred.append(last_gaps_pred_unnorm)
 		types_pred.append(step_types_pred)
 		times_pred.append(last_times_pred)
 		
-		simul_step += 1
 	end_time = time.time()
 	print('Time Reqd in simulate_with_counter:', end_time-start_time)
 
@@ -4421,7 +4453,7 @@ def run_rmtpp_optimizer_model_comp(
 
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 # Plain rmtpp model to generate events independent of bin boundary
-def run_rmtpp_simulation(args, models, data, test_data, rmtpp_type=None):
+def run_rmtpp_simulation(args, models, data, test_data, rmtpp_type=None, use_nowcast=False):
 	if rmtpp_type=='nll':
 		model_rmtpp = models['rmtpp_nll']
 	elif rmtpp_type=='mse':
@@ -4461,6 +4493,7 @@ def run_rmtpp_simulation(args, models, data, test_data, rmtpp_type=None):
 		t_e_plus,
 		(event_test_norma,
 		event_test_normd),
+		use_nowcast=use_nowcast,
 	)
 	all_counts_pred = []
 	for dec_idx in range(dec_len):
@@ -5684,24 +5717,24 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					  'wgan', 'seq2seq', 'transformer',
 					  'inference_models', 'hawkes_model']:
 					  
-		event_train_in_gaps = dataset['event_train_in_gaps']
-		event_train_in_feats = dataset['event_train_in_feats'].astype(np.float32)
-		event_train_in_types = dataset['event_train_in_types']
-		event_train_out_gaps = dataset['event_train_out_gaps']
-		event_train_out_feats = dataset['event_train_out_feats'].astype(np.float32)
-		event_train_out_types = dataset['event_train_out_types']
+		nc_event_train_in_gaps = dataset['nc_event_train_in_gaps']
+		nc_event_train_in_feats = dataset['nc_event_train_in_feats'].astype(np.float32)
+		nc_event_train_in_types = dataset['nc_event_train_in_types']
+		nc_event_train_out_gaps = dataset['nc_event_train_out_gaps']
+		nc_event_train_out_feats = dataset['nc_event_train_out_feats'].astype(np.float32)
+		nc_event_train_out_types = dataset['nc_event_train_out_types']
 		train_dataset_gaps = tf.data.Dataset.from_tensor_slices(
-			(event_train_in_gaps, event_train_in_feats, event_train_in_types,
-			 event_train_out_gaps, event_train_out_feats, event_train_out_types)
+			(nc_event_train_in_gaps, nc_event_train_in_feats, nc_event_train_in_types,
+			 nc_event_train_out_gaps, nc_event_train_out_feats, nc_event_train_out_types)
 		).batch(
 			batch_size,
 			drop_remainder=True
 		)
-		event_dev_in_gaps = dataset['event_dev_in_gaps']
-		event_dev_in_feats = dataset['event_dev_in_feats'].astype(np.float32)
-		event_dev_in_types = dataset['event_dev_in_types']
-		event_dev_out_gaps = dataset['event_dev_out_gaps']
-		event_dev_out_types = dataset['event_dev_out_types']
+		nc_event_dev_in_gaps = dataset['nc_event_dev_in_gaps']
+		nc_event_dev_in_feats = dataset['nc_event_dev_in_feats'].astype(np.float32)
+		nc_event_dev_in_types = dataset['nc_event_dev_in_types']
+		nc_event_dev_out_gaps = dataset['nc_event_dev_out_gaps']
+		nc_event_dev_out_types = dataset['nc_event_dev_out_types']
 		event_train_norma = dataset['event_train_norma']
 		event_train_normd = dataset['event_train_normd']
 
@@ -5718,29 +5751,29 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					 event_test_norma, event_test_normd]
 		train_norm_gaps = [event_train_norma ,event_train_normd]
 		data = [train_dataset_gaps,
-				event_dev_in_gaps, event_dev_in_feats, event_dev_in_types,
-				event_dev_out_gaps, event_dev_out_types,
+				nc_event_dev_in_gaps, nc_event_dev_in_feats, nc_event_dev_in_types,
+				nc_event_dev_out_gaps, nc_event_dev_out_types,
 				train_norm_gaps]
 
 
-		comp_train_in_gaps = dataset['comp_train_in_gaps']
-		comp_train_in_feats = dataset['comp_train_in_feats'].astype(np.float32)
-		comp_train_in_types = dataset['comp_train_in_types']
-		comp_train_out_gaps = dataset['comp_train_out_gaps']
-		comp_train_out_feats = dataset['comp_train_out_feats'].astype(np.float32)
-		comp_train_out_types = dataset['comp_train_out_types']
+		nc_comp_train_in_gaps = dataset['nc_comp_train_in_gaps']
+		nc_comp_train_in_feats = dataset['nc_comp_train_in_feats'].astype(np.float32)
+		nc_comp_train_in_types = dataset['nc_comp_train_in_types']
+		nc_comp_train_out_gaps = dataset['nc_comp_train_out_gaps']
+		nc_comp_train_out_feats = dataset['nc_comp_train_out_feats'].astype(np.float32)
+		nc_comp_train_out_types = dataset['nc_comp_train_out_types']
 		train_dataset_gaps_comp = tf.data.Dataset.from_tensor_slices(
-			(comp_train_in_gaps, comp_train_in_feats, comp_train_in_types,
-			 comp_train_out_gaps, comp_train_out_feats, comp_train_out_types)
+			(nc_comp_train_in_gaps, nc_comp_train_in_feats, nc_comp_train_in_types,
+			 nc_comp_train_out_gaps, nc_comp_train_out_feats, nc_comp_train_out_types)
 		).batch(
 			batch_size,
 			drop_remainder=True
 		)
-		dev_data_in_gaps_comp = dataset['dev_data_in_gaps_comp']
-		dev_data_in_feats_comp = dataset['dev_data_in_feats_comp']
-		dev_data_in_types_comp = dataset['dev_data_in_types_comp']
-		dev_data_out_gaps_comp = dataset['dev_data_out_gaps_comp']
-		dev_data_out_types_comp = dataset['dev_data_out_types_comp']
+		nc_comp_dev_in_gaps = dataset['nc_comp_dev_in_gaps']
+		nc_comp_dev_in_feats = dataset['nc_comp_dev_in_feats']
+		nc_comp_dev_in_types = dataset['nc_comp_dev_in_types']
+		nc_comp_dev_out_gaps = dataset['nc_comp_dev_out_gaps']
+		nc_comp_dev_out_types = dataset['nc_comp_dev_out_types']
 		comp_train_norma = dataset['comp_train_norma']
 		comp_train_normd = dataset['comp_train_normd']
 
@@ -5755,8 +5788,8 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 						  comp_test_norma, comp_test_normd]
 		train_norm_gaps_comp = [comp_train_norma ,comp_train_normd]
 		data_comp = [train_dataset_gaps_comp,
-					 dev_data_in_gaps_comp, dev_data_in_feats_comp, dev_data_in_types_comp,
-					 dev_data_out_gaps_comp, dev_data_out_types_comp,
+					 nc_comp_dev_in_gaps, nc_comp_dev_in_feats, nc_comp_dev_in_types,
+					 nc_comp_dev_out_gaps, nc_comp_dev_out_types,
 					 train_norm_gaps_comp]
 
 
@@ -5790,37 +5823,37 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 		#			train_gap_in_bin_norm_a, train_gap_in_bin_norm_d]
 
 
-		train_data_in_gaps_comp_full = dataset['train_data_in_gaps_comp_full']
-		train_data_in_feats_comp_full = dataset['train_data_in_feats_comp_full'].astype(np.float32)
-		train_data_out_gaps_comp_full = dataset['train_data_out_gaps_comp_full']
-		train_data_out_feats_comp_full = dataset['train_data_out_feats_comp_full'].astype(np.float32)
-		train_dataset_gaps_comp_full = tf.data.Dataset.from_tensor_slices(
-			(train_data_in_gaps_comp_full,
-			 train_data_in_feats_comp_full,
-			 train_data_out_gaps_comp_full,
-			 train_data_out_feats_comp_full)
-		).batch(
-			batch_size,
-			drop_remainder=True
-		)
-		dev_data_in_gaps_comp_full = dataset['dev_data_in_gaps_comp_full']
-		dev_data_in_feats_comp_full = dataset['dev_data_in_feats_comp_full']
-		dev_data_out_gaps_comp_full = dataset['dev_data_out_gaps_comp_full']
-		train_norm_a_gaps_comp_full = dataset['train_norm_a_gaps_comp_full']
-		train_norm_d_gaps_comp_full = dataset['train_norm_d_gaps_comp_full']
-
-		test_data_in_gaps_bin_comp_full = dataset['test_data_in_gaps_bin_comp_full']
-		test_data_in_feats_bin_comp_full = dataset['test_data_in_feats_bin_comp_full']
-		test_gap_in_bin_norm_a_comp_full = dataset['test_gap_in_bin_norm_a_comp_full']
-		test_gap_in_bin_norm_d_comp_full = dataset['test_gap_in_bin_norm_d_comp_full']
-
-		test_data_comp_full = [test_data_in_gaps_bin_comp_full, test_data_in_feats_bin_comp_full,
-							   count_test_out_binend, event_test_in_lasttime, 
-							   test_gap_in_bin_norm_a_comp_full, test_gap_in_bin_norm_d_comp_full]
-		train_norm_gaps_comp_full = [train_norm_a_gaps_comp_full ,train_norm_d_gaps_comp_full]
-		data_comp_full = [train_dataset_gaps_comp_full,
-						  dev_data_in_gaps_comp_full, dev_data_in_feats_comp_full, dev_data_out_gaps_comp_full,
-						  train_norm_gaps_comp_full]
+#		train_data_in_gaps_comp_full = dataset['train_data_in_gaps_comp_full']
+#		train_data_in_feats_comp_full = dataset['train_data_in_feats_comp_full'].astype(np.float32)
+#		train_data_out_gaps_comp_full = dataset['train_data_out_gaps_comp_full']
+#		train_data_out_feats_comp_full = dataset['train_data_out_feats_comp_full'].astype(np.float32)
+#		train_dataset_gaps_comp_full = tf.data.Dataset.from_tensor_slices(
+#			(train_data_in_gaps_comp_full,
+#			 train_data_in_feats_comp_full,
+#			 train_data_out_gaps_comp_full,
+#			 train_data_out_feats_comp_full)
+#		).batch(
+#			batch_size,
+#			drop_remainder=True
+#		)
+#		dev_data_in_gaps_comp_full = dataset['dev_data_in_gaps_comp_full']
+#		dev_data_in_feats_comp_full = dataset['dev_data_in_feats_comp_full']
+#		dev_data_out_gaps_comp_full = dataset['dev_data_out_gaps_comp_full']
+#		train_norm_a_gaps_comp_full = dataset['train_norm_a_gaps_comp_full']
+#		train_norm_d_gaps_comp_full = dataset['train_norm_d_gaps_comp_full']
+#
+#		test_data_in_gaps_bin_comp_full = dataset['test_data_in_gaps_bin_comp_full']
+#		test_data_in_feats_bin_comp_full = dataset['test_data_in_feats_bin_comp_full']
+#		test_gap_in_bin_norm_a_comp_full = dataset['test_gap_in_bin_norm_a_comp_full']
+#		test_gap_in_bin_norm_d_comp_full = dataset['test_gap_in_bin_norm_d_comp_full']
+#
+#		test_data_comp_full = [test_data_in_gaps_bin_comp_full, test_data_in_feats_bin_comp_full,
+#							   count_test_out_binend, event_test_in_lasttime, 
+#							   test_gap_in_bin_norm_a_comp_full, test_gap_in_bin_norm_d_comp_full]
+#		train_norm_gaps_comp_full = [train_norm_a_gaps_comp_full ,train_norm_d_gaps_comp_full]
+#		data_comp_full = [train_dataset_gaps_comp_full,
+#						  dev_data_in_gaps_comp_full, dev_data_in_feats_comp_full, dev_data_out_gaps_comp_full,
+#						  train_norm_gaps_comp_full]
 
 
 		if model_name == 'wgan':
@@ -6194,7 +6227,6 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 						event_dist_params, count_dist_params,
 					) = run_transformer_simulation(args, models, data, test_data)
 				end_time = time.time()
-
 
 				all_counts_true = count_test_out_counts
 				for ts_seq, ty_seq in zip(all_times_pred, all_types_pred):
