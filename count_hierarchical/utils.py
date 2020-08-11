@@ -1114,6 +1114,13 @@ def get_processed_data(dataset_name, args):
 	event_test_out_types = np.array([flatten(seq) for seq in event_test_out_types])
 	event_test_out_times = np.array([flatten(seq) for seq in event_test_out_times])
 
+	event_test_out_mask = tf.sequence_mask([len(s) for s in event_test_out_times], dtype=tf.float32)
+	event_test_out_seqlens = [len(s) for s in event_test_out_times]
+	#event_test_out_gaps = np.expand_dims(pad_sequences(event_test_out_gaps, padding='post'), axis=-1).astype(np.float32)
+	#event_test_out_types = pad_sequences(event_test_out_types, padding='post').astype(np.int64)
+	#event_test_out_times = pad_sequences(event_test_out_times, padding='post').astype(np.float32)
+
+
 	event_test_in_lasttime = np.array([seq[-1] for seq in event_test_in_times])
 
 	event_test_in_gaps, event_test_norma, event_test_normd = normalize_avg(event_test_in_gaps)
@@ -1137,6 +1144,7 @@ def get_processed_data(dataset_name, args):
 	nc_event_dev_in_feats = get_time_features(nc_event_dev_in_times)
 
 	event_test_in_feats = get_time_features(event_test_in_times)
+	#event_test_out_feats = np.expand_dims(get_time_features(pad_sequences(event_test_out_times, padding='post')), axis=-1).astype(np.float32)
 
 	nc_comp_train_in_gaps, nc_comp_train_out_gaps = create_nowcast_io_seqs(
 		flatten(bintogaps_train), enc_len, args.stride_len,
@@ -1307,8 +1315,8 @@ def get_processed_data(dataset_name, args):
 	comp_test_in_feats = np.expand_dims(comp_test_in_feats, axis=-1)
 	comp_test_out_times = np.expand_dims(comp_test_out_times, axis=-1)
 
-	import ipdb
-	ipdb.set_trace()
+	#import ipdb
+	#ipdb.set_trace()
 
 	dataset = {
 		# Now-casting event training data
@@ -1350,6 +1358,7 @@ def get_processed_data(dataset_name, args):
 		'event_test_in_lasttime': event_test_in_lasttime,
 		'event_test_out_times': event_test_out_times,
 		'event_test_out_gaps': event_test_out_gaps,
+		#'event_test_out_feats': event_test_out_feats,
 		'event_test_out_types': event_test_out_types,
 
 		'event_test_norma': event_test_norma,

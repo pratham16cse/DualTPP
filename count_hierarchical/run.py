@@ -3,6 +3,7 @@ from tensorflow import keras
 from tensorflow.keras import layers
 import tensorflow_probability as tfp
 tfd = tfp.distributions
+from tensorflow.keras.preprocessing.sequence import pad_sequences
 
 import cvxpy as cp
 import numpy as np
@@ -1520,6 +1521,8 @@ def simulate_rmtpp(model, times_in, gaps_in, feats_in, types_in,
 		feats_in = step_feats_pred
 	else:
 		feats_in = nc_feats_in[:, 0:1]
+	#import ipdb
+	#ipdb.set_trace()
 	gaps_pred.append(last_gaps_pred_unnorm)
 	types_pred.append(step_types_pred)
 	times_pred.append(last_times_pred)
@@ -1544,6 +1547,7 @@ def simulate_rmtpp(model, times_in, gaps_in, feats_in, types_in,
 		else:
 			gaps_in = nc_gaps_in[:, simul_step:simul_step+1]
 			types_in = nc_types_in[:, simul_step:simul_step+1]
+
 		step_gaps_pred = tf.squeeze(step_gaps_pred, axis=-1)
 		last_gaps_pred_unnorm = utils.denormalize_avg(step_gaps_pred, data_norm_a, data_norm_d)
 		last_times_pred = times_pred[-1] + last_gaps_pred_unnorm
@@ -4452,7 +4456,9 @@ def run_rmtpp_optimizer_model_comp(
 
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#
 # Plain rmtpp model to generate events independent of bin boundary
-def run_rmtpp_simulation(args, models, data, test_data, rmtpp_type=None, use_nowcast=False):
+def run_rmtpp_simulation(args, models, data, test_data, rmtpp_type=None,
+	use_nowcast=False, nc_gaps_in=None, nc_feats_in=None, nc_types_in=None,
+):
 	if rmtpp_type=='nll':
 		model_rmtpp = models['rmtpp_nll']
 	elif rmtpp_type=='mse':
@@ -4493,6 +4499,9 @@ def run_rmtpp_simulation(args, models, data, test_data, rmtpp_type=None, use_now
 		(event_test_norma,
 		event_test_normd),
 		use_nowcast=use_nowcast,
+		nc_gaps_in=nc_gaps_in,
+		nc_feats_in=nc_feats_in,
+		nc_types_in=nc_types_in,
 	)
 	all_counts_pred = []
 	for dec_idx in range(dec_len):
@@ -5939,6 +5948,11 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 		# This block contains all the inference models that returns
 		# answers to various queries
 		if model_name == 'inference_models':
+
+			event_test_out_gaps = dataset['event_test_out_gaps']
+			event_test_out_types = dataset['event_test_out_types']
+			event_test_out_times = dataset['event_test_out_times']
+
 			count_test_in_counts = dataset['count_test_in_counts']
 			count_test_in_feats = dataset['count_test_in_feats']
 			count_test_out_counts = dataset['count_test_out_counts']
@@ -6206,6 +6220,23 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					) = run_rmtpp_simulation(
 						args, models, data, test_data,
 						rmtpp_type=run_model_flags[inference_model_name]['rmtpp_type']
+					)
+				if inference_model_name in ['rmtpp_nll_simu_nc', 'rmtpp_mse_simu_nc', 'rmtpp_mse_var_simu_nc'] \
+					and run_model_flags[inference_model_name]:
+					nc_gaps_in = np.expand_dims(pad_sequences(event_test_out_gaps, padding='post'), axis=-1).astype(np.float32)
+					nc_types_in = pad_sequences(event_test_out_types, padding='post').astype(np.int64)
+					nc_feats_in = np.expand_dims(get_time_features(pad_sequences(event_test_out_times, padding='post')), axis=-1).astype(np.float32)
+					#nc_times_in = pad_sequences(event_test_out_times, padding='post').astype(np.float32)
+					(
+						all_counts_pred, all_times_pred, all_types_pred,
+						event_dist_params, count_dist_params,
+					) = run_rmtpp_simulation(
+						args, models, data, test_data,
+						rmtpp_type=run_model_flags[inference_model_name]['rmtpp_type'],
+						use_nowcast=True,
+						nc_gaps_in=nc_gaps_in,
+						nc_feats_in=nc_feats_in,
+						nc_types_in=nc_types_in,
 					)
 
 				if inference_model_name=='wgan_simu' and run_model_flags[inference_model_name]:
