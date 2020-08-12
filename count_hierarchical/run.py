@@ -4010,8 +4010,9 @@ def run_rmtpp_optimizer_model(
 
 			#min_cnt = dataset['count_test_out_counts'][batch_idx, dec_idx]
 			#max_cnt = min_cnt
-			#min_cnt = int(event_count_preds_cnt[batch_idx, dec_idx])
-			#max_cnt = int(event_count_preds_cnt[batch_idx, dec_idx])
+			if args.current_model in ['rmtpp_mse_coopt', 'rmtpp_mse_var_coopt']:
+				min_cnt = int(event_count_preds_cnt[batch_idx, dec_idx])
+				max_cnt = int(event_count_preds_cnt[batch_idx, dec_idx])
 			nc_range = np.arange(min_cnt, max_cnt+1)
 			def linear_search(counts_range, low, high):
 				nc_loss_min = np.inf
@@ -6152,7 +6153,10 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 				all_best_opt_nc_losses = 0.
 				all_best_cont_nc_losses = 0.
 				all_best_nc_count_losses = 0.
-				if inference_model_name in ['rmtpp_nll_opt', 'rmtpp_mse_opt', 'rmtpp_mse_var_opt'] \
+				if inference_model_name in \
+					['rmtpp_nll_opt', 'rmtpp_mse_opt',
+					 'rmtpp_mse_var_opt', 'rmtpp_mse_coopt',
+					 'rmtpp_mse_var_coopt'] \
 					and run_model_flags[inference_model_name]:
 					(
 						all_times_pred,

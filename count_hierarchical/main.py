@@ -217,12 +217,14 @@ if 'rmtpp_mse' in model_names:
     run_model_flags['rmtpp_mse_cont'] = {'rmtpp_type':'mse'}
     #run_model_flags['rmtpp_mse_reinit'] = True
     run_model_flags['rmtpp_mse_simu'] = {'rmtpp_type':'mse'}
-    run_model_flags['rmtpp_mse_simu_nc'] = {'rmtpp_type':'mse'}
+    #run_model_flags['rmtpp_mse_simu_nc'] = {'rmtpp_type':'mse'}
+    run_model_flags['rmtpp_mse_coopt'] = {'rmtpp_type':'mse'}
 if 'rmtpp_mse_var' in model_names:
     run_model_flags['rmtpp_mse_var_opt'] = {'rmtpp_type':'mse_var'}
     run_model_flags['rmtpp_mse_var_cont'] = {'rmtpp_type':'mse_var'}
     #run_model_flags['rmtpp_mse_var_reinit'] = True
     run_model_flags['rmtpp_mse_var_simu'] = {'rmtpp_type':'mse_var'}
+    run_model_flags['rmtpp_mse_var_coopt'] = {'rmtpp_type':'mse_var'}
 if 'rmtpp_nll_comp' in model_names:
     #run_model_flags['run_rmtpp_with_joint_optimization_fixed_cnt_solver_nll_comp'] = True
     run_model_flags['rmtpp_nll_opt_comp'] = {'rmtpp_type':'nll', 'rmtpp_type_comp':'nll'}
@@ -275,7 +277,7 @@ print("********************************************************************")
 
 print("####################################################################")
 np.random.seed(args.seed)
-os.makedirs('Outputs', exist_ok=True)
+os.makedirs(args.output_dir, exist_ok=True)
 print("Generating Datasets\n")
 generate_dataset()
 generate_twitter_dataset(twitter_dataset_names)
@@ -339,7 +341,7 @@ for dataset_name in dataset_names:
 
         #if model_name != 'inference_models' and per_model_count[model_name] is not None:
         #    old_stdout = sys.stdout
-        #    sys.stdout=open("Outputs/count_model_"+dataset_name+".txt","a")
+        #    sys.stdout=open(os.path.join(args.output_dir, "count_model_"+dataset_name+".txt"),"a")
         #    print("____________________________________________________________________")
         #    print(model_name, 'MAE for Count Prediction:', np.mean(np.abs(per_model_count['true']-per_model_count[model_name])))
         #    print(model_name, 'MAE for Count Prediction (per bin):', np.mean(np.abs(per_model_count['true']-per_model_count[model_name]), axis=0))
@@ -357,7 +359,7 @@ for dataset_name in dataset_names:
     print("####################################################################")
 
 
-with open('Outputs/results_'+dataset_name+'.txt', 'w') as fp:
+with open(os.path.join(args.output_dir, 'results_'+dataset_name+'.txt'), 'w') as fp:
 
     fp.write('\n\nResults in random interval:')
     fp.write('\nModel Name & Count MAE & Wass dist & opt_loss & cont_loss & count_loss')
@@ -447,10 +449,10 @@ for model_name, metrics_dict in results.items():
     for metric, metric_val in metrics_dict.items():
         results[model_name][metric] = str(metric_val)
 import json
-with open('Outputs/results_'+dataset_name+'.json', 'w') as fp:
+with open(os.path.join(args.output_dir, 'results_'+dataset_name+'.json'), 'w') as fp:
     json.dump(results, fp)
 
-#with open('Outputs/results_'+dataset_name+'.json', 'w') as fp:
+#with open(os.path.join(args.output_dir, 'results_'+dataset_name+'.json'), 'w') as fp:
 #    json.dump(results, fp)
     #results_json = json.dumps(results, indent=4)
     #fp.write(results_json)
