@@ -202,7 +202,7 @@ def run_rmtpp_var(args, data, test_data, trained_rmtpp_model):
 		train_losses.append(step_train_loss)
 
 	plt.plot(range(len(train_losses)), train_losses)
-	plt.savefig('Outputs/train_'+args.current_model+'_'+args.current_dataset+'_loss.png')
+	plt.savefig(os.path.join(args.output_dir, 'train_'+args.current_model+'_'+args.current_dataset+'_loss.png'))
 	plt.close()
 
 	print("Loading best model from epoch", best_dev_epoch)
@@ -407,7 +407,7 @@ def run_rmtpp(args, model, optimizer, data, var_data, NLL_loss,
 
 
 	plt.plot(range(len(train_losses)), train_losses)
-	plt.savefig('Outputs/train_'+model_name+'_'+args.current_dataset+'_loss.png')
+	plt.savefig(os.path.join(args.output_dir, 'train_'+model_name+'_'+args.current_dataset+'_loss.png'))
 	plt.close()
 
 	print("Loading best model from epoch", best_dev_epoch)
@@ -558,7 +558,7 @@ def run_pure_hierarchical(args, model, optimizer, data, NLL_loss, rmtpp_epochs=1
 		train_losses.append(step_train_loss)
 
 	plt.plot(range(len(train_losses)), train_losses)
-	plt.savefig('Outputs/train_'+model_name+'_'+args.current_dataset+'_loss.png')
+	plt.savefig(os.path.join(args.output_dir, 'train_'+model_name+'_'+args.current_dataset+'_loss.png'))
 	plt.close()
 
 	print("Loading best model from epoch", best_dev_epoch)
@@ -785,15 +785,22 @@ def run_count_model(args, data, test_data):
 			plt.plot(range(len(stddev_sample)), stddev_sample[:,dec_idx], label='dec_idx_'+str(dec_idx))
 
 	plt.legend(loc='upper right')
-	plt.savefig('Outputs/count_model_test_var_'+distribution_name+'_'+args.current_dataset+'_test_id_0.png')
+	plt.savefig(os.path.join(
+		args.output_dir,
+		'count_model_test_var_'+distribution_name+'_'+args.current_dataset+'_test_id_0.png')
+	)
 	plt.close()
 
 	plt.plot(range(len(train_losses)), train_losses)
-	plt.savefig('Outputs/count_model_train_loss_'+distribution_name+'_'+args.current_dataset+'.png')
+	plt.savefig(os.path.join(
+		args.output_dir,
+		'count_model_train_loss_'+distribution_name+'_'+args.current_dataset+'.png'))
 	plt.close()
 
 	plt.plot(range(len(dev_mae_list)), dev_mae_list)
-	plt.savefig('Outputs/count_model_dev_mae_'+distribution_name+'_'+args.current_dataset+'.png')
+	plt.savefig(os.path.join(
+		args.output_dir,
+		'count_model_dev_mae_'+distribution_name+'_'+args.current_dataset+'.png'))
 	plt.close()
 
 	print("Loading best model from epoch", best_dev_epoch)
@@ -1009,7 +1016,9 @@ def run_wgan(args, data, test_data):
 		train_losses.append(step_train_loss)
 
 	plt.plot(range(len(train_losses)), train_losses)
-	plt.savefig('Outputs/train_wgan_'+args.current_dataset+'_loss.png')
+	plt.savefig(os.path.join(
+		args.output_dir,
+		'train_wgan_'+args.current_dataset+'_loss.png'))
 	plt.close()
 
 	print("Loading best model from epoch", best_dev_epoch)
@@ -1197,7 +1206,9 @@ def run_seq2seq(args, data, test_data):
 		train_losses.append(step_train_loss)
 
 	plt.plot(range(len(train_losses)), train_losses)
-	plt.savefig('Outputs/train_wgan_'+args.current_dataset+'_loss.png')
+	plt.savefig(os.path.join(
+		args.output_dir,
+		'train_wgan_'+args.current_dataset+'_loss.png'))
 	plt.close()
 
 	print("Loading best model from epoch", best_dev_epoch)
@@ -1362,7 +1373,9 @@ def run_transformer(args, data, test_data):
 		train_losses.append(step_train_loss)
 
 	plt.plot(range(len(train_losses)), train_losses)
-	plt.savefig('Outputs/train_'+model_name+'_'+args.current_dataset+'_loss.png')
+	plt.savefig(os.path.join(
+		args.output_dir,
+		'train_'+model_name+'_'+args.current_dataset+'_loss.png'))
 	plt.close()
 
 	print("Loading best model from epoch", best_dev_epoch)
@@ -5687,10 +5700,10 @@ def compute_time_range_pdf(all_run_fun_pdf, model_data, query_data, dataset_name
 	if test_plots_cnts is None:
 		test_plots_cnts = len(event_test_in_lasttime)
 
-	os.makedirs('Outputs/'+dataset_name+'_threshold_less/', exist_ok=True)
-	os.makedirs('Outputs/'+dataset_name+'_threshold_more/', exist_ok=True)
-	os.makedirs('Outputs/'+dataset_name+'_threshold_less_rank/', exist_ok=True)
-	os.makedirs('Outputs/'+dataset_name+'_threshold_more_rank/', exist_ok=True)
+	os.makedirs(os.path.join(args.output_dir, dataset_name+'_threshold_less/'), exist_ok=True)
+	os.makedirs(os.path.join(args.output_dir, dataset_name+'_threshold_more/'), exist_ok=True)
+	os.makedirs(os.path.join(args.output_dir, dataset_name+'_threshold_less_rank/'), exist_ok=True)
+	os.makedirs(os.path.join(args.output_dir, dataset_name+'_threshold_more_rank/'), exist_ok=True)
 	for batch_idx in range(test_plots_cnts):
 		all_begins = np.linspace(x_range[batch_idx][0], x_range[batch_idx][1], no_points)
 		plt.plot(all_begins, (interval_counts_more_true[batch_idx] / np.sum(interval_counts_more_true[batch_idx])), 
@@ -5702,7 +5715,7 @@ def compute_time_range_pdf(all_run_fun_pdf, model_data, query_data, dataset_name
 		plt.xlabel('timeline')
 		plt.ylabel('pdf_threshold_more')
 		plt.axvline(x=interval_range_count_more[batch_idx], color='red', linestyle='--')
-		img_name_cnt = 'Outputs/'+dataset_name+'_threshold_more/'+dataset_name+'_threshold_more_'+str(batch_idx)+'.svg'
+		img_name_cnt = args.output_dir+'/'+dataset_name+'_threshold_more/'+dataset_name+'_threshold_more_'+str(batch_idx)+'.svg'
 		plt.legend(loc='upper right')
 		plt.savefig(img_name_cnt, format='svg', dpi=1200)
 		plt.close()
@@ -5716,7 +5729,7 @@ def compute_time_range_pdf(all_run_fun_pdf, model_data, query_data, dataset_name
 		plt.xlabel('timeline')
 		plt.ylabel('pdf_threshold_less')
 		plt.axvline(x=interval_range_count_less[batch_idx], color='red', linestyle='--')
-		img_name_cnt = 'Outputs/'+dataset_name+'_threshold_less/'+dataset_name+'_threshold_less_'+str(batch_idx)+'.svg'
+		img_name_cnt = args.output_dir+'/'+dataset_name+'_threshold_less/'+dataset_name+'_threshold_less_'+str(batch_idx)+'.svg'
 		plt.legend(loc='upper right')
 		plt.savefig(img_name_cnt, format='svg', dpi=1200)
 		plt.close()
@@ -5728,7 +5741,7 @@ def compute_time_range_pdf(all_run_fun_pdf, model_data, query_data, dataset_name
 		plt.xlabel('timeline')
 		plt.ylabel('pdf_threshold_more_rank')
 		plt.axvline(x=interval_range_count_more[batch_idx], color='red', linestyle='--')
-		img_name_cnt = 'Outputs/'+dataset_name+'_threshold_more_rank/'+dataset_name+'_threshold_more_rank_'+str(batch_idx)+'.svg'
+		img_name_cnt = args.output_dir+'/'+dataset_name+'_threshold_more_rank/'+dataset_name+'_threshold_more_rank_'+str(batch_idx)+'.svg'
 		plt.legend(loc='upper right')
 		plt.savefig(img_name_cnt, format='svg', dpi=1200)
 		plt.close()
@@ -5740,7 +5753,7 @@ def compute_time_range_pdf(all_run_fun_pdf, model_data, query_data, dataset_name
 		plt.xlabel('timeline')
 		plt.ylabel('pdf_threshold_less_rank')
 		plt.axvline(x=interval_range_count_less[batch_idx], color='red', linestyle='--')
-		img_name_cnt = 'Outputs/'+dataset_name+'_threshold_less_rank/'+dataset_name+'_threshold_less_rank_'+str(batch_idx)+'.svg'
+		img_name_cnt = args.output_dir+'/'+dataset_name+'_threshold_less_rank/'+dataset_name+'_threshold_less_rank_'+str(batch_idx)+'.svg'
 		plt.legend(loc='upper right')
 		plt.savefig(img_name_cnt, format='svg', dpi=1200)
 		plt.close()
@@ -6404,7 +6417,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 				)
 				write_arr_to_file(
 					os.path.join(
-						'Outputs',
+						args.output_dir,
 						args.current_dataset+'__'+inference_model_name,
 					),
 					all_times_true,
@@ -6414,7 +6427,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 				)
 				write_pe_metrics_to_file(
 					os.path.join(
-						'Outputs',
+						args.output_dir,
 						args.current_dataset+'__'+inference_model_name,
 					),
 					count_mae_fh_pe, wass_dist_fh_pe, bleu_score_fh_pe,
@@ -6422,7 +6435,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 				)
 				write_opt_losses_to_file(
 					os.path.join(
-						'Outputs',
+						args.output_dir,
 						args.current_dataset + '__' + inference_model_name,
 					),
 					all_best_opt_nc_losses,
@@ -6494,7 +6507,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 				
 				plt.axvline(x=in_bin_sz_plt+.5, color='k', linestyle='--')
 				plt.legend(loc='upper left')
-				plt.savefig('Outputs/'+dataset_name+'_'+str(idx)+'.svg', format='svg', dpi=1200)
+				plt.savefig(args.output_dir+'/'+dataset_name+'_'+str(idx)+'.svg', format='svg', dpi=1200)
 				plt.close()
 			# ----- End: Plot bin-counts ----- # 
 

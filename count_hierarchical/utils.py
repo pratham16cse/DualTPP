@@ -365,7 +365,7 @@ def generate_plots(args, dataset_name, dataset, per_model_count, test_sample_idx
 
 	plt.axvline(x=inp_seq_len_plot-1, color='k', linestyle='--')
 	plt.legend(loc='upper left')
-	plt.savefig('Outputs/'+dataset_name+'_'+str(test_sample_idx)+'.svg', format='svg', dpi=1200)
+	plt.savefig(os.path.join(args.output_dir, dataset_name+'_'+str(test_sample_idx)+'.svg'), format='svg', dpi=1200)
 	plt.close()
 
 def create_bin(times, types, bin_size, num_bins):
