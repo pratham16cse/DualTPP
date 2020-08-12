@@ -4000,6 +4000,54 @@ def run_rmtpp_optimizer_model(
 			#min_cnt = int(event_count_preds_cnt[batch_idx, dec_idx])
 			#max_cnt = int(event_count_preds_cnt[batch_idx, dec_idx])
 			nc_range = np.arange(min_cnt, max_cnt+1)
+			def linear_search(counts_range, low, high):
+				nc_loss_min = None
+				for mid_1 in range(len(counts_range)):
+					(
+						batch_bin_curr_cnt_opt_times_pred_mid_1,
+						batch_bin_curr_cnt_opt_gaps_pred_mid_1,
+						batch_bin_curr_cnt_opt_types_pred_mid_1,
+						batch_bin_curr_cnt_opt_sigms_mid_1,
+						nc_loss_mid_1,
+						nc_loss_mid_1_opt,
+						nc_loss_mid_1_cont,
+						nc_count_loss_mid_1,
+					) = get_optimized_gaps(
+						batch_idx,
+						dec_idx,
+						counts_range[mid_1],
+						max_cnt,
+						best_past_cnt,
+						bin_start,
+						batch_times_pred,
+						batch_types_pred,
+						gaps_uc=gaps_uc,
+					)
+					if nc_loss_min is None:
+						nc_loss_min = nc_loss_mid_1
+					if nc_loss_mid_1 <= nc_loss_min:
+						min_c = mid_1,
+						nc_loss_min = nc_loss_mid_1,
+						batch_bin_curr_cnt_opt_times_pred_min = batch_bin_curr_cnt_opt_times_pred_mid_1,
+						batch_bin_curr_cnt_opt_gaps_pred_min = batch_bin_curr_cnt_opt_gaps_pred_mid_1,
+						batch_bin_curr_cnt_opt_types_pred_min = batch_bin_curr_cnt_opt_types_pred_mid_1,
+						batch_bin_curr_cnt_opt_sigms_min = batch_bin_curr_cnt_opt_sigms_mid_1,
+						nc_loss_min_opt = nc_loss_mid_1_opt,
+						nc_loss_min_cont = nc_loss_mid_1_cont,
+						nc_count_loss_min = nc_count_loss_mid_1,
+
+				return (
+					min_c,
+					nc_loss_min,
+					batch_bin_curr_cnt_opt_times_pred_min,
+					batch_bin_curr_cnt_opt_gaps_pred_min,
+					batch_bin_curr_cnt_opt_types_pred_min,
+					batch_bin_curr_cnt_opt_sigms_min,
+					counts_range[min_c],
+					nc_loss_min_opt,
+					nc_loss_min_cont,
+					nc_count_loss_min,
+				)
 			def binary_search(counts_range, low, high):
 				# print('low=', low, 'high=', high)
 
@@ -4069,18 +4117,22 @@ def run_rmtpp_optimizer_model(
 						nc_count_loss_mid_1,
 					)
 
-			(
-				best_nc_idx,
-				best_nc_loss,
-				batch_bin_times_pred,
-				batch_bin_gaps_pred,
-				batch_bin_types_pred,
-				batch_bin_sigms_pred,
-				best_count,
-				best_nc_loss_opt,
-				best_nc_loss_cont,
-				best_nc_count_loss,
-			) = binary_search(nc_range, 0, len(nc_range)-1)
+			if args.search == 0:
+				(
+					best_nc_idx, best_nc_loss,
+					batch_bin_times_pred, batch_bin_gaps_pred,
+					batch_bin_types_pred, batch_bin_sigms_pred,
+					best_count, best_nc_loss_opt, best_nc_loss_cont,
+					best_nc_count_loss,
+				) = binary_search(nc_range, 0, len(nc_range)-1)
+			elif args.search == 1:
+				(
+					best_nc_idx, best_nc_loss,
+					batch_bin_times_pred, batch_bin_gaps_pred,
+					batch_bin_types_pred, batch_bin_sigms_pred,
+					best_count, best_nc_loss_opt, best_nc_loss_cont,
+					best_nc_count_loss,
+				) = linear_search(nc_range, 0, len(nc_range)-1)
 
 			#batch_times_pred.append(batch_bin_times_pred)
 			#batch_best_opt_nc_losses.append(best_nc_loss_opt)
@@ -5750,10 +5802,10 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					  'wgan', 'seq2seq', 'transformer',
 					  'inference_models', 'hawkes_model']:
 					  
-		nc_event_train_in_gaps = dataset['nc_event_train_in_gaps']
+		nc_event_train_in_gaps = dataset['nc_event_train_in_gaps'].astype(np.float32)
 		nc_event_train_in_feats = dataset['nc_event_train_in_feats'].astype(np.float32)
 		nc_event_train_in_types = dataset['nc_event_train_in_types']
-		nc_event_train_out_gaps = dataset['nc_event_train_out_gaps']
+		nc_event_train_out_gaps = dataset['nc_event_train_out_gaps'].astype(np.float32)
 		nc_event_train_out_feats = dataset['nc_event_train_out_feats'].astype(np.float32)
 		nc_event_train_out_types = dataset['nc_event_train_out_types']
 		train_dataset_gaps = tf.data.Dataset.from_tensor_slices(
@@ -5825,69 +5877,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					 nc_comp_dev_out_gaps, nc_comp_dev_out_types,
 					 train_norm_gaps_comp]
 
-
-		#train_data_in_gaps_bin = dataset['train_data_in_gaps_bin']
-		#train_data_out_gaps_bin = dataset['train_data_out_gaps_bin']
-		#train_data_out_gaps_bin = tf.cast(
-		#	tf.sparse.to_dense(
-		#		tf.ragged.constant(
-		#			train_data_out_gaps_bin
-		#		).to_sparse()
-		#	),
-		#	tf.float32
-		#)
-		#train_data_in_time_end_bin = dataset['train_data_in_time_end_bin']
-		#train_data_in_time_end_bin = train_data_in_time_end_bin.astype(np.float32)
-		#train_end_hr_bins_relative = dataset['train_end_hr_bins_relative']
-		#var_dataset_gaps = tf.data.Dataset.from_tensor_slices(
-		#	(train_data_in_gaps_bin,
-		#	 train_data_out_gaps_bin,
-		#	 train_data_in_time_end_bin,
-		#	 train_end_hr_bins_relative)
-		#).batch(
-		#	batch_size,
-		#	drop_remainder=True
-		#)
-		#train_gap_in_bin_norm_a = dataset['train_gap_in_bin_norm_a']
-		#train_gap_in_bin_norm_d = dataset['train_gap_in_bin_norm_d']
 		var_data = None
-		#var_data = [var_dataset_gaps, train_end_hr_bins_relative,
-		#			train_data_in_time_end_bin,
-		#			train_gap_in_bin_norm_a, train_gap_in_bin_norm_d]
-
-
-#		train_data_in_gaps_comp_full = dataset['train_data_in_gaps_comp_full']
-#		train_data_in_feats_comp_full = dataset['train_data_in_feats_comp_full'].astype(np.float32)
-#		train_data_out_gaps_comp_full = dataset['train_data_out_gaps_comp_full']
-#		train_data_out_feats_comp_full = dataset['train_data_out_feats_comp_full'].astype(np.float32)
-#		train_dataset_gaps_comp_full = tf.data.Dataset.from_tensor_slices(
-#			(train_data_in_gaps_comp_full,
-#			 train_data_in_feats_comp_full,
-#			 train_data_out_gaps_comp_full,
-#			 train_data_out_feats_comp_full)
-#		).batch(
-#			batch_size,
-#			drop_remainder=True
-#		)
-#		dev_data_in_gaps_comp_full = dataset['dev_data_in_gaps_comp_full']
-#		dev_data_in_feats_comp_full = dataset['dev_data_in_feats_comp_full']
-#		dev_data_out_gaps_comp_full = dataset['dev_data_out_gaps_comp_full']
-#		train_norm_a_gaps_comp_full = dataset['train_norm_a_gaps_comp_full']
-#		train_norm_d_gaps_comp_full = dataset['train_norm_d_gaps_comp_full']
-#
-#		test_data_in_gaps_bin_comp_full = dataset['test_data_in_gaps_bin_comp_full']
-#		test_data_in_feats_bin_comp_full = dataset['test_data_in_feats_bin_comp_full']
-#		test_gap_in_bin_norm_a_comp_full = dataset['test_gap_in_bin_norm_a_comp_full']
-#		test_gap_in_bin_norm_d_comp_full = dataset['test_gap_in_bin_norm_d_comp_full']
-#
-#		test_data_comp_full = [test_data_in_gaps_bin_comp_full, test_data_in_feats_bin_comp_full,
-#							   count_test_out_binend, event_test_in_lasttime, 
-#							   test_gap_in_bin_norm_a_comp_full, test_gap_in_bin_norm_d_comp_full]
-#		train_norm_gaps_comp_full = [train_norm_a_gaps_comp_full ,train_norm_d_gaps_comp_full]
-#		data_comp_full = [train_dataset_gaps_comp_full,
-#						  dev_data_in_gaps_comp_full, dev_data_in_feats_comp_full, dev_data_out_gaps_comp_full,
-#						  train_norm_gaps_comp_full]
-
 
 		if model_name == 'wgan':
 			model = run_wgan(args, data, test_data)

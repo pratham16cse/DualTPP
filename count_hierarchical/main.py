@@ -118,6 +118,8 @@ parser.add_argument('--no_rescale_rmtpp_params', action='store_true', default=Fa
                     help='Do not rescale RMTPP intensities for optimizer')
 parser.add_argument('--use_ratio_constraints', action='store_true', default=False,
                     help='Maintain Ratios of adjacent RMTPP event predictions')
+parser.add_argument('--search', type=int, default=0,
+                    help='Search algorithm over counts 0:binary, 1:linear')
 
 # Parameters for extra_var_model
 parser.add_argument('--num_grps', type=int, default=10,
@@ -182,7 +184,7 @@ if args.model_name == 'all':
     model_names.append('transformer')
     model_names.append('count_model')
     # model_names.append('hierarchical')
-    #model_names.append('rmtpp_nll')
+    model_names.append('rmtpp_nll')
     model_names.append('rmtpp_mse')
     model_names.append('rmtpp_mse_var')
     #model_names.append('rmtpp_nll_comp')
