@@ -4001,7 +4001,7 @@ def run_rmtpp_optimizer_model(
 			#max_cnt = int(event_count_preds_cnt[batch_idx, dec_idx])
 			nc_range = np.arange(min_cnt, max_cnt+1)
 			def linear_search(counts_range, low, high):
-				nc_loss_min = None
+				nc_loss_min = np.inf
 				for mid_1 in range(len(counts_range)):
 					(
 						batch_bin_curr_cnt_opt_times_pred_mid_1,
@@ -4023,18 +4023,16 @@ def run_rmtpp_optimizer_model(
 						batch_types_pred,
 						gaps_uc=gaps_uc,
 					)
-					if nc_loss_min is None:
-						nc_loss_min = nc_loss_mid_1
 					if nc_loss_mid_1 <= nc_loss_min:
 						min_c = mid_1,
-						nc_loss_min = nc_loss_mid_1,
-						batch_bin_curr_cnt_opt_times_pred_min = batch_bin_curr_cnt_opt_times_pred_mid_1,
-						batch_bin_curr_cnt_opt_gaps_pred_min = batch_bin_curr_cnt_opt_gaps_pred_mid_1,
-						batch_bin_curr_cnt_opt_types_pred_min = batch_bin_curr_cnt_opt_types_pred_mid_1,
-						batch_bin_curr_cnt_opt_sigms_min = batch_bin_curr_cnt_opt_sigms_mid_1,
-						nc_loss_min_opt = nc_loss_mid_1_opt,
-						nc_loss_min_cont = nc_loss_mid_1_cont,
-						nc_count_loss_min = nc_count_loss_mid_1,
+						nc_loss_min = nc_loss_mid_1
+						batch_bin_curr_cnt_opt_times_pred_min = batch_bin_curr_cnt_opt_times_pred_mid_1
+						batch_bin_curr_cnt_opt_gaps_pred_min = batch_bin_curr_cnt_opt_gaps_pred_mid_1
+						batch_bin_curr_cnt_opt_types_pred_min = batch_bin_curr_cnt_opt_types_pred_mid_1
+						batch_bin_curr_cnt_opt_sigms_min = batch_bin_curr_cnt_opt_sigms_mid_1
+						nc_loss_min_opt = nc_loss_mid_1_opt
+						nc_loss_min_cont = nc_loss_mid_1_cont
+						nc_count_loss_min = nc_count_loss_mid_1
 
 				return (
 					min_c,
