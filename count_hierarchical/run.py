@@ -689,7 +689,8 @@ def run_count_model(args, data, test_data):
 	distribution_name = 'Gaussian'
 	#distribution_name = 'var_model'
 
-	count_train_in_counts, count_train_in_feats, count_train_out_counts = data
+	(count_train_in_counts, count_train_in_feats, count_train_out_counts,
+	 count_dev_in_counts, count_dev_in_feats, count_dev_out_counts) = data
 	(count_test_in_counts, count_test_in_feats,
 	 count_test_out_counts, count_test_normm, count_test_norms) = test_data
 
@@ -701,12 +702,12 @@ def run_count_model(args, data, test_data):
 	count_test_in_counts = count_test_in_counts.astype(np.float32)
 	count_test_out_counts = count_test_out_counts.astype(np.float32)
 
-	dev_data_in_bin = count_train_in_counts[train_data_size:]
-	dev_data_in_bin_feats = count_train_in_feats[train_data_size:]
-	dev_data_out_bin = count_train_out_counts[train_data_size:]
-	count_train_in_counts = count_train_in_counts[:train_data_size]
-	count_train_out_counts = count_train_out_counts[:train_data_size]
-	count_train_in_feats = count_train_in_feats[:train_data_size]
+	#dev_data_in_bin = count_train_in_counts[train_data_size:]
+	#dev_data_in_bin_feats = count_train_in_feats[train_data_size:]
+	#dev_data_out_bin = count_train_out_counts[train_data_size:]
+	#count_train_in_counts = count_train_in_counts[:train_data_size]
+	#count_train_out_counts = count_train_out_counts[:train_data_size]
+	#count_train_in_feats = count_train_in_feats[:train_data_size]
 
 	batch_size = args.batch_size
 	train_dataset = tf.data.Dataset.from_tensor_slices(
@@ -735,6 +736,8 @@ def run_count_model(args, data, test_data):
 		for sm_step, (bin_count_batch_in, bin_count_batch_in_feats,
 						bin_count_batch_out) in enumerate(train_dataset):
 			with tf.GradientTape() as tape:
+				#import ipdb
+				#ipdb.set_trace()
 				bin_counts_pred, distribution_params = model(
 					bin_count_batch_in,
 					bin_count_batch_in_feats,
@@ -753,9 +756,10 @@ def run_count_model(args, data, test_data):
 			step_cnt += 1
 		
 		# Dev calculations
-		dev_bin_count_pred, _ = model(dev_data_in_bin, dev_data_in_bin_feats)		
-		dev_gap_metric_mae(dev_bin_count_pred, dev_data_out_bin)
-		dev_gap_metric_mse(dev_bin_count_pred, dev_data_out_bin)
+		count_dev_pred, _ = model(count_dev_in_counts, count_dev_in_feats)		
+		count_dev_pred_unnorm = utils.denormalize_data(count_dev_pred, count_test_normm, count_test_norms)
+		dev_gap_metric_mae(count_dev_pred_unnorm, count_dev_out_counts)
+		dev_gap_metric_mse(count_dev_pred_unnorm, count_dev_out_counts)
 		dev_gap_mae = dev_gap_metric_mae.result()
 		dev_gap_mse = dev_gap_metric_mse.result()
 		dev_gap_metric_mae.reset_states()
@@ -805,9 +809,10 @@ def run_count_model(args, data, test_data):
 
 	print("Loading best model from epoch", best_dev_epoch)
 	model.load_weights(checkpoint_path)
-	dev_bin_count_pred, _ = model(dev_data_in_bin, dev_data_in_bin_feats)		
-	dev_gap_metric_mae(dev_bin_count_pred, dev_data_out_bin)
-	dev_gap_metric_mse(dev_bin_count_pred, dev_data_out_bin)
+	count_dev_pred, _ = model(count_dev_in_counts, count_dev_in_feats)		
+	count_dev_pred_unnorm = utils.denormalize_data(count_dev_pred, count_test_normm, count_test_norms)
+	dev_gap_metric_mae(count_dev_pred_unnorm, count_dev_out_counts)
+	dev_gap_metric_mse(count_dev_pred_unnorm, count_dev_out_counts)
 	dev_gap_mae = dev_gap_metric_mae.result()
 	dev_gap_mse = dev_gap_metric_mse.result()
 	dev_gap_metric_mae.reset_states()
@@ -5797,13 +5802,17 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 		count_train_in_counts = dataset['count_train_in_counts']
 		count_train_in_feats = dataset['count_train_in_feats']
 		count_train_out_counts = dataset['count_train_out_counts']
+		count_dev_in_counts = dataset['count_dev_in_counts']
+		count_dev_in_feats = dataset['count_dev_in_feats']
+		count_dev_out_counts = dataset['count_dev_out_counts']
 		count_test_in_counts = dataset['count_test_in_counts']
 		count_test_in_feats = dataset['count_test_in_feats']
 		count_test_out_counts = dataset['count_test_out_counts']
 		count_test_normm = dataset['count_test_normm']
 		count_test_norms = dataset['count_test_norms']
 
-		data = [count_train_in_counts, count_train_in_feats, count_train_out_counts]
+		data = [count_train_in_counts, count_train_in_feats, count_train_out_counts,
+				count_dev_in_counts, count_dev_in_feats, count_dev_out_counts]
 		test_data = [count_test_in_counts, count_test_in_feats,
 					 count_test_out_counts, count_test_normm, count_test_norms]
 		model, count_dist_params = run_count_model(args, data, test_data)
@@ -6491,7 +6500,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 			in_bin_sz_plt = 10
 			for idx in range(10):
 				inp_count = utils.denormalize_data(
-					count_test_in_counts[idx, -in_bin_sz_plt:, 0],
+					count_test_in_counts[idx, -in_bin_sz_plt:],
 					count_test_normm, count_test_norms
 				)
 				x_range = np.arange(1, in_bin_sz_plt+args.out_bin_sz+1)

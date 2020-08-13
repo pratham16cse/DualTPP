@@ -5,6 +5,8 @@ import matplotlib.pyplot as plt
 from bisect import bisect_right
 from modules import Hawkes as hk
 import time
+from scipy.stats import entropy
+from collections import Counter
 
 import tensorflow as tf
 import tensorflow_probability as tfp
@@ -996,7 +998,13 @@ def get_processed_data(dataset_name, args):
 	) = generate_train_dev_test_data(
 	 	count_counts, count_binend, bintotimes, bintogaps, args.in_bin_sz,
 	 	bintotypes=bintotypes
-	 )
+	)
+	print('Data Statistics:')
+	print('Number of events in training:', len(flatten(bintotimes_train)))
+	print('Average gap:', np.mean(flatten(bintogaps_train)))
+	print('Variance of gaps:', np.std(flatten(bintogaps_train)))
+	print('Number of Types:', len(np.unique(flatten(bintotypes))))
+	print('Entropy of types distributions:', entropy([i for i in Counter(flatten(bintotypes)).values()]))
 
 
 	(
@@ -1075,6 +1083,27 @@ def get_processed_data(dataset_name, args):
 		count_test_binend, args.in_bin_sz, args.out_bin_sz, args.out_bin_sz,
 	)
 
+	count_train_in_counts, count_train_normm, count_train_norms \
+		= normalize_data(count_train_in_counts)
+	count_train_out_counts = normalize_data_given_param(count_train_out_counts,
+													count_train_normm,
+													count_train_norms)
+	count_dev_in_counts = normalize_data_given_param(count_dev_in_counts,
+													count_train_normm,
+													count_train_norms)
+	count_test_in_counts = normalize_data_given_param(count_test_in_counts,
+													count_train_normm,
+													count_train_norms)
+	#count_test_in_counts, count_test_normm, count_test_norms = normalize_data(count_test_in_counts)
+	count_test_normm, count_test_norms = count_train_normm, count_train_norms
+
+	count_train_in_feats = get_time_features(count_train_in_binend-bin_size/2.).astype(np.float32)
+	count_dev_in_feats = get_time_features(count_dev_in_binend-bin_size/2.).astype(np.float32)
+	count_test_in_feats = get_time_features(count_test_in_binend-bin_size/2.).astype(np.float32)
+	count_train_out_feats = get_time_features(count_train_out_binend-bin_size/2.).astype(np.float32)
+	count_test_out_feats = get_time_features(count_test_out_binend-bin_size/2.).astype(np.float32)
+
+
 	nc_event_train_in_gaps, nc_event_train_out_gaps = create_nowcast_io_seqs(
 		flatten(bintogaps_train), enc_len, args.stride_len,
 	)
@@ -1104,6 +1133,7 @@ def get_processed_data(dataset_name, args):
 	event_test_in_times, event_test_out_times = create_forecast_io_seqs(
 		bintotimes_test, args.in_bin_sz, args.out_bin_sz, args.out_bin_sz,
 	)
+
 	#event_test_in_gaps = np.array(pad_sequences([flatten(seq) for seq in event_test_in_gaps], padding='post'))
 	#event_test_in_types = np.array(pad_sequences([flatten(seq) for seq in event_test_in_types], padding='post'))
 	#event_test_in_times = np.array(pad_sequences([flatten(seq) for seq in event_test_in_times], padding='post'))
@@ -1120,29 +1150,20 @@ def get_processed_data(dataset_name, args):
 	#event_test_out_types = pad_sequences(event_test_out_types, padding='post').astype(np.int64)
 	#event_test_out_times = pad_sequences(event_test_out_times, padding='post').astype(np.float32)
 
-
 	event_test_in_lasttime = np.array([seq[-1] for seq in event_test_in_times])
-
-	event_test_in_gaps, event_test_norma, event_test_normd = normalize_avg(event_test_in_gaps)
-
-	count_train_in_counts, count_train_normm, count_train_norms \
-		= normalize_data(count_train_in_counts)
-	count_train_out_counts = normalize_data_given_param(count_train_out_counts,
-													count_train_normm,
-													count_train_norms)
-	count_test_in_counts, count_test_normm, count_test_norms = normalize_data(count_test_in_counts)
-
 
 	nc_event_train_in_gaps, event_train_norma, event_train_normd \
 		= normalize_avg(nc_event_train_in_gaps)
 	nc_event_train_out_gaps = normalize_avg_given_param(
 		nc_event_train_out_gaps, event_train_norma, event_train_normd
 	)
+	#event_test_in_gaps, event_test_norma, event_test_normd = normalize_avg(event_test_in_gaps)
+	event_test_in_gaps = normalize_avg_given_param(event_test_in_gaps, event_train_norma, event_train_normd)
+	event_test_norma, event_test_normd = event_train_norma, event_train_normd
 
 	nc_event_train_in_feats = get_time_features(nc_event_train_in_times)
 	nc_event_train_out_feats = get_time_features(nc_event_train_out_times)
 	nc_event_dev_in_feats = get_time_features(nc_event_dev_in_times)
-
 	event_test_in_feats = get_time_features(event_test_in_times)
 	#event_test_out_feats = np.expand_dims(get_time_features(pad_sequences(event_test_out_times, padding='post')), axis=-1).astype(np.float32)
 
@@ -1188,18 +1209,18 @@ def get_processed_data(dataset_name, args):
 	comp_test_out_times = np.array([flatten(seq) for seq in comp_test_out_times])
 
 
-	comp_test_in_gaps, comp_test_norma, comp_test_normd = normalize_avg(comp_test_in_gaps)
-
 	nc_comp_train_in_gaps, comp_train_norma, comp_train_normd \
 		= normalize_avg(nc_comp_train_in_gaps)
 	nc_comp_train_out_gaps = normalize_avg_given_param(
 		nc_comp_train_out_gaps, comp_train_norma, comp_train_normd
 	)
+	#comp_test_in_gaps, comp_test_norma, comp_test_normd = normalize_avg(comp_test_in_gaps)
+	comp_test_in_gaps = normalize_avg_given_param(comp_test_in_gaps, comp_train_norma, comp_train_normd)
+	comp_test_norma, comp_test_normd = comp_train_norma, comp_train_normd
 
 	nc_comp_train_in_feats = get_time_features(nc_comp_train_in_times)
 	nc_comp_train_out_feats = get_time_features(nc_comp_train_out_times)
 	nc_comp_dev_in_feats = get_time_features(nc_comp_dev_in_times)
-
 	comp_test_in_feats = get_time_features(comp_test_in_times)
 
 	print('')
@@ -1244,16 +1265,15 @@ def get_processed_data(dataset_name, args):
 	 										dataset_name)
 
 
-	test_out_end_hr_bins = count_test_out_binend
-	count_train_in_counts = np.expand_dims(count_train_in_counts, axis=-1).astype(np.float32)
-	count_test_in_counts = np.expand_dims(count_test_in_counts, axis=-1).astype(np.float32)
-	count_train_in_binend = np.expand_dims(count_train_in_binend, axis=-1).astype(np.float32)
-	count_train_out_binend = np.expand_dims(count_train_out_binend, axis=-1).astype(np.float32)
-	count_test_in_binend = np.expand_dims(count_test_in_binend, axis=-1).astype(np.float32)
-	count_train_in_feats = get_time_features(count_train_in_binend-bin_size/2.)
-	count_test_in_feats = get_time_features(count_test_in_binend-bin_size/2.)
-	count_train_out_feats = get_time_features(count_train_out_binend-bin_size/2.)
-	count_test_out_feats = get_time_features(count_test_out_binend-bin_size/2.)
+	#count_train_in_counts = np.expand_dims(count_train_in_counts, axis=-1).astype(np.float32)
+	#count_dev_in_counts = np.expand_dims(count_dev_in_counts, axis=-1).astype(np.float32)
+	#count_test_in_counts = np.expand_dims(count_test_in_counts, axis=-1).astype(np.float32)
+	#count_train_in_binend = np.expand_dims(count_train_in_binend, axis=-1).astype(np.float32)
+	#count_dev_in_binend = np.expand_dims(count_dev_in_binend, axis=-1).astype(np.float32)
+	#count_test_in_binend = np.expand_dims(count_test_in_binend, axis=-1).astype(np.float32)
+	#count_train_out_binend = np.expand_dims(count_train_out_binend, axis=-1).astype(np.float32)
+	#count_dev_out_binend = np.expand_dims(count_dev_out_binend, axis=-1).astype(np.float32)
+
 
 	print(count_train_in_counts.shape)
 	print(count_test_in_counts.shape)
@@ -1341,6 +1361,11 @@ def get_processed_data(dataset_name, args):
 		'count_train_in_counts': count_train_in_counts,
 		'count_train_in_feats': count_train_in_feats,
 		'count_train_out_counts': count_train_out_counts,
+
+		# Count dev data
+		'count_dev_in_counts': count_dev_in_counts,
+		'count_dev_in_feats': count_dev_in_feats,
+		'count_dev_out_counts': count_dev_out_counts,
 
 		# Count test data
 		'count_test_in_counts': count_test_in_counts,
