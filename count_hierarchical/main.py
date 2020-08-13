@@ -61,7 +61,7 @@ parser.add_argument('--out_bin_sz', type=int,
                     help='Output count of bin',
                     default=1)
 
-parser.add_argument('--cnt_net_type', type=str,
+parser.add_argument('--cnt_net_type', type=str, default='ff',
                     help='Count model network type (ff or rnn)')
 
 # enc_len = 80  # For RMTPP

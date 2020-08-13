@@ -756,7 +756,7 @@ def run_count_model(args, data, test_data):
 			step_cnt += 1
 		
 		# Dev calculations
-		count_dev_pred, _ = model(count_dev_in_counts, count_dev_in_feats)		
+		count_dev_pred, _ = model(count_dev_in_counts, count_dev_in_feats)
 		count_dev_pred_unnorm = utils.denormalize_data(count_dev_pred, count_test_normm, count_test_norms)
 		dev_gap_metric_mae(count_dev_pred_unnorm, count_dev_out_counts)
 		dev_gap_metric_mse(count_dev_pred_unnorm, count_dev_out_counts)
@@ -4018,6 +4018,9 @@ def run_rmtpp_optimizer_model(
 			if args.current_model in ['rmtpp_mse_coopt', 'rmtpp_mse_var_coopt']:
 				min_cnt = int(event_count_preds_cnt[batch_idx, dec_idx])
 				max_cnt = int(event_count_preds_cnt[batch_idx, dec_idx])
+			if args.search == 1:
+				min_cnt = int(event_count_preds_cnt[batch_idx, dec_idx] - event_count_preds_stddev[batch_idx, dec_idx])
+				max_cnt = int(event_count_preds_cnt[batch_idx, dec_idx] + event_count_preds_stddev[batch_idx, dec_idx])
 			nc_range = np.arange(min_cnt, max_cnt+1)
 			def linear_search(counts_range, low, high):
 				nc_loss_min = np.inf
