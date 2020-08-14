@@ -6432,14 +6432,18 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 					np.mean(all_best_nc_count_losses),
 				)
 				write_arr_to_file(
-					os.path.join(
-						args.output_dir,
-						args.current_dataset+'__'+inference_model_name,
-					),
+					args.output_dir, args.current_dataset, inference_model_name,
 					all_times_true,
 					all_times_pred,
 					all_types_true,
 					all_types_pred,
+					all_counts_true,
+					all_counts_pred,
+					count_dist_params[1],
+					utils.denormalize_data(
+						count_test_in_counts,
+						count_test_normm, count_test_norms,
+					)
 				)
 				write_pe_metrics_to_file(
 					os.path.join(

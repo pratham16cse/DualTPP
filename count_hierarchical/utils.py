@@ -125,7 +125,16 @@ def add_metrics_to_dict(
 
 	return metrics_dict
 
-def write_arr_to_file(output_path, arr_true, arr_pred, types_true, types_pred):
+def write_arr_to_file(
+	output_dir, current_dataset, inference_model_name,
+	arr_true, arr_pred, types_true, types_pred,
+	counts_true, counts_pred, counts_sigms,
+	counts_input,
+):
+	
+	output_path = os.path.join(
+		output_dir, current_dataset+'__'+inference_model_name,
+	)
 	# Files are saved in .npy format
 	np.save(
 		output_path + '__' + 'fh_times_true',
@@ -143,6 +152,34 @@ def write_arr_to_file(output_path, arr_true, arr_pred, types_true, types_pred):
 		output_path + '__' + 'fh_types_pred',
 		types_pred,
 	)
+
+	for fname in os.listdir(output_dir):
+	    if fname.endswith(current_dataset+'__fh_counts_true'):
+	        break
+	else:
+		np.save(
+			output_path + '__' + 'fh_counts_true',
+			counts_true,
+		)
+	np.save(
+		output_path + '__' + 'fh_counts_pred',
+		counts_pred,
+	)
+	for fname in os.listdir(output_dir):
+	    if fname.endswith(current_dataset+'__counts_input'):
+	        break
+	else:
+		np.save(
+			os.path.join(
+				output_dir, current_dataset + '__' + 'counts_input',
+			),
+			counts_input,
+		)
+	if inference_model_name == 'count_only':
+		np.save(
+			output_path + '__' + 'fh_counts_sigms',
+			counts_sigms,
+		)
 
 def write_pe_metrics_to_file(
 	output_path,
