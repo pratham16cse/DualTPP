@@ -1037,11 +1037,16 @@ def get_processed_data(dataset_name, args):
 	 	bintotypes=bintotypes
 	)
 	print('Data Statistics:')
-	print('Number of events in training:', len(flatten(bintotimes_train)))
+	print('Total Number of events:', len(flatten(bintotimes)))
+	print('Number of events in training set:', len(flatten(bintotimes_train)))
+	print('Number of events in dev set:', len(flatten(bintotimes_dev)))
+	print('Number of events in test set:', len(flatten(bintotimes_test)))
 	print('Average gap:', np.mean(flatten(bintogaps_train)))
 	print('Variance of gaps:', np.std(flatten(bintogaps_train)))
 	print('Number of Types:', len(np.unique(flatten(bintotypes))))
 	print('Entropy of types distributions:', entropy([i for i in Counter(flatten(bintotypes)).values()]))
+	#import ipdb
+	#ipdb.set_trace()
 
 
 	(
