@@ -1210,23 +1210,23 @@ def get_processed_data(dataset_name, args):
 	#event_test_out_feats = np.expand_dims(get_time_features(pad_sequences(event_test_out_times, padding='post')), axis=-1).astype(np.float32)
 
 	nc_comp_train_in_gaps, nc_comp_train_out_gaps = create_nowcast_io_seqs(
-		flatten(bintogaps_train), enc_len, args.stride_len,
+		flatten(bintogaps_train_comp), enc_len, args.stride_len,
 	)
 	nc_comp_train_in_types, nc_comp_train_out_types = create_nowcast_io_seqs(
-		flatten(bintotypes_train), enc_len, args.stride_len,
+		flatten(bintotypes_train_comp), enc_len, args.stride_len,
 	)
 	nc_comp_train_in_times, nc_comp_train_out_times = create_nowcast_io_seqs(
-		flatten(bintotimes_train), enc_len, args.stride_len,
+		flatten(bintotimes_train_comp), enc_len, args.stride_len,
 	)
 
 	nc_comp_dev_in_gaps, nc_comp_dev_out_gaps = create_nowcast_io_seqs(
-		flatten(bintogaps_dev), enc_len, args.stride_len,
+		flatten(bintogaps_dev_comp), enc_len, args.stride_len,
 	)
 	nc_comp_dev_in_types, nc_comp_dev_out_types = create_nowcast_io_seqs(
-		flatten(bintotypes_dev), enc_len, args.stride_len,
+		flatten(bintotypes_dev_comp), enc_len, args.stride_len,
 	)
 	nc_comp_dev_in_times, nc_comp_dev_out_times = create_nowcast_io_seqs(
-		flatten(bintotimes_dev), enc_len, args.stride_len,
+		flatten(bintotimes_dev_comp), enc_len, args.stride_len,
 	)
 
 	comp_test_in_gaps, comp_test_out_gaps = create_forecast_io_seqs(
