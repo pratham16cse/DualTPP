@@ -41,6 +41,8 @@ parser.add_argument('-embds', '--embed_size', type=int, default=8, nargs='+',
 parser.add_argument('--output_dir', type=str,
                     help='Path to store all raw outputs, checkpoints, \
                           summaries, and plots', default='Outputs')
+parser.add_argument('--saved_models', type=str,
+                    help='Path to store model checkpoints', default='saved_models')
 
 parser.add_argument('--seed', type=int,
                     help='Seed for parameter initialization',
@@ -209,22 +211,22 @@ args.model_name = model_names
 run_model_flags = OrderedDict()
 if 'rmtpp_nll' in model_names:
     run_model_flags['rmtpp_nll_opt'] = {'rmtpp_type':'nll'}
-    run_model_flags['rmtpp_nll_cont'] = {'rmtpp_type':'nll'}
+    #run_model_flags['rmtpp_nll_cont'] = {'rmtpp_type':'nll'}
     #run_model_flags['rmtpp_nll_reinit'] = True
     run_model_flags['rmtpp_nll_simu'] = {'rmtpp_type':'nll'}
 if 'rmtpp_mse' in model_names:
     run_model_flags['rmtpp_mse_opt'] = {'rmtpp_type':'mse'}
-    run_model_flags['rmtpp_mse_cont'] = {'rmtpp_type':'mse'}
+    #run_model_flags['rmtpp_mse_cont'] = {'rmtpp_type':'mse'}
     #run_model_flags['rmtpp_mse_reinit'] = True
     run_model_flags['rmtpp_mse_simu'] = {'rmtpp_type':'mse'}
     #run_model_flags['rmtpp_mse_simu_nc'] = {'rmtpp_type':'mse'}
-    run_model_flags['rmtpp_mse_coopt'] = {'rmtpp_type':'mse'}
+    #run_model_flags['rmtpp_mse_coopt'] = {'rmtpp_type':'mse'}
 if 'rmtpp_mse_var' in model_names:
     run_model_flags['rmtpp_mse_var_opt'] = {'rmtpp_type':'mse_var'}
-    run_model_flags['rmtpp_mse_var_cont'] = {'rmtpp_type':'mse_var'}
+    #run_model_flags['rmtpp_mse_var_cont'] = {'rmtpp_type':'mse_var'}
     #run_model_flags['rmtpp_mse_var_reinit'] = True
     run_model_flags['rmtpp_mse_var_simu'] = {'rmtpp_type':'mse_var'}
-    run_model_flags['rmtpp_mse_var_coopt'] = {'rmtpp_type':'mse_var'}
+    #run_model_flags['rmtpp_mse_var_coopt'] = {'rmtpp_type':'mse_var'}
 if 'rmtpp_nll_comp' in model_names:
     #run_model_flags['run_rmtpp_with_joint_optimization_fixed_cnt_solver_nll_comp'] = True
     run_model_flags['rmtpp_nll_opt_comp'] = {'rmtpp_type':'nll', 'rmtpp_type_comp':'nll'}
@@ -232,11 +234,11 @@ if 'rmtpp_nll_comp' in model_names:
 if 'rmtpp_mse_comp' in model_names:
     #run_model_flags['run_rmtpp_with_joint_optimization_fixed_cnt_solver_mse_comp'] = True
     run_model_flags['rmtpp_mse_opt_comp'] = {'rmtpp_type':'mse', 'rmtpp_type_comp':'mse'}
-    run_model_flags['rmtpp_mse_cont_comp'] = {'rmtpp_type':'mse', 'rmtpp_type_comp':'mse'}
+    #run_model_flags['rmtpp_mse_cont_comp'] = {'rmtpp_type':'mse', 'rmtpp_type_comp':'mse'}
 if 'rmtpp_mse_var_comp' in model_names:
     #run_model_flags['run_rmtpp_with_joint_optimization_fixed_cnt_solver_mse_var_comp'] = True
     run_model_flags['rmtpp_mse_var_opt_comp'] = {'rmtpp_type':'mse_var', 'rmtpp_type_comp':'mse_var'}
-    run_model_flags['rmtpp_mse_var_cont_comp'] = {'rmtpp_type':'mse_var', 'rmtpp_type_comp':'mse_var'}
+    #run_model_flags['rmtpp_mse_var_cont_comp'] = {'rmtpp_type':'mse_var', 'rmtpp_type_comp':'mse_var'}
 if 'pure_hierarchical_nll' in model_names:
     run_model_flags['run_pure_hierarchical_infer_nll'] = True
 if 'pure_hierarchical_mse' in model_names:
@@ -249,7 +251,7 @@ if 'seq2seq' in model_names:
     run_model_flags['seq2seq_simu'] = True
 if 'transformer' in model_names:
     run_model_flags['transformer_simu'] = True
-    run_model_flags['transformer_simu_nc'] = True
+    #run_model_flags['transformer_simu_nc'] = True
 if 'hawkes_model' in model_names:
     run_model_flags['hawkes_simu'] = True
 

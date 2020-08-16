@@ -938,6 +938,7 @@ class Encoder(tf.keras.Model):
         #self.event_emb = nn.Embedding(num_types + 1, d_model, padding_idx=Constants.PAD)
         self.event_emb = layers.Embedding(num_types+1, d_model, mask_zero=True)
         self.feature_enc_layer = layers.Dense(d_model)
+        #self.temporal_enc_layer = layers.Dense(d_model, activation=tf.nn.relu)
 
         #TODO: What to do with nn.ModuleList?
         #self.layer_stack = nn.ModuleList([
@@ -974,6 +975,7 @@ class Encoder(tf.keras.Model):
         slf_attn_mask = (slf_attn_mask_keypad + slf_attn_mask_subseq)>(0)
 
         tem_enc = self.temporal_enc(event_time, non_pad_mask)
+        #tem_enc = self.temporal_enc_layer(event_time)
         feats_enc = self.feature_enc_layer(event_feats)
         enc_output = self.event_emb(event_type)
 

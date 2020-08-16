@@ -1199,6 +1199,7 @@ def get_processed_data(dataset_name, args):
 	nc_event_train_out_gaps = normalize_avg_given_param(
 		nc_event_train_out_gaps, event_train_norma, event_train_normd
 	)
+	nc_event_dev_in_gaps = normalize_avg_given_param(nc_event_dev_in_gaps, event_train_norma, event_train_normd)
 	#event_test_in_gaps, event_test_norma, event_test_normd = normalize_avg(event_test_in_gaps)
 	event_test_in_gaps = normalize_avg_given_param(event_test_in_gaps, event_train_norma, event_train_normd)
 	event_test_norma, event_test_normd = event_train_norma, event_train_normd
@@ -1347,34 +1348,34 @@ def get_processed_data(dataset_name, args):
 #		nc_event_train_out_types = nc_event_train_out_types[indices]
 #	# ----- End: Data Augmentation to counter skewness in the data ----- #
 
-	nc_event_train_in_gaps = np.expand_dims(nc_event_train_in_gaps, axis=-1)
-	nc_event_train_in_feats = np.expand_dims(nc_event_train_in_feats, axis=-1)
-	nc_event_train_out_gaps = np.expand_dims(nc_event_train_out_gaps, axis=-1)
-	nc_event_train_out_feats = np.expand_dims(nc_event_train_out_feats, axis=-1)
+	nc_event_train_in_gaps = np.expand_dims(nc_event_train_in_gaps, axis=-1).astype(np.float32)
+	nc_event_train_in_feats = np.expand_dims(nc_event_train_in_feats, axis=-1).astype(np.float32)
+	nc_event_train_out_gaps = np.expand_dims(nc_event_train_out_gaps, axis=-1).astype(np.float32)
+	nc_event_train_out_feats = np.expand_dims(nc_event_train_out_feats, axis=-1).astype(np.float32)
 
-	nc_event_dev_in_gaps = np.expand_dims(nc_event_dev_in_gaps, axis=-1)
-	nc_event_dev_in_feats = np.expand_dims(nc_event_dev_in_feats, axis=-1)
-	nc_event_dev_out_gaps = np.expand_dims(nc_event_dev_out_gaps, axis=-1)
-
-
-	event_test_in_gaps = np.expand_dims(event_test_in_gaps, axis=-1)
-	event_test_in_feats = np.expand_dims(event_test_in_feats, axis=-1)
-	count_test_out_binend = np.expand_dims(count_test_out_binend, axis=-1)
-	event_test_in_lasttime = np.expand_dims(event_test_in_lasttime, axis=-1)
-	#event_test_out_times = np.expand_dims(event_test_out_times, axis=-1)
-
-	nc_comp_train_in_gaps = np.expand_dims(nc_comp_train_in_gaps, axis=-1)
-	nc_comp_train_in_feats = np.expand_dims(nc_comp_train_in_feats, axis=-1)
-	nc_comp_train_out_gaps = np.expand_dims(nc_comp_train_out_gaps, axis=-1)
-	nc_comp_train_out_feats = np.expand_dims(nc_comp_train_out_feats, axis=-1)
+	nc_event_dev_in_gaps = np.expand_dims(nc_event_dev_in_gaps, axis=-1).astype(np.float32)
+	nc_event_dev_in_feats = np.expand_dims(nc_event_dev_in_feats, axis=-1).astype(np.float32)
+	nc_event_dev_out_gaps = np.expand_dims(nc_event_dev_out_gaps, axis=-1).astype(np.float32)
 
 
-	nc_comp_dev_in_gaps = np.expand_dims(nc_comp_dev_in_gaps, axis=-1)
-	nc_comp_dev_in_feats = np.expand_dims(nc_comp_dev_in_feats, axis=-1)
-	nc_comp_dev_out_gaps = np.expand_dims(nc_comp_dev_out_gaps, axis=-1)
+	event_test_in_gaps = np.expand_dims(event_test_in_gaps, axis=-1).astype(np.float32)
+	event_test_in_feats = np.expand_dims(event_test_in_feats, axis=-1).astype(np.float32)
+	count_test_out_binend = np.expand_dims(count_test_out_binend, axis=-1).astype(np.float32)
+	event_test_in_lasttime = np.expand_dims(event_test_in_lasttime, axis=-1).astype(np.float32)
+	#event_test_out_times = np.expand_dims(event_test_out_times, axis=-1).astype(np.float32)
 
-	comp_test_in_gaps = np.expand_dims(comp_test_in_gaps, axis=-1)
-	comp_test_in_feats = np.expand_dims(comp_test_in_feats, axis=-1)
+	nc_comp_train_in_gaps = np.expand_dims(nc_comp_train_in_gaps, axis=-1).astype(np.float32)
+	nc_comp_train_in_feats = np.expand_dims(nc_comp_train_in_feats, axis=-1).astype(np.float32)
+	nc_comp_train_out_gaps = np.expand_dims(nc_comp_train_out_gaps, axis=-1).astype(np.float32)
+	nc_comp_train_out_feats = np.expand_dims(nc_comp_train_out_feats, axis=-1).astype(np.float32)
+
+
+	nc_comp_dev_in_gaps = np.expand_dims(nc_comp_dev_in_gaps, axis=-1).astype(np.float32)
+	nc_comp_dev_in_feats = np.expand_dims(nc_comp_dev_in_feats, axis=-1).astype(np.float32)
+	nc_comp_dev_out_gaps = np.expand_dims(nc_comp_dev_out_gaps, axis=-1).astype(np.float32)
+
+	comp_test_in_gaps = np.expand_dims(comp_test_in_gaps, axis=-1).astype(np.float32)
+	comp_test_in_feats = np.expand_dims(comp_test_in_feats, axis=-1).astype(np.float32)
 	comp_test_out_times = np.expand_dims(comp_test_out_times, axis=-1)
 
 	#import ipdb

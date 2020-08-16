@@ -240,7 +240,7 @@ def run_rmtpp(args, model, optimizer, data, var_data, NLL_loss,
 	# train_gap_in_bin_norm_a, train_gap_in_bin_norm_d] = var_data
 	model_name = args.current_model
 
-	os.makedirs('saved_models/training_'+model_name+'_'+args.current_dataset+'/', exist_ok=True)
+	os.makedirs(args.saved_models+'/training_'+model_name+'_'+args.current_dataset+'/', exist_ok=True)
 	checkpoint_path = "saved_models/training_"+model_name+"_"+args.current_dataset+"/cp_"+args.current_dataset+".ckpt"
 	best_dev_gap_mse = np.inf
 	best_dev_epoch = 0
@@ -272,8 +272,8 @@ def run_rmtpp(args, model, optimizer, data, var_data, NLL_loss,
 										   num_pos, hls)
 		var_optimizer = keras.optimizers.Adam(args.learning_rate)
 
-		os.makedirs('saved_models/training_rmtpp_var_model_'+args.current_dataset+'/', exist_ok=True)
-		var_checkpoint_path = "saved_models/training_rmtpp_var_model_"+args.current_dataset+"/cp_"+args.current_dataset+".ckpt"
+		os.makedirs(args.saved_models+'/training_rmtpp_var_model_'+args.current_dataset+'/', exist_ok=True)
+		var_checkpoint_path = args.saved_models+"/training_rmtpp_var_model_"+args.current_dataset+"/cp_"+args.current_dataset+".ckpt"
 
 		best_dev_var_loss = np.inf
 		best_dev_var_epoch = 0
@@ -653,8 +653,8 @@ def run_hierarchical(args, data, test_data):
 	batch_size = args.batch_size
 
 	model_name = args.current_model
-	os.makedirs('saved_models/training_'+model_name+'_'+args.current_dataset+'/', exist_ok=True)
-	checkpoint_path = "saved_models/training_"+model_name+"_"+args.current_dataset+"/cp_"+args.current_dataset+".ckpt"
+	os.makedirs(args.saved_models+'/training_'+model_name+'_'+args.current_dataset+'/', exist_ok=True)
+	checkpoint_path = args.saved_models+"/training_"+model_name+"_"+args.current_dataset+"/cp_"+args.current_dataset+".ckpt"
 
 	model_cnt = models.hierarchical_model(args)
 	model_cnt.summary()
@@ -721,8 +721,8 @@ def run_count_model(args, data, test_data):
 	model, optimizer = models.build_count_model(args, distribution_name)
 	#model.summary()
 
-	os.makedirs('saved_models/training_count_'+args.current_dataset+'/', exist_ok=True)
-	checkpoint_path = "saved_models/training_count_"+args.current_dataset+"/cp_"+args.current_dataset+".ckpt"
+	os.makedirs(args.saved_models+'/training_count_'+args.current_dataset+'/', exist_ok=True)
+	checkpoint_path = args.saved_models+"/training_count_"+args.current_dataset+"/cp_"+args.current_dataset+".ckpt"
 	best_dev_gap_mae = np.inf
 	best_dev_epoch = 0
 
@@ -899,8 +899,8 @@ def run_wgan(args, data, test_data):
 	#										event_train_norma,
 	#										event_train_normd)
 
-	os.makedirs('saved_models/training_wgan_'+args.current_dataset+'/', exist_ok=True)
-	checkpoint_path = "saved_models/training_wgan_"+args.current_dataset+"/cp_"+args.current_dataset+".ckpt"
+	os.makedirs(args.saved_models+'/training_wgan_'+args.current_dataset+'/', exist_ok=True)
+	checkpoint_path = args.saved_models+"/training_wgan_"+args.current_dataset+"/cp_"+args.current_dataset+".ckpt"
 	best_dev_gap_mse = np.inf
 	best_dev_gap_mae = np.inf
 	best_dev_epoch = 0
@@ -1095,8 +1095,8 @@ def run_seq2seq(args, data, test_data):
 	wgan_dec_len = dev_data_gaps.shape[1] - wgan_enc_len
 	dev_data_times = tf.cumsum(dev_data_gaps, axis=1)
 
-	os.makedirs('saved_models/training_'+model_name+'_'+args.current_dataset+'/', exist_ok=True)
-	checkpoint_path = "saved_models/training_"+model_name+"_"+args.current_dataset+"/cp_"+args.current_dataset+".ckpt"
+	os.makedirs(args.saved_models+'/training_'+model_name+'_'+args.current_dataset+'/', exist_ok=True)
+	checkpoint_path = args.saved_models+"/training_"+model_name+"_"+args.current_dataset+"/cp_"+args.current_dataset+".ckpt"
 	best_dev_gap_mse = np.inf
 	best_dev_gap_mae = np.inf
 	best_dev_epoch = 0
@@ -1119,6 +1119,8 @@ def run_seq2seq(args, data, test_data):
 		next_initial_state = None
 		for sm_step, (gaps_batch, feats_batch, _, _, _, _) \
 				in enumerate(train_dataset_gaps):
+			if sm_step>=50:
+				break
 			gaps_batch_in = gaps_batch[:, :wgan_enc_len]
 			feats_batch_in = feats_batch[:, :wgan_enc_len]
 			gaps_batch_out = gaps_batch[:, wgan_enc_len:]
@@ -1157,6 +1159,8 @@ def run_seq2seq(args, data, test_data):
 					lipschtiz_divergence = tf.abs(tf.reduce_sum(D_x_grads)-1)
 
 					D_loss += LAMBDA_LP*lipschtiz_divergence
+				else:
+					G_loss = G_mse_loss
 
 				step_train_loss += G_loss.numpy()
 				
@@ -1174,7 +1178,10 @@ def run_seq2seq(args, data, test_data):
 			train_gap_metric_mse.reset_states()
 
 			# print(float(train_gap_mae), float(train_gap_mse))
-			print('Training loss (for one batch) at step %s: %s %s %s' %(sm_step, float(G_mse_loss), float(G_loss), float(D_loss)))
+			if args.use_cwe_d:
+				print('Training loss (for one batch) at step %s: %s %s %s' %(sm_step, float(G_mse_loss), float(G_loss), float(D_loss)))
+			else:
+				print('Training loss (for one batch) at step %s: %s %s' %(sm_step, float(G_mse_loss), float(G_loss)))
 			step_cnt += 1
 		
 		# Dev calculations
@@ -1197,9 +1204,10 @@ def run_seq2seq(args, data, test_data):
 		dev_gap_mse = dev_gap_metric_mse.result()
 		dev_gap_metric_mae.reset_states()
 		dev_gap_metric_mse.reset_states()
-		#if best_dev_gap_mse > dev_gap_mse:
-		if best_dev_gap_mae > dev_gap_mae:
+		if best_dev_gap_mse > dev_gap_mse:
+		#if best_dev_gap_mae > dev_gap_mae:
 			best_dev_gap_mae = dev_gap_mae
+			best_dev_gap_mse = dev_gap_mse
 			best_dev_epoch = epoch
 			print('Saving model at epoch', epoch)
 			model.save_weights(checkpoint_path)
@@ -1279,8 +1287,8 @@ def run_transformer(args, data, test_data):
 	dec_len = args.out_bin_sz
 	bin_size = args.bin_size
 
-	os.makedirs('saved_models/training_'+model_name+'_'+args.current_dataset+'/', exist_ok=True)
-	checkpoint_path = "saved_models/training_"+model_name+"_"+args.current_dataset+"/cp_"+args.current_dataset+".ckpt"
+	os.makedirs(args.saved_models+'/training_'+model_name+'_'+args.current_dataset+'/', exist_ok=True)
+	checkpoint_path = args.saved_models+"/training_"+model_name+"_"+args.current_dataset+"/cp_"+args.current_dataset+".ckpt"
 	best_dev_gap_mse = np.inf
 	best_dev_epoch = 0
 	enc_len = args.enc_len
@@ -1300,6 +1308,8 @@ def run_transformer(args, data, test_data):
 		for sm_step, (gaps_batch_in, feats_batch_in, types_batch_in,
 					  gaps_batch_out, feats_batch_out, types_batch_out) \
 						in enumerate(train_dataset_gaps):
+			#if sm_step>50:
+			#	break	
 			with tf.GradientTape() as tape:
 
 				enc_out, (types_pred, gaps_pred) = model(
@@ -1329,6 +1339,7 @@ def run_transformer(args, data, test_data):
 				se = transformer_utils.time_loss(gaps_pred, gaps_batch_out)
 				scale_se_loss = 10 # SE is usually large, scale it to stabilize training
 				gap_loss = -tf.reduce_sum(event_ll - non_event_ll) + se / scale_se_loss
+				#gap_loss = se
 				type_loss, _ = transformer_utils.type_loss(types_pred, types_batch_out, type_loss_func)
 				#import ipdb
 				#ipdb.set_trace()
@@ -2085,7 +2096,7 @@ def simulate_transformer(
 	while any(times_pred[-1]<t_b_plus):
 		simul_step += 1
 
-		#print(np.sum(times_pred[-1]<t_b_plus), t_b_plus.shape)
+		print('transformer sim:', np.sum(times_pred[-1]<t_b_plus), t_b_plus.shape)
 		#print(np.squeeze(t_b_plus-times_pred[-1], axis=-1))
 		#print(gaps_in[0, :, 0])
 		enc_out, (step_types_logits, step_gaps_pred) = model(gaps_in, feats_in, types_in)
@@ -3446,6 +3457,7 @@ def run_rmtpp_optimizer_model(
 	test_data,
 	test_data_out_gaps_bin,
 	dataset,
+	inference_model_name,
 	rmtpp_type='nll'
 ):
 
@@ -4015,7 +4027,7 @@ def run_rmtpp_optimizer_model(
 
 			#min_cnt = dataset['count_test_out_counts'][batch_idx, dec_idx]
 			#max_cnt = min_cnt
-			if args.current_model in ['rmtpp_mse_coopt', 'rmtpp_mse_var_coopt']:
+			if inference_model_name in ['rmtpp_mse_coopt', 'rmtpp_mse_var_coopt']:
 				min_cnt = int(event_count_preds_cnt[batch_idx, dec_idx])
 				max_cnt = int(event_count_preds_cnt[batch_idx, dec_idx])
 			if args.search == 1:
@@ -6186,6 +6198,7 @@ def run_model(dataset_name, model_name, dataset, args, results, prev_models=None
 						test_data,
 						test_data_out_gaps_bin,
 						dataset,
+						inference_model_name,
 						rmtpp_type=run_model_flags[inference_model_name]['rmtpp_type']
 					)
 
