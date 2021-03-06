@@ -1,16 +1,24 @@
 import tensorflow as tf
 import numpy as np
+import time
 import os
 import decorated_options as Deco
 from .utils import create_dir, variable_summaries, MAE, ACC
 from scipy.integrate import quad
 import multiprocessing as MP
 
+from .BatchGenerator import BatchGenerator
+
 
 __EMBED_SIZE = 4
 __HIDDEN_LAYER_SIZE = 16  # 64, 128, 256, 512, 1024
+__NUM_FEATS = 1 # TODO: Read this from data
 
 def_opts = Deco.Options(
+    normalize=False,
+    minTime=0,
+    maxTime=1,
+
     batch_size=64,          # 16, 32, 64
 
     learning_rate=0.1,      # 0.1, 0.01, 0.001
@@ -24,19 +32,22 @@ def_opts = Deco.Options(
 
     seed=42,
     scope='RMTPP',
+    gtVsPredOutputFile='./output.pkl',
     save_dir='./save.rmtpp/',
     summary_dir='./summary.rmtpp/',
 
     device_gpu='/gpu:0',
+    #device_gpu = '/job:localhost/replica:0/task:0/device:XLA_CPU:0',
     device_cpu='/cpu:0',
 
     bptt=20,
+    num_feats=1,
     cpu_only=False,
 
     embed_size=__EMBED_SIZE,
     Wem=lambda num_categories: np.random.RandomState(42).randn(num_categories, __EMBED_SIZE) * 0.01,
 
-    Wt=np.ones((1, __HIDDEN_LAYER_SIZE)) * 1e-3,
+    Wt=np.ones((1+__NUM_FEATS, __HIDDEN_LAYER_SIZE)) * 1e-3,
     Wh=np.eye(__HIDDEN_LAYER_SIZE),
     bh=np.ones((1, __HIDDEN_LAYER_SIZE)),
     wt=1.0,
@@ -63,11 +74,14 @@ class RMTPP:
     """Class implementing the Recurrent Marked Temporal Point Process model."""
 
     @Deco.optioned()
-    def __init__(self, sess, num_categories, batch_size,
+    def __init__(self, sess, num_categories, normalize, minTime, maxTime, batch_size,
                  learning_rate, momentum, l2_penalty, embed_size,
-                 float_type, bptt, seed, scope, save_dir, decay_steps, decay_rate,
+                 float_type, bptt, num_feats, seed, scope, save_dir, decay_steps, decay_rate,
                  device_gpu, device_cpu, summary_dir, cpu_only,
                  Wt, Wem, Wh, bh, wt, Wy, Vy, Vt, bk, bt):
+        self.NORMALIZE = normalize
+        self.minTime = minTime
+        self.maxTime = maxTime
         self.HIDDEN_LAYER_SIZE = Wh.shape[0]
         self.BATCH_SIZE = batch_size
         self.LEARNING_RATE = learning_rate
@@ -75,6 +89,7 @@ class RMTPP:
         self.L2_PENALTY = l2_penalty
         self.EMBED_SIZE = embed_size
         self.BPTT = bptt
+        self.NUM_FEATS = num_feats
         self.SAVE_DIR = save_dir
         self.SUMMARY_DIR = summary_dir
 
@@ -95,6 +110,7 @@ class RMTPP:
                 # Make input variables
                 self.events_in = tf.placeholder(tf.int32, [None, self.BPTT], name='events_in')
                 self.times_in = tf.placeholder(self.FLOAT_TYPE, [None, self.BPTT], name='times_in')
+                self.feats_in = tf.placeholder(self.FLOAT_TYPE, [None, self.BPTT, self.NUM_FEATS], name='feats_in')
 
                 self.events_out = tf.placeholder(tf.int32, [None, self.BPTT], name='events_out')
                 self.times_out = tf.placeholder(self.FLOAT_TYPE, [None, self.BPTT], name='times_out')
@@ -106,7 +122,7 @@ class RMTPP:
                 # Make variables
                 with tf.variable_scope('hidden_state'):
                     self.Wt = tf.get_variable(name='Wt',
-                                              shape=(1, self.HIDDEN_LAYER_SIZE),
+                                              shape=(1+self.NUM_FEATS, self.HIDDEN_LAYER_SIZE),
                                               dtype=self.FLOAT_TYPE,
                                               initializer=tf.constant_initializer(Wt))
 
@@ -191,9 +207,11 @@ class RMTPP:
                         events_embedded = tf.nn.embedding_lookup(self.Wem,
                                                                  tf.mod(self.events_in[:, i] - 1, self.NUM_CATEGORIES))
                         time = self.times_in[:, i]
+                        feat = self.feats_in[:, i, :]
                         time_next = self.times_out[:, i]
 
                         delta_t_prev = tf.expand_dims(time - last_time, axis=-1)
+                        delta_t_prev = tf.concat([delta_t_prev, feat], axis=-1)
                         delta_t_next = tf.expand_dims(time_next - time, axis=-1)
 
                         last_time = time
@@ -446,8 +464,16 @@ class RMTPP:
 
         train_event_in_seq = training_data['train_event_in_seq']
         train_time_in_seq = training_data['train_time_in_seq']
+        train_feat_in_seq = training_data['train_feat_in_seq']
         train_event_out_seq = training_data['train_event_out_seq']
         train_time_out_seq = training_data['train_time_out_seq']
+        test_feat_in_seq = training_data['test_feat_in_seq']
+
+        event_in_itr = BatchGenerator(train_event_in_seq, batchSeqLen=self.BPTT)
+        time_in_itr = BatchGenerator(train_time_in_seq, batchSeqLen=self.BPTT)
+        feat_in_itr = BatchGenerator(train_feat_in_seq, batchSeqLen=self.BPTT)
+        event_out_itr = BatchGenerator(train_event_out_seq, batchSeqLen=self.BPTT)
+        time_out_itr = BatchGenerator(train_time_out_seq, batchSeqLen=self.BPTT)
 
         idxes = list(range(len(train_event_in_seq)))
         n_batches = len(idxes) // self.BATCH_SIZE
@@ -458,7 +484,11 @@ class RMTPP:
             print("Starting epoch...", epoch)
             total_loss = 0.0
 
-            for batch_idx in range(n_batches):
+            batch_idx = 0
+            currItr = time_in_itr.iterFinished
+            while currItr == time_in_itr.iterFinished:
+                batch_st = time.time()
+                batch_idx += 1
                 # TODO: This is horribly inefficient. Move this to a separate
                 # thread using FIFOQueues.
                 # However, the previous state from BPTT still needs to be
@@ -468,75 +498,83 @@ class RMTPP:
                 #  - Sounds like a job for tf.placeholder_with_default?
                 #  - Or, of a variable with optinal default?
 
-                batch_idxes = idxes[batch_idx * self.BATCH_SIZE:(batch_idx + 1) * self.BATCH_SIZE]
-                batch_event_train_in = train_event_in_seq[batch_idxes, :]
-                batch_event_train_out = train_event_out_seq[batch_idxes, :]
-                batch_time_train_in = train_time_in_seq[batch_idxes, :]
-                batch_time_train_out = train_time_out_seq[batch_idxes, :]
+                batch_generation_st = time.time()
+                batch_event_in, _, _, _, _ = event_in_itr.nextBatch(batchSize=self.BATCH_SIZE)
+                batch_event_out, _, _, _, _ = event_out_itr.nextBatch(batchSize=self.BATCH_SIZE)
+                batch_time_in, tsIndices, startingTs, endingTs, mask = time_in_itr.nextBatch(batchSize=self.BATCH_SIZE)
+                batch_feat_in, _, _, _, _ = feat_in_itr.nextBatch(batchSize=self.BATCH_SIZE)
+                batch_time_out, _, _, _, _ = time_out_itr.nextBatch(batchSize=self.BATCH_SIZE)
+                batch_generation_et = time.time()
+                #print('Generation of batch took {} seconds'.format(batch_generation_et-batch_generation_st))
+                #print('tsIndices:', tsIndices)
+                #print('startingTs:', startingTs)
+                #print('endingTs', endingTs)
 
                 cur_state = np.zeros((self.BATCH_SIZE, self.HIDDEN_LAYER_SIZE))
-                batch_loss = 0.0
+                batch_num_events = np.sum(batch_event_in > 0)
 
-                batch_num_events = np.sum(batch_event_train_in > 0)
-                # print('BPTT={}'.format(self.BPTT))
-                # print(batch_event_train_in.shape, batch_event_train_out.shape, batch_time_train_in.shape, batch_time_train_out.shape)
-                for bptt_idx in range(0, len(batch_event_train_in[0]) - len(batch_event_train_in[0]) % self.BPTT, self.BPTT):
-                    bptt_range = range(bptt_idx, (bptt_idx + self.BPTT))
-                    bptt_event_in = batch_event_train_in[:, bptt_range]
-                    bptt_event_out = batch_event_train_out[:, bptt_range]
-                    bptt_time_in = batch_time_train_in[:, bptt_range]
-                    bptt_time_out = batch_time_train_out[:, bptt_range]
+                #if np.all(batch_event_in[:, 0] == 0):
+                #    # print('Breaking at bptt_idx {} / {}'
+                #    #       .format(bptt_idx // self.BPTT,
+                #    #               (len(batch_event_train_in[0]) - self.BPTT) // self.BPTT))
+                #    break
 
-                    if np.all(bptt_event_in[:, 0] == 0):
-                        # print('Breaking at bptt_idx {} / {}'
-                        #       .format(bptt_idx // self.BPTT,
-                        #               (len(batch_event_train_in[0]) - self.BPTT) // self.BPTT))
-                        break
+                initial_time = np.zeros(batch_time_in.shape[0])
 
-                    if bptt_idx > 0:
-                        initial_time = batch_time_train_in[:, bptt_idx - 1]
+                feed_dict = {
+                    self.initial_state: cur_state,
+                    self.initial_time: initial_time,
+                    self.events_in: batch_event_in,
+                    self.events_out: batch_event_out,
+                    self.times_in: batch_time_in,
+                    self.times_out: batch_time_out,
+                    self.feats_in: batch_feat_in,
+                    self.batch_num_events: batch_num_events
+                }
+
+                if check_nans:
+                    raise NotImplemented('tf.add_check_numerics_ops is '
+                                         'incompatible with tf.cond and '
+                                         'tf.while_loop.')
+                    # _, _, cur_state, loss_ = \
+                    #     self.sess.run([self.check_nan, self.update,
+                    #                    self.final_state, self.loss],
+                    #                   feed_dict=feed_dict)
+                else:
+                    if with_summaries:
+                        _, summaries, cur_state, loss_, step = \
+                            self.sess.run([self.update,
+                                           self.tf_merged_summaries,
+                                           self.final_state,
+                                           self.loss,
+                                           self.global_step],
+                                          feed_dict=feed_dict)
+                        train_writer.add_summary(summaries, step)
                     else:
-                        initial_time = np.zeros(batch_time_train_in.shape[0])
+                        sess_st = time.time()
+                        _, cur_state, loss_ = \
+                            self.sess.run([self.update,
+                                           self.final_state, self.loss],
+                                          feed_dict=feed_dict)
+                        sess_et = time.time()
+                        #print('Session took {} seconds.'.format(sess_et - sess_st))
 
-                    feed_dict = {
-                        self.initial_state: cur_state,
-                        self.initial_time: initial_time,
-                        self.events_in: bptt_event_in,
-                        self.events_out: bptt_event_out,
-                        self.times_in: bptt_time_in,
-                        self.times_out: bptt_time_out,
-                        self.batch_num_events: batch_num_events
-                    }
-
-                    if check_nans:
-                        raise NotImplemented('tf.add_check_numerics_ops is '
-                                             'incompatible with tf.cond and '
-                                             'tf.while_loop.')
-                        # _, _, cur_state, loss_ = \
-                        #     self.sess.run([self.check_nan, self.update,
-                        #                    self.final_state, self.loss],
-                        #                   feed_dict=feed_dict)
-                    else:
-                        if with_summaries:
-                            _, summaries, cur_state, loss_, step = \
-                                self.sess.run([self.update,
-                                               self.tf_merged_summaries,
-                                               self.final_state,
-                                               self.loss,
-                                               self.global_step],
-                                              feed_dict=feed_dict)
-                            train_writer.add_summary(summaries, step)
-                        else:
-                            _, cur_state, loss_ = \
-                                self.sess.run([self.update,
-                                               self.final_state, self.loss],
-                                              feed_dict=feed_dict)
-                    batch_loss += loss_
+                batch_loss = loss_
 
                 total_loss += batch_loss
                 if batch_idx % 10 == 0:
-                    print('Loss during batch {} last BPTT = {:.3f}, lr = {:.5f}'
-                          .format(batch_idx, batch_loss, self.sess.run(self.learning_rate)))
+                    print('Loss during batch {} last BPTT = {:.3f}, total loss = {:.3f}, lr = {:.5f}'
+                          .format(batch_idx, batch_loss, total_loss, self.sess.run(self.learning_rate)))
+
+                batch_et = time.time()
+                #print('Batch {} took {} seconds'.format(batch_idx, batch_et - batch_st))
+                #print(currItr, time_in_itr.iterFinished, batch_idx)
+
+            event_in_itr.reset()
+            event_out_itr.reset()
+            time_in_itr.reset()
+            time_out_itr.reset()
+            feat_in_itr.reset()
 
             # self.sess.run(self.increment_global_step)
             print('Loss on last epoch = {:.4f}, new lr = {:.5f}, global_step = {}'
@@ -574,7 +612,7 @@ class RMTPP:
         print('Loading the model from {}'.format(ckpt.model_checkpoint_path))
         saver.restore(self.sess, ckpt.model_checkpoint_path)
 
-    def predict(self, event_in_seq, time_in_seq, single_threaded=False):
+    def predict(self, event_in_seq, time_in_seq, feat_in_seq, single_threaded=False):
         """Treats the entire dataset as a single batch and processes it."""
 
         all_hidden_states = []
@@ -582,30 +620,42 @@ class RMTPP:
 
         cur_state = np.zeros((len(event_in_seq), self.HIDDEN_LAYER_SIZE))
 
-        for bptt_idx in range(0, len(event_in_seq[0]) - len(event_in_seq[0]) % self.BPTT, self.BPTT):
-            bptt_range = range(bptt_idx, (bptt_idx + self.BPTT))
-            bptt_event_in = event_in_seq[:, bptt_range]
-            bptt_time_in = time_in_seq[:, bptt_range]
+        event_in_itr = BatchGenerator(event_in_seq, batchSeqLen=self.BPTT)
+        time_in_itr = BatchGenerator(time_in_seq, batchSeqLen=self.BPTT)
+        feat_in_itr = BatchGenerator(feat_in_seq, batchSeqLen=self.BPTT)
 
-            if bptt_idx > 0:
-                initial_time = event_in_seq[:, bptt_idx - 1]
-            else:
-                initial_time = np.zeros(bptt_time_in.shape[0])
+        batch_idx = 0
+        currItr = time_in_itr.iterFinished
+        while currItr == time_in_itr.iterFinished:
+            batch_st = time.time()
+            batch_idx += 1
+
+            batch_generation_st = time.time()
+            batch_event_in, _, _, _, _ = event_in_itr.nextBatch(batchSize=time_in_seq.shape[0])
+            batch_time_in, tsIndices, startingTs, endingTs, mask = time_in_itr.nextBatch(batchSize=time_in_seq.shape[0])
+            batch_feat_in, _, _, _, _ = feat_in_itr.nextBatch(batchSize=feat_in_seq.shape[0])
+            batch_generation_et = time.time()
+
+            cur_state = np.zeros((batch_time_in.shape[0], self.HIDDEN_LAYER_SIZE))
+
+            initial_time = np.zeros(batch_time_in.shape[0])
 
             feed_dict = {
                 self.initial_state: cur_state,
                 self.initial_time: initial_time,
-                self.events_in: bptt_event_in,
-                self.times_in: bptt_time_in,
+                self.events_in: batch_event_in,
+                self.times_in: batch_time_in,
+                self.feats_in: batch_feat_in,
             }
 
-            bptt_hidden_states, bptt_events_pred, cur_state = self.sess.run(
+            batch_hidden_states, batch_events_pred, cur_state = self.sess.run(
                 [self.hidden_states, self.event_preds, self.final_state],
                 feed_dict=feed_dict
             )
 
-            all_hidden_states.extend(bptt_hidden_states)
-            all_event_preds.extend(bptt_events_pred)
+            all_hidden_states.extend(batch_hidden_states)
+            all_event_preds.extend(batch_events_pred)
+
 
         # TODO: This calculation is completely ignoring the clipping which
         # happens during the inference step.
@@ -631,12 +681,15 @@ class RMTPP:
             with MP.Pool() as pool:
                 all_time_preds = pool.map(_quad_worker, enumerate(all_hidden_states))
 
-        return np.asarray(all_time_preds).T, np.asarray(all_event_preds).swapaxes(0, 1)
+        all_time_preds = np.asarray(all_time_preds).T
+        all_time_preds = all_time_preds * (self.maxTime - self.minTime) + self.minTime
 
-    def eval(self, time_preds, time_true, event_preds, event_true):
+        return all_time_preds, np.asarray(all_event_preds).swapaxes(0, 1)
+
+    def eval(self, time_preds, time_true, event_preds, event_true, seq_lens):
         """Prints evaluation of the model on the given dataset."""
         # Print test error once every epoch:
-        mae, total_valid = MAE(time_preds, time_true, event_true)
+        mae, total_valid = MAE(time_preds, time_true, event_true, seq_lens)
         print('** MAE = {:.6f}; valid = {}, ACC = {:.6f}'.format(
             mae, total_valid, ACC(event_preds, event_true)))
 
@@ -644,6 +697,7 @@ class RMTPP:
         """Make (time, event) predictions on the test data."""
         return self.predict(event_in_seq=data['test_event_in_seq'],
                             time_in_seq=data['test_time_in_seq'],
+                            feat_in_seq=data['test_feat_in_seq'],
                             single_threaded=single_threaded)
 
     def predict_train(self, data, single_threaded=False, batch_size=None):
@@ -653,4 +707,5 @@ class RMTPP:
 
         return self.predict(event_in_seq=data['train_event_in_seq'][0:batch_size, :],
                             time_in_seq=data['train_time_in_seq'][0:batch_size, :],
+                            feat_in_seq=data['train_feat_in_seq'][0:batch_size],
                             single_threaded=single_threaded)

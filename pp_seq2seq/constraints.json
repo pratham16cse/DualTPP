@@ -1,0 +1,6 @@
+{
+    "default": "wt>0, WT>0",
+    "c1": "wt>1, D<0, WT>0",
+    "c2": "w>0, D<0, WT>0",
+    "unconstrained": "no consraint on w, D, and WT"
+}

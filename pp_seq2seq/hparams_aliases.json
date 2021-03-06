@@ -1,0 +1,9 @@
+{
+	"hidden_layer_size": "hls",
+	"wt_hparam": "wthparam",
+	"learning_rate": "lr",
+	"num_extra_layer": "nel",
+	"num_extra_dec_layer": "nel",
+	"rnn_reg_param": "rnnreg",
+	"extlyr_reg_param": "extlyrreg"
+}

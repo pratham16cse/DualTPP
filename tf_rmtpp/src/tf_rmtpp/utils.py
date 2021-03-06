@@ -5,6 +5,7 @@ import os
 import tensorflow as tf
 import numpy as np
 import pandas as pd
+import pickle
 
 
 pad_sequences = preprocessing.sequence.pad_sequences
@@ -15,9 +16,20 @@ def create_dir(dirname):
     if not os.path.exists(dirname):
         os.makedirs(dirname)
 
+def pad_features(feats, max_seq_len):
+    padded_feats = list()
+    num_feats = 1 # TODO: Support multiple features
+    for i, feat_seq in enumerate(feats):
+        seq_len = len(feat_seq)
+        padded_feat = np.concatenate([np.array(feat_seq), np.zeros((max_seq_len-seq_len))], axis=0)
+        padded_feats.append(padded_feat)
+    padded_feats = np.stack(padded_feats)
+    padded_feats = np.expand_dims(padded_feats, axis=2) #TODO: Remove this when supports multiple features.
+    return padded_feats
 
 def read_data(event_train_file, event_test_file, time_train_file, time_test_file,
-              pad=True):
+              feats_train_file=None, feats_test_file=None,
+              pad=True, normalize=False):
     """Read data from given files and return it as a dictionary."""
 
     with open(event_train_file, 'r') as in_file:
@@ -32,8 +44,23 @@ def read_data(event_train_file, event_test_file, time_train_file, time_test_file
     with open(time_test_file, 'r') as in_file:
         timeTest = [[float(y) for y in x.strip().split()] for x in in_file]
 
+    if feats_train_file is not None:
+        with open(feats_train_file, 'rb') as in_file:
+            featsTrain = pickle.load(in_file)
+    else:
+        featsTrain = []
+
+    if feats_test_file is not None:
+        with open(feats_test_file, 'rb') as in_file:
+            featsTest = pickle.load(in_file)
+    else:
+        featsTest = []
+
     assert len(timeTrain) == len(eventTrain)
     assert len(eventTest) == len(timeTest)
+
+    train_seq_lens = [len(seq) for seq in timeTrain]
+    test_seq_lens = [len(seq) for seq in timeTest]
 
     # nb_samples = len(eventTrain)
     # max_seqlen = max(len(x) for x in eventTrain)
@@ -42,9 +69,11 @@ def read_data(event_train_file, event_test_file, time_train_file, time_test_file
     for x in eventTrain + eventTest:
         unique_samples = unique_samples.union(x)
 
-    #maxTime = max(itertools.chain((max(x) for x in timeTrain), (max(x) for x in timeTest)))
-    #minTime = min(itertools.chain((min(x) for x in timeTrain), (min(x) for x in timeTest)))
-    minTime, maxTime = 0, 1
+    if normalize:
+        maxTime = max(itertools.chain((max(x) for x in timeTrain), (max(x) for x in timeTest)))
+        minTime = min(itertools.chain((min(x) for x in timeTrain), (min(x) for x in timeTest)))
+    else:
+        minTime, maxTime = 0, 1
 
     eventTrainIn = [x[:-1] for x in eventTrain]
     eventTrainOut = [x[1:] for x in eventTrain]
@@ -57,11 +86,16 @@ def read_data(event_train_file, event_test_file, time_train_file, time_test_file
         train_event_out_seq = pad_sequences(eventTrainOut, maxlen=max_seq_len, padding='post')
         train_time_in_seq = pad_sequences(timeTrainIn, maxlen=max_seq_len, dtype=float, padding='post')
         train_time_out_seq = pad_sequences(timeTrainOut, maxlen=max_seq_len, dtype=float, padding='post')
+        if feats_train_file is not None:
+            train_feat_in_seq = pad_features(featsTrain, max_seq_len)
+        else:
+            train_feat_in_seq = []
     else:
         train_event_in_seq = eventTrainIn
         train_event_out_seq = eventTrainOut
         train_time_in_seq = timeTrainIn
         train_time_out_seq = timeTrainOut
+        train_feat_in_seq = featsTrain
 
 
     eventTestIn = [x[:-1] for x in eventTest]
@@ -74,11 +108,16 @@ def read_data(event_train_file, event_test_file, time_train_file, time_test_file
         test_event_out_seq = pad_sequences(eventTestOut, maxlen=max_seq_len, padding='post')
         test_time_in_seq = pad_sequences(timeTestIn, maxlen=max_seq_len, dtype=float, padding='post')
         test_time_out_seq = pad_sequences(timeTestOut, maxlen=max_seq_len, dtype=float, padding='post')
+        if feats_test_file is not None:
+            test_feat_in_seq = pad_features(featsTest, max_seq_len)
+        else:
+            test_feat_in_seq = []
     else:
         test_event_in_seq = eventTestIn
         test_event_out_seq = eventTestOut
         test_time_in_seq = timeTestIn
         test_time_out_seq = timeTestOut
+        test_feat_in_seq = featsTest
 
     return {
         'train_event_in_seq': train_event_in_seq,
@@ -87,13 +126,23 @@ def read_data(event_train_file, event_test_file, time_train_file, time_test_file
         'train_time_in_seq': train_time_in_seq,
         'train_time_out_seq': train_time_out_seq,
 
+        'train_feat_in_seq': train_feat_in_seq,
+
         'test_event_in_seq': test_event_in_seq,
         'test_event_out_seq': test_event_out_seq,
 
         'test_time_in_seq': test_time_in_seq,
         'test_time_out_seq': test_time_out_seq,
 
-        'num_categories': len(unique_samples)
+        'test_feat_in_seq': test_feat_in_seq,
+
+        'num_categories': len(unique_samples),
+
+        'maxTime': maxTime,
+        'minTime': minTime,
+
+        'train_seq_lens': train_seq_lens,
+        'test_seq_lens': test_seq_lens,
     }
 
 
@@ -169,9 +218,9 @@ def variable_summaries(var, name=None):
         tf.summary.histogram('histogram', var)
 
 
-def MAE(time_preds, time_true, events_out):
-    """Calculates the MAE between the provided and the given time, ignoring the inf
-    and nans. Returns both the MAE and the number of items considered."""
+def MAE(time_preds, time_true, events_out, seq_lens):
+    """Calculates the MAE between the provided and the given time, ignoring the inf,
+    nans, and with masked sequence lengths. Returns both the MAE and the number of items considered."""
 
     # Predictions may not cover the entire time dimension.
     # This clips time_true to the correct size.
@@ -179,7 +228,9 @@ def MAE(time_preds, time_true, events_out):
     clipped_time_true = time_true[:, :seq_limit]
     clipped_events_out = events_out[:, :seq_limit]
 
-    is_finite = np.isfinite(time_preds) & (clipped_events_out > 0)
+    mask = np.stack([np.concatenate([np.ones(l), np.zeros(time_true.shape[1]-l)]) for l in seq_lens])
+    mask = np.array(mask, dtype=np.bool)
+    is_finite = np.isfinite(time_preds) & (clipped_events_out > 0) & mask
 
     return np.mean(np.abs(time_preds - clipped_time_true)[is_finite]), np.sum(is_finite)
 

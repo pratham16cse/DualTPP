@@ -1,0 +1,3 @@
+*.pyc
+pp_seq2seq/nmt/*.pyc
+pp_seq2seq/nmt/data/*
