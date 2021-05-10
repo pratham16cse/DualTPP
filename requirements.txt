@@ -1,8 +1,7 @@
+nltk==3.2.4
+tensorflow-addons==0.9.1
 tensorflow==2.1.0
-tensorflow-probability==0.9.0
-Keras==2.4.3
-cvxpy==1.0.31
-numpy==1.16.6
+torch==1.7.1+cu101
+properscoring
+cvxpy
 pandas==0.25.3
-preprocessing==0.1.13
-properscoring==0.1
