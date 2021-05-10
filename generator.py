@@ -102,7 +102,7 @@ def create_sin_data():
 	types = np.array(types)
 	
 	plt.plot(x[:25], y[:25], 'o', color='black');
-	plt.savefig('sin.png')
+	plt.savefig('data/sin.png')
 	plt.close()
 	return gaps, timestamp, types
 
@@ -124,10 +124,10 @@ def create_taxi_data():
 	# https://s3.amazonaws.com/nyc-tlc/trip+data/yellow_tripdata_2019-01.csv
 	# https://s3.amazonaws.com/nyc-tlc/trip+data/yellow_tripdata_2019-02.csv
 	taxi_df_jan = pd.read_csv(
-		'../yellow_tripdata_2019-01.csv',
+		'./data/yellow_tripdata_2019-01.csv',
 		usecols=["tpep_pickup_datetime", "PULocationID", "DOLocationID"])
 	taxi_df_feb = pd.read_csv(
-		'../yellow_tripdata_2019-02.csv',
+		'./data/yellow_tripdata_2019-02.csv',
 		usecols=["tpep_pickup_datetime", "PULocationID", "DOLocationID"])
 	taxi_df = taxi_df_jan.append(taxi_df_feb)
 	taxi_df = taxi_df[taxi_df.PULocationID == 237]
@@ -150,12 +150,12 @@ def create_taxi_data():
 	taxi_gaps = taxi_timestamps[1:] - taxi_timestamps[:-1]
 	plt.plot(taxi_gaps[:100])
 	plt.ylabel('Gaps')
-	plt.savefig('taxi_gaps.png')
+	plt.savefig('data/taxi_gaps.png')
 	plt.close()
 	return taxi_gaps, taxi_timestamps, taxi_types
 
 def create_911_traffic_data():
-	call_df = pd.read_csv('../911.csv')
+	call_df = pd.read_csv('./data/911.csv')
 	call_df = call_df[call_df['zip'].isnull()==False] # Ignore calls with NaN zip codes
 	print('Types of Emergencies')
 	print(call_df.title.apply(lambda x: x.split(':')[0]).value_counts())
@@ -185,12 +185,12 @@ def create_911_traffic_data():
 	plt.plot(call_gaps[:100])
 	plt.ylabel('Gaps')
 	plt.xlabel('timeline')
-	plt.savefig('call_traffic_gaps.png')
+	plt.savefig('data/call_traffic_gaps.png')
 	plt.close()
 	return call_gaps, call_timestamps, call_types
 
 def create_911_ems_data():
-	call_df = pd.read_csv('../911.csv')
+	call_df = pd.read_csv('./data/911.csv')
 	call_df = call_df[call_df['zip'].isnull()==False] # Ignore calls with NaN zip codes
 	call_df['type'] = call_df.title.apply(lambda x: x.split(':')[0])
 	print('Out of 3 types taking EMS type considering only EMS')
@@ -213,19 +213,19 @@ def create_911_ems_data():
 	plt.plot(call_gaps[:100])
 	plt.ylabel('Gaps')
 	plt.xlabel('timeline')
-	plt.savefig('call_ems_gaps.png')
+	plt.savefig('data/call_ems_gaps.png')
 	plt.close()
 	return call_gaps, call_timestamps, call_types
 
 def generate_dataset():
 	os.makedirs('./data', exist_ok=True)
-	os.chdir('./data')
+	#os.chdir('./data')
 	if not os.path.isfile("sin.txt"):
 		print('Generating sin data')
 		gaps, timestamps, types = create_sin_data()
 		timestamps, types = purge_duplicate_events(timestamps, types)
-		np.savetxt('sin.txt', timestamps)
-		np.savetxt('sin_types.txt', types)
+		np.savetxt('data/sin.txt', timestamps)
+		np.savetxt('data/sin_types.txt', types)
 #	if not os.path.isfile("hawkes.txt"):
 #		print('Generating hawkes data')
 #		gaps, timestamps = create_hawkes_data()
@@ -240,29 +240,29 @@ def generate_dataset():
 		print('Generating 911 data')
 		gaps, timestamps, types = create_911_traffic_data()
 		timestamps, types = purge_duplicate_events(timestamps, types)
-		np.savetxt('911_traffic.txt', timestamps)
-		np.savetxt('911_traffic_types.txt', types)
+		np.savetxt('data/911_traffic.txt', timestamps)
+		np.savetxt('data/911_traffic_types.txt', types)
 	if not os.path.isfile("911_ems.txt"):
 		print('Generating 911 data')
 		gaps, timestamps, types = create_911_ems_data()
 		timestamps, types = purge_duplicate_events(timestamps, types)
-		np.savetxt('911_ems.txt', timestamps)
-		np.savetxt('911_ems_types.txt', types)
+		np.savetxt('data/911_ems.txt', timestamps)
+		np.savetxt('data/911_ems_types.txt', types)
 	if not os.path.isfile("taxi.txt"):
 		print('Generating taxi data')
 		gaps, timestamps, types = create_taxi_data()
 		timestamps = np.array(timestamps).astype(np.float32)
 		types = np.array(types).astype(np.float32)
 		timestamps, types = purge_duplicate_events(timestamps, types)
-		np.savetxt('taxi.txt', timestamps)
-		np.savetxt('taxi_types.txt', types)
-	os.chdir('../')
+		np.savetxt('data/taxi.txt', timestamps)
+		np.savetxt('data/taxi_types.txt', types)
+	#os.chdir('../')
 
 def create_twitter_data(dataset_name, keep_classes=10):
 	delimiter=' '
 	if dataset_name in ['Movie', 'Delhi', 'Verdict', 'Fight']:
 		delimiter='\t'
-	twitter_df = pd.read_csv('../TwitterDataset/'+dataset_name+'.txt', delimiter=delimiter, header=None)
+	twitter_df = pd.read_csv('./data/'+dataset_name+'.txt', delimiter=delimiter, header=None)
 	twitter_df = twitter_df.values[::-1]
 	#twitter_df = twitter_df[1]
 	timestamps = twitter_df[:, 1]
@@ -299,7 +299,7 @@ def create_twitter_data(dataset_name, keep_classes=10):
 
 def generate_twitter_dataset(twitter_dataset_names):
 	os.makedirs('./data', exist_ok=True)
-	os.chdir('./data')
+	#os.chdir('./data')
 	for dataset_name in twitter_dataset_names:
 		if not os.path.isfile(dataset_name+'.txt'):
 			print('Generating', dataset_name, 'data')
@@ -307,4 +307,4 @@ def generate_twitter_dataset(twitter_dataset_names):
 			timestamps, types = purge_duplicate_events(np.array(timestamps), np.array(types))
 			np.savetxt(dataset_name+'.txt', timestamps)
 			np.savetxt(dataset_name+'_types.txt', types)
-	os.chdir('../')
+	#os.chdir('../')
