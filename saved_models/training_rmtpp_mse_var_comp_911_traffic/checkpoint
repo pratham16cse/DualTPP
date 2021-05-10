@@ -1,0 +1,2 @@
+model_checkpoint_path: "cp_911_traffic.ckpt"
+all_model_checkpoint_paths: "cp_911_traffic.ckpt"

@@ -1,0 +1,2 @@
+model_checkpoint_path: "cp_taxi.ckpt"
+all_model_checkpoint_paths: "cp_taxi.ckpt"
