@@ -1,5 +1,7 @@
 # Long Horizon Forecasting With Temporal Point Processes
 
+![DualTPP Diagram](DualTPP_diagram.png)
+
 This is the code produced as part of the paper _Long Horizon Forecasting With Temporal Point Processes_ 
 
 > "Long Horizon Forecasting With Temporal Point Processes"
